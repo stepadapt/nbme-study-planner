@@ -1,0 +1,11 @@
+{
+  "name": "nbme-study-planner",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && node src/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
