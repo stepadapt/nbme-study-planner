@@ -750,8 +750,8 @@ export default function StudyPlanner({ onShowTerms }) {
           <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1816", fontFamily: S.f, marginBottom: 2 }}>📸 Auto-import from screenshot</div>
-                <div style={{ fontSize: 12, color: "#6b6560", fontFamily: S.f }}>Upload your NBME score report and AI will fill in the scores</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1816", fontFamily: S.f, marginBottom: 2 }}>📸 Auto-import from screenshot or PDF</div>
+                <div style={{ fontSize: 12, color: "#6b6560", fontFamily: S.f }}>Upload your NBME score report (image or PDF) and AI will fill in the scores</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {uploadingScreenshot && <span style={{ ...S.muted, fontSize: 12 }}>Parsing…</span>}
@@ -760,9 +760,9 @@ export default function StudyPlanner({ onShowTerms }) {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingScreenshot}
                 >
-                  {uploadingScreenshot ? 'Analyzing…' : 'Upload screenshot'}
+                  {uploadingScreenshot ? 'Analyzing…' : 'Upload screenshot / PDF'}
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files[0]; if (f) handleScreenshotUpload(f); e.target.value = ''; }}
                 />
               </div>

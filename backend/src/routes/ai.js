@@ -8,39 +8,32 @@ router.use(requireAuth);
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Multer — store upload in memory (max 10 MB)
+// Multer — store upload in memory (max 20 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are accepted'));
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only image or PDF files are accepted'));
   },
 });
 
 // ── POST /api/ai/parse-screenshot ────────────────────────────────────
-// Accepts a screenshot of an NBME score report, returns parsed scores.
+// Accepts a screenshot (image) or PDF of an NBME score report, returns parsed scores.
 router.post('/parse-screenshot', upload.single('screenshot'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
 
   const { examId } = req.body;
-  const imageData = req.file.buffer.toString('base64');
+  const fileData = req.file.buffer.toString('base64');
   const mediaType = req.file.mimetype;
+  const isPDF = mediaType === 'application/pdf';
 
-  try {
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 2048,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: imageData },
-          },
-          {
-            type: 'text',
-            text: `This is a screenshot of an NBME practice exam score report${examId ? ` for ${examId}` : ''}.
+  // Build the file content block — PDFs use 'document', images use 'image'
+  const fileBlock = isPDF
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileData } };
+
+  const promptText = `This is ${isPDF ? 'a PDF' : 'a screenshot'} of an NBME practice exam score report${examId ? ` for ${examId}` : ''}.
 
 Please extract all category/discipline scores from this report.
 
@@ -61,9 +54,15 @@ Rules:
 - If a score is shown as a percentile, use it directly (0-100)
 - Include ALL subject areas shown in the report
 - If you cannot read a score clearly, omit that category
-- Return only valid JSON, no markdown code blocks, no explanation`,
-          }
-        ],
+- Return only valid JSON, no markdown code blocks, no explanation`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-opus-4-5',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: [fileBlock, { type: 'text', text: promptText }],
       }],
     });
 
@@ -106,7 +105,7 @@ router.post('/chat', async (req, res) => {
 
   try {
     const stream = anthropic.messages.stream({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-5',
       max_tokens: 2048,
       system: systemPrompt,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
