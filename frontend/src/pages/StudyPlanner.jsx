@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { EXAMS, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
-import { generatePlan, getTopSubTopics, getPerformanceLevel } from '../planEngine.js';
+import { generatePlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import Chat from '../components/Chat.jsx';
@@ -20,7 +20,8 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ exam: "", resources: [], examDate: "", hoursPerDay: 8 });
+  const [profile, setProfile] = useState({ exam: "", resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00" });
+  const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
   const [stickingPoints, setStickingPoints] = useState([]);
@@ -54,12 +55,24 @@ export default function StudyPlanner({ onShowTerms }) {
       api.profile.get().catch(() => ({ profile: null })),
       api.assessments.list().catch(() => ({ assessments: [] })),
       api.schedule.get().catch(() => ({ schedule: [] })),
-    ]).then(([{ profile: savedProfile }, { assessments: savedAssessments }, { schedule: savedSchedule }]) => {
-      if (savedProfile) setProfile(savedProfile);
+      api.plans.latest().catch(() => ({ plan: null })),
+    ]).then(([{ profile: savedProfile }, { assessments: savedAssessments }, { schedule: savedSchedule }, { plan: savedPlan }]) => {
+      if (savedProfile) setProfile(p => ({ ...p, ...savedProfile }));
       if (savedAssessments.length > 0) setAssessments(savedAssessments);
       if (savedSchedule) setSchedule(savedSchedule);
+      if (savedPlan) {
+        setPlan(savedPlan.planData);
+        setLatestPlanMeta({ id: savedPlan.id, createdAt: savedPlan.createdAt });
+      }
     }).finally(() => setDataLoaded(true));
   }, [user]);
+
+  // Auto-route to dashboard once data is loaded
+  useEffect(() => {
+    if (!dataLoaded) return;
+    if (plan) setScreen("dashboard");
+    // else stay on "welcome" for new users
+  }, [dataLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save profile whenever it changes (debounced)
   const profileSaveTimer = useRef(null);
@@ -306,6 +319,297 @@ export default function StudyPlanner({ onShowTerms }) {
     </div>
   );
 
+  // ─── DASHBOARD ─────────────────────────────────────────────────────
+  if (screen === "dashboard") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const examDate = profile.examDate ? new Date(profile.examDate) : null;
+    if (examDate) examDate.setHours(0, 0, 0, 0);
+    const daysUntilExam = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
+    const urgencyColor = daysUntilExam === null ? BRAND.green : daysUntilExam <= 14 ? '#c0392b' : daysUntilExam <= 30 ? '#D85A30' : BRAND.green;
+    const todayData = plan && latestPlanMeta ? findTodayInPlan(plan, latestPlanMeta.createdAt) : null;
+    const todayBlocksWithTimes = todayData ? assignBlockTimes(todayData.day.blocks, profile.studyStartTime || '07:00', profile.studyEndTime || '17:00') : [];
+    const progress = plan && latestPlanMeta ? calcPlanProgress(plan, latestPlanMeta.createdAt, profile.examDate) : null;
+    const examPassed = daysUntilExam !== null && daysUntilExam === 0 && examDate && today >= examDate;
+
+    // Score trend from assessments
+    const selectedExamLocal = EXAMS.find(e => e.id === profile.exam);
+    const scoreTrend = assessments.map(a => {
+      const cats = selectedExamLocal?.categories || Object.keys(a.scores || {});
+      const vals = cats.map(c => Number(a.scores[c] || 0)).filter(v => v > 0);
+      const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
+      const dateStr = a.created_at || a.date || '';
+      return { label: a.formName || 'Assessment', avg, date: dateStr };
+    });
+    const scoreDelta = scoreTrend.length >= 2 ? scoreTrend[scoreTrend.length - 1].avg - scoreTrend[scoreTrend.length - 2].avg : null;
+    const latestAvg = scoreTrend.length > 0 ? scoreTrend[scoreTrend.length - 1].avg : null;
+
+    // Category heatmap from latest assessment
+    const latestAssessmentForHeatmap = assessments.length > 0 ? assessments[assessments.length - 1] : null;
+    const heatmapCats = selectedExamLocal?.categories || [];
+    const heatColor = (s) => s <= 40 ? '#c0392b' : s <= 60 ? '#D85A30' : s <= 80 ? '#2980b9' : '#1D9E75';
+    const heatBg = (s) => s <= 40 ? '#c0392b0d' : s <= 60 ? '#D85A300d' : s <= 80 ? '#2980b90d' : '#1D9E750d';
+
+    // Block icons
+    const blockIcon = (type) => {
+      const icons = { anki: '🧠', 'questions-focus': '🔥', 'questions-random': '🎲', questions: '🎯', content: '📚', 'content-reactive': '📚', catchup: '🔄', nbme: '📋', rest: '😴', break: '⏸' };
+      return icons[type] || '📌';
+    };
+
+    // SVG score trend chart
+    const TrendChart = () => {
+      if (scoreTrend.length === 0) return <div style={{ textAlign: 'center', padding: '24px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>No assessments yet.</div>;
+      const W = 280, H = 80, PAD = 16, LABEL_H = 18;
+      const chartH = H - LABEL_H;
+      if (scoreTrend.length === 1) {
+        return (
+          <div>
+            <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+              <circle cx={W / 2} cy={chartH / 2} r={5} fill={BRAND.green} />
+              <text x={W / 2} y={H - 2} textAnchor="middle" fontSize={10} fill="#8a857e" fontFamily="DM Sans, sans-serif">{scoreTrend[0].label}</text>
+            </svg>
+            <p style={{ ...S.muted, fontSize: 11, textAlign: 'center', marginTop: 4 }}>Take another assessment to see your trend</p>
+          </div>
+        );
+      }
+      const minScore = Math.max(0, Math.min(...scoreTrend.map(p => p.avg)) - 10);
+      const maxScore = Math.min(100, Math.max(...scoreTrend.map(p => p.avg)) + 10);
+      const scoreRange = Math.max(1, maxScore - minScore);
+      const pts = scoreTrend.map((p, i) => {
+        const x = PAD + (i / (scoreTrend.length - 1)) * (W - PAD * 2);
+        const y = chartH - PAD / 2 - ((p.avg - minScore) / scoreRange) * (chartH - PAD);
+        return { x, y, ...p };
+      });
+      const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+      const areaPath = `M ${pts[0].x},${chartH} ` + pts.map(p => `L ${p.x},${p.y}`).join(' ') + ` L ${pts[pts.length - 1].x},${chartH} Z`;
+      return (
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+          <path d={areaPath} fill={BRAND.green} fillOpacity={0.10} />
+          <polyline points={polyline} fill="none" stroke={BRAND.green} strokeWidth={2} strokeLinejoin="round" />
+          {pts.map((p, i) => (
+            <g key={i}>
+              <circle cx={p.x} cy={p.y} r={4} fill={BRAND.green} />
+              <text x={p.x} y={H - 2} textAnchor="middle" fontSize={9} fill="#8a857e" fontFamily="DM Sans, sans-serif">{p.label?.replace('NBME ', '')}</text>
+            </g>
+          ))}
+        </svg>
+      );
+    };
+
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        {/* Top bar */}
+        <div style={{ ...S.topBar, borderBottom: '1px solid #e8f5f0', paddingBottom: 12 }}>
+          <LogoMark />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {plan && <button style={{ ...S.btn, ...S.sec, padding: '8px 16px', fontSize: 13 }} onClick={() => navigate("plan")}>📅 Full plan</button>}
+            <UserBar />
+          </div>
+        </div>
+
+        <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 80px', opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(12px)', transition: 'all 0.3s ease' }}>
+
+          {/* Row 1: Exam countdown + Score improvement */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+            {/* Exam countdown */}
+            <div style={{ ...S.card, marginBottom: 0, textAlign: 'center', padding: '20px 16px' }}>
+              {daysUntilExam !== null ? (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: urgencyColor, lineHeight: 1, fontFamily: S.f }}>{daysUntilExam}</div>
+                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>days until exam</div>
+                  {daysUntilExam <= 14 && daysUntilExam > 0 && <div style={{ marginTop: 8, fontSize: 11, color: '#c0392b', fontFamily: S.f, fontWeight: 600 }}>⚡ Final push — every session counts</div>}
+                  {daysUntilExam === 0 && <div style={{ marginTop: 8, fontSize: 12, color: BRAND.green, fontFamily: S.f }}>🎉 Exam day!</div>}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>📅</div>
+                  <div style={{ ...S.muted, marginBottom: 12 }}>No exam date set</div>
+                  <button style={{ ...S.btn, ...S.sec, padding: '7px 14px', fontSize: 13 }} onClick={() => navigate("onboarding")}>Set exam date →</button>
+                </>
+              )}
+            </div>
+            {/* Score improvement */}
+            <div style={{ ...S.card, marginBottom: 0, textAlign: 'center', padding: '20px 16px' }}>
+              {scoreDelta !== null ? (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: scoreDelta >= 0 ? BRAND.green : '#c0392b', lineHeight: 1, fontFamily: S.f }}>{scoreDelta > 0 ? '+' : ''}{scoreDelta}</div>
+                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>avg score change</div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>Latest avg: {latestAvg}%</div>
+                </>
+              ) : latestAvg !== null ? (
+                <>
+                  <div style={{ fontSize: 52, fontWeight: 800, color: BRAND.green, lineHeight: 1, fontFamily: S.f }}>{latestAvg}%</div>
+                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>current average</div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>Add another assessment to track changes</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+                  <div style={{ ...S.muted, marginBottom: 12 }}>No scores yet</div>
+                  <button style={{ ...S.btn, ...S.sec, padding: '7px 14px', fontSize: 13 }} onClick={() => navigate("onboarding")}>Add first assessment →</button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2: Today's schedule */}
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a857e', fontFamily: S.f, marginBottom: 4 }}>Today's Schedule</div>
+                {todayData ? (
+                  <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1816' }}>
+                    Day {todayData.day.calendarDay}
+                    {todayData.day.focusTopic && <span style={{ fontSize: 13, fontWeight: 400, color: '#6b6560', marginLeft: 8, fontFamily: S.f }}>Focus: {todayData.day.focusTopic}</span>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1816' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+                )}
+              </div>
+              {todayData?.day.totalQuestions > 0 && (
+                <div style={{ background: '#b4530912', color: '#b45309', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, fontFamily: S.f }}>
+                  {todayData.day.totalQuestions} Qs today
+                </div>
+              )}
+            </div>
+
+            {examPassed ? (
+              <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 16, color: BRAND.green }}>Exam has passed — great work! 🎉</div>
+            ) : !plan ? (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div style={{ ...S.muted, marginBottom: 16 }}>No study plan yet. Generate one to see your daily schedule.</div>
+                <button style={{ ...S.btn, ...S.pri }} onClick={() => navigate("onboarding")}>Generate your first plan →</button>
+              </div>
+            ) : !todayData ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: '#8a857e', fontFamily: S.f, fontSize: 14 }}>
+                Today is outside your current plan window. <button style={{ ...S.btn, ...S.ghost, fontSize: 13, display: 'inline', padding: '4px 8px' }} onClick={() => navigate("onboarding")}>Generate a new plan →</button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {todayBlocksWithTimes.map((block, i) => {
+                  if (block.type === 'break') {
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#faf8f5', borderRadius: 8, opacity: 0.7 }}>
+                        <span style={{ fontSize: 14 }}>{block.label === 'Lunch break' ? '☕' : '⏸'}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: '#8a857e', fontFamily: S.f }}>{block.label}</span>
+                        <span style={{ fontSize: 12, color: '#aaa9a6', fontFamily: S.f }}>{block.startTime} – {block.endTime}</span>
+                      </div>
+                    );
+                  }
+                  const bc = blockColors[block.type] || blockColors['catchup'];
+                  return (
+                    <div key={i} style={{ padding: '12px 14px', background: bc.bg, borderRadius: 10, borderLeft: `3px solid ${bc.border}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: block.tasks?.length > 0 ? 8 : 0, flexWrap: 'wrap', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 15 }}>{blockIcon(block.type)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{block.label}</span>
+                        </div>
+                        <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, flexShrink: 0 }}>{block.startTime} – {block.endTime}</span>
+                      </div>
+                      {block.tasks?.map((task, j) => (
+                        <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5 }}>
+                          <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Row 3: Score trend + Progress bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+            {/* Score trend */}
+            <div style={{ ...S.card, marginBottom: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Score Trend</div>
+              <TrendChart />
+            </div>
+            {/* Plan progress */}
+            <div style={{ ...S.card, marginBottom: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Plan Progress</div>
+              {progress ? (
+                <>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: BRAND.green, fontFamily: S.f, lineHeight: 1 }}>{progress.percent}%</div>
+                  <div style={{ ...S.muted, marginTop: 4, marginBottom: 12, fontSize: 12 }}>{progress.completedDays} of {progress.totalDays} days complete</div>
+                  <ProgressBar value={progress.completedDays} max={Math.max(1, progress.totalDays)} color={BRAND.green} height={10} />
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '16px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>Generate a plan to track progress.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Row 4: Category heatmap */}
+          {heatmapCats.length > 0 && latestAssessmentForHeatmap && (
+            <div style={{ ...S.card, marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Category Performance</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+                {heatmapCats.map(cat => {
+                  const s = latestAssessmentForHeatmap.scores[cat] ?? null;
+                  if (s === null) return null;
+                  return (
+                    <div key={cat} style={{ padding: '10px 10px 10px 12px', borderRadius: 8, background: heatBg(s), borderLeft: `3px solid ${heatColor(s)}` }}>
+                      <div style={{ fontSize: 11, fontFamily: S.f, color: '#6b6560', lineHeight: 1.3, marginBottom: 4 }}>{cat}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: heatColor(s), fontFamily: S.f, lineHeight: 1 }}>{s}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Row 5: Recent assessments + Quick actions */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            {/* Recent assessments */}
+            <div style={{ ...S.card, marginBottom: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Recent Assessments</div>
+              {assessments.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '12px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>No assessments yet.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {[...assessments].reverse().slice(0, 5).map((a, i) => {
+                    const cats = selectedExamLocal?.categories || Object.keys(a.scores || {});
+                    const vals = cats.map(c => Number(a.scores[c] || 0)).filter(v => v > 0);
+                    const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
+                    const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (a.date || '');
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < Math.min(assessments.length, 5) - 1 ? '1px solid #f0ece6' : 'none' }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: heatColor(avg), flexShrink: 0 }} />
+                        <div style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>{a.formName}</div>
+                        <div style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{dateStr}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: heatColor(avg), fontFamily: S.f }}>{avg}%</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {/* Quick actions */}
+            <div style={{ ...S.card, marginBottom: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Quick Actions</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
+                  { icon: '📋', label: 'New Plan', action: () => navigate("onboarding") },
+                  { icon: '💬', label: 'AI Coach', action: () => setShowChat(true) },
+                  { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
+                ].map((item, i) => (
+                  <button key={i} disabled={item.disabled} style={{ ...S.btn, ...S.sec, flexDirection: 'column', padding: '14px 10px', gap: 6, fontSize: 12, textAlign: 'center', justifyContent: 'center', opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }} onClick={item.action}>
+                    <span style={{ fontSize: 20 }}>{item.icon}</span>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   // ─── WELCOME ───────────────────────────────────────────────────────
   if (screen === "welcome") return (
     <div style={S.app}>
@@ -347,7 +651,7 @@ export default function StudyPlanner({ onShowTerms }) {
     return (
       <div style={S.app}>
         <VerifyBanner />
-        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("welcome")}>← Back</button>{dots(0)}<UserBar /></div>
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(plan ? "dashboard" : "welcome")}>← Back</button>{dots(0)}<UserBar /></div>
         <div style={S.wrap}>
           <h1 style={S.h1}>Set up your profile</h1><p style={S.sub}>Your situation shapes the plan.</p>
           <div style={S.card}>
@@ -367,6 +671,24 @@ export default function StudyPlanner({ onShowTerms }) {
               <div><label style={S.label}>Exam date</label><input type="date" style={S.input} value={profile.examDate} onChange={e => setProfile(p => ({ ...p, examDate: e.target.value }))} /></div>
               <div><label style={S.label}>Hours / day</label><input type="number" min={1} max={16} style={S.input} value={profile.hoursPerDay} onChange={e => setProfile(p => ({ ...p, hoursPerDay: Number(e.target.value) }))} /></div>
             </div>
+            <hr style={{ ...S.hr, margin: "20px 0 16px" }} />
+            <label style={S.label}>Daily study window</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 8 }}>
+              <div>
+                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>Start time</label>
+                <input type="time" style={S.input} value={profile.studyStartTime || "07:00"} onChange={e => setProfile(p => ({ ...p, studyStartTime: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>End time</label>
+                <input type="time" style={S.input} value={profile.studyEndTime || "17:00"} onChange={e => setProfile(p => ({ ...p, studyEndTime: e.target.value }))} />
+              </div>
+            </div>
+            {(() => {
+              const [sh, sm] = (profile.studyStartTime || "07:00").split(':').map(Number);
+              const [eh, em] = (profile.studyEndTime || "17:00").split(':').map(Number);
+              const hrs = Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
+              return hrs > 0 ? <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>{hrs.toFixed(1)} hours available for study — blocks will be scheduled with automatic breaks.</p> : null;
+            })()}
           </div>
           {profile.examDate && (() => { const d = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)); const mode = d >= 42 ? "full dedicated" : d >= 21 ? "standard" : d >= 10 ? "compressed" : "triage"; return <p style={{ ...S.muted, textAlign: "center", marginTop: 8 }}><strong style={{ color: "#1a1816" }}>{d} days</strong> — <strong style={{ color: d < 14 ? "#c0392b" : "#1a1816" }}>{mode}</strong> plan{d < 14 ? ". Every hour counts." : "."}</p>; })()}
 
@@ -600,6 +922,8 @@ export default function StudyPlanner({ onShowTerms }) {
                 planData: generatedPlan,
                 profileSnapshot: profile,
                 assessmentId: latestAssessment?.id || null,
+              }).then(result => {
+                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
               }).catch(() => {});
               navigate(previousAssessment ? "comparison" : "plan");
             }}>
@@ -681,7 +1005,7 @@ export default function StudyPlanner({ onShowTerms }) {
   if (screen === "plan" && plan) return (
     <div style={S.app}>
       <VerifyBanner />
-      <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(previousAssessment ? "comparison" : "gaps")}>← Back</button>{dots(5)}<UserBar /></div>
+      <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("dashboard")}>← Back</button>{dots(5)}<UserBar /></div>
       <div style={S.wrap}>
         <h1 style={S.h1}>Your study plan</h1>
         <p style={S.sub}>Question-driven {plan.totalWeeks}-week plan. Focused blocks attack weaknesses, random blocks maintain everything, NBMEs recalibrate.</p>

@@ -72,5 +72,7 @@ addCol('ALTER TABLE users ADD COLUMN verify_token TEXT');
 addCol('ALTER TABLE users ADD COLUMN verify_token_expires TEXT');
 addCol('ALTER TABLE users ADD COLUMN reset_token TEXT');
 addCol('ALTER TABLE users ADD COLUMN reset_token_expires TEXT');
+addCol('ALTER TABLE user_profiles ADD COLUMN study_start_time TEXT DEFAULT "07:00"');
+addCol('ALTER TABLE user_profiles ADD COLUMN study_end_time TEXT DEFAULT "17:00"');
 
 module.exports = db;

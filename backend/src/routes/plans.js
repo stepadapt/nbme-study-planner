@@ -58,7 +58,7 @@ router.post('/', (req, res) => {
     JSON.stringify(profileSnapshot)
   );
 
-  res.status(201).json({ id: result.lastInsertRowid });
+  res.status(201).json({ id: result.lastInsertRowid, createdAt: new Date().toISOString() });
 });
 
 module.exports = router;

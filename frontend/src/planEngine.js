@@ -1,5 +1,116 @@
 import { EXAMS, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS } from './data.js';
 
+// ── Time-block helpers ────────────────────────────────────────────────
+
+function parseMinutes(t) {
+  // "07:00" → 420
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+function fmt12(mins) {
+  // 570 → "9:30 AM"
+  const h24 = Math.floor(mins / 60) % 24;
+  const mm = mins % 60;
+  const ampm = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${mm.toString().padStart(2, '0')} ${ampm}`;
+}
+
+export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00') {
+  const windowStart = parseMinutes(startTime);
+  const windowEnd = parseMinutes(endTime);
+  const windowMins = Math.max(1, windowEnd - windowStart);
+  const midpoint = windowStart + Math.floor(windowMins / 2);
+
+  // Total study minutes from block tasks
+  const totalStudyMins = blocks.reduce((sum, b) => {
+    return sum + b.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0);
+  }, 0);
+
+  const BREAK_INTERVAL = 120; // 15-min break every 2h of study
+  const LUNCH_DURATION = 30;
+  const SHORT_BREAK = 15;
+
+  // Estimate total time including breaks
+  const numShortBreaks = Math.max(0, Math.floor(totalStudyMins / BREAK_INTERVAL));
+  // lunch replaces one break if window spans midpoint
+  const needsLunch = windowMins >= 240;
+  const estimatedTotal = totalStudyMins + numShortBreaks * SHORT_BREAK + (needsLunch ? LUNCH_DURATION : 0);
+
+  // Scale blocks to fit window if they overflow
+  const scale = estimatedTotal > windowMins ? (windowMins - (numShortBreaks * SHORT_BREAK + (needsLunch ? LUNCH_DURATION : 0))) / Math.max(1, totalStudyMins) : 1;
+
+  let cursor = windowStart;
+  let studyAccum = 0; // track study mins since last break
+  let lunchInserted = false;
+  const result = [];
+
+  for (const block of blocks) {
+    const blockMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) * scale);
+
+    // Check if we should insert lunch at midpoint before this block
+    if (needsLunch && !lunchInserted && cursor + blockMins > midpoint) {
+      const lunchStart = cursor;
+      const lunchEnd = cursor + LUNCH_DURATION;
+      result.push({ type: 'break', label: 'Lunch break', startTime: fmt12(lunchStart), endTime: fmt12(lunchEnd), durationMinutes: LUNCH_DURATION });
+      cursor = lunchEnd;
+      lunchInserted = true;
+      studyAccum = 0;
+    }
+
+    // Check if we need a short break (every 2h of study)
+    if (studyAccum >= BREAK_INTERVAL) {
+      const brStart = cursor;
+      const brEnd = cursor + SHORT_BREAK;
+      result.push({ type: 'break', label: 'Short break', startTime: fmt12(brStart), endTime: fmt12(brEnd), durationMinutes: SHORT_BREAK });
+      cursor = brEnd;
+      studyAccum = 0;
+    }
+
+    const blockStart = cursor;
+    const blockEnd = cursor + blockMins;
+    result.push({ ...block, startTime: fmt12(blockStart), endTime: fmt12(blockEnd), durationMinutes: blockMins });
+    cursor = blockEnd;
+    studyAccum += blockMins;
+  }
+
+  return result;
+}
+
+export function findTodayInPlan(plan, planCreatedAt) {
+  if (!plan || !planCreatedAt) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const created = new Date(planCreatedAt);
+  created.setHours(0, 0, 0, 0);
+  const dayOffset = Math.floor((today - created) / 86400000) + 1;
+
+  for (const week of (plan.weeks || [])) {
+    for (const day of (week.days || [])) {
+      if (day.calendarDay === dayOffset) {
+        return { day, week };
+      }
+    }
+  }
+  return null;
+}
+
+export function calcPlanProgress(plan, planCreatedAt, examDate) {
+  if (!plan || !planCreatedAt) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const created = new Date(planCreatedAt);
+  created.setHours(0, 0, 0, 0);
+  const daysPassed = Math.floor((today - created) / 86400000);
+
+  const totalDays = plan.totalCalendarDays || 0;
+  const completedDays = Math.max(0, Math.min(daysPassed, totalDays));
+  const percent = totalDays > 0 ? Math.round((completedDays / totalDays) * 100) : 0;
+
+  return { completedDays, totalDays, percent };
+}
+
 export function getTopSubTopics(category, count = 5) {
   const subs = SUB_TOPICS[category];
   if (!subs) return [];
