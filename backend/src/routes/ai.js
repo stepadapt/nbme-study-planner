@@ -58,8 +58,8 @@ Rules:
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1024,
       messages: [{
         role: 'user',
         content: [fileBlock, { type: 'text', text: promptText }],
@@ -105,8 +105,8 @@ router.post('/chat', async (req, res) => {
 
   try {
     const stream = anthropic.messages.stream({
-      model: 'claude-opus-4-5',
-      max_tokens: 2048,
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1024,
       system: systemPrompt,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
     });
