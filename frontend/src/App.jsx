@@ -2,10 +2,14 @@ import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './AuthContext.jsx';
 import AuthPage from './pages/AuthPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
+import AdminPage from './pages/AdminPage.jsx';
 import StudyPlanner from './pages/StudyPlanner.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import TermsModal from './pages/TermsPage.jsx';
 import { api } from './api.js';
+
+// Admin portal — accessible via ?admin in the URL, completely separate from normal app flow
+const IS_ADMIN_ROUTE = new URLSearchParams(window.location.search).has('admin');
 
 // Parse ?action=xxx&token=xxx from URL
 function getUrlParams() {
@@ -128,6 +132,7 @@ function AppContent() {
 }
 
 export default function App() {
+  if (IS_ADMIN_ROUTE) return <AdminPage />;
   return (
     <AuthProvider>
       <AppContent />

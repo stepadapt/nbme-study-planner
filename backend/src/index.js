@@ -11,6 +11,7 @@ const planRoutes = require('./routes/plans');
 const aiRoutes = require('./routes/ai');
 const scheduleRoutes = require('./routes/schedule');
 const exportRoutes = require('./routes/export');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,6 +64,15 @@ const aiScreenshotLimiter = rateLimit({
   message: { error: 'Screenshot parse limit reached. Please wait an hour or enter scores manually.' },
 });
 
+// Admin: 20 requests per 15 min per IP — tight window, wrong key still burns attempts
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin requests. Please wait 15 minutes.' },
+});
+
 // ── Middleware ───────────────────────────────────────────────────────
 app.use(globalLimiter);
 app.use(cors({
@@ -85,6 +95,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/admin', adminLimiter, adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
