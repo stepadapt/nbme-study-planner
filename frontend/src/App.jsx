@@ -122,6 +122,7 @@ function AppContent() {
             : <LandingPage
                 onGetStarted={() => { setAuthMode('signup'); setShowAuth(true); }}
                 onSignIn={() => { setAuthMode('login'); setShowAuth(true); }}
+                onShowTerms={setTermsPage}
               />
           )
       }

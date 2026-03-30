@@ -238,7 +238,7 @@ function Testimonial({ quote, name, school, score, visible, delay = 0 }) {
 }
 
 // ── Main Landing Page ─────────────────────────────────────────────────────
-export default function LandingPage({ onGetStarted, onSignIn }) {
+export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
   const scrollY = useScrollY();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -588,10 +588,12 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
           </div>
           <div style={{ fontSize: 13, color: LIGHT }}>© {new Date().getFullYear()} StepAdapt. All rights reserved.</div>
           <div style={{ display: 'flex', gap: 20 }}>
-            {['Terms', 'Privacy', 'Contact'].map(l => (
-              <a key={l} href="#" style={{ fontSize: 13, color: LIGHT, textDecoration: 'none', transition: 'color 0.2s' }}
-                onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = LIGHT}>{l}</a>
-            ))}
+            <button onClick={() => onShowTerms?.('terms')} style={{ fontSize: 13, color: LIGHT, textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: '"DM Sans", sans-serif', transition: 'color 0.2s' }}
+              onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = LIGHT}>Terms</button>
+            <button onClick={() => onShowTerms?.('privacy')} style={{ fontSize: 13, color: LIGHT, textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: '"DM Sans", sans-serif', transition: 'color 0.2s' }}
+              onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = LIGHT}>Privacy</button>
+            <a href="mailto:devin@stepadapt.com" style={{ fontSize: 13, color: LIGHT, textDecoration: 'none', transition: 'color 0.2s' }}
+              onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = LIGHT}>Contact</a>
           </div>
         </div>
       </footer>
