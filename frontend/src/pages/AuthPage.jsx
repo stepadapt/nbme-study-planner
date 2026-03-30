@@ -21,9 +21,9 @@ const S = {
   checkLabel: { fontSize: 13, fontFamily: '"DM Sans", sans-serif', color: '#6b6560', lineHeight: 1.5, cursor: 'pointer' },
 };
 
-export default function AuthPage({ onShowTerms }) {
+export default function AuthPage({ onShowTerms, initialMode = 'login', onBackToLanding }) {
   const { login, signup } = useAuth();
-  const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+  const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot'
   const [form, setForm] = useState({ email: '', password: '', name: '', agreedToTerms: false });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -60,6 +60,14 @@ export default function AuthPage({ onShowTerms }) {
   return (
     <div style={S.app}>
       <div style={S.card}>
+        {onBackToLanding && (
+          <button
+            onClick={onBackToLanding}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8a857e', fontSize: 13, fontFamily: '"DM Sans", sans-serif', padding: '0 0 16px', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            ← Back to home
+          </button>
+        )}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <img src="/logo.svg" alt="StepAdapt" style={{ width: 200, marginBottom: 16 }} />
           <p style={S.sub}>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './AuthContext.jsx';
 import AuthPage from './pages/AuthPage.jsx';
+import LandingPage from './pages/LandingPage.jsx';
 import StudyPlanner from './pages/StudyPlanner.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import TermsModal from './pages/TermsPage.jsx';
@@ -59,6 +60,8 @@ function AppContent() {
   const [urlToken, setUrlToken] = useState(() => getUrlParams().token);
   const [termsPage, setTermsPage] = useState(null); // null | 'terms' | 'privacy'
   const [showVerifyBanner, setShowVerifyBanner] = useState(false);
+  const [showAuth, setShowAuth] = useState(false); // landing → auth transition
+  const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'login'
 
   // Handle email verification URL
   useEffect(() => {
@@ -110,7 +113,13 @@ function AppContent() {
 
       {user
         ? <StudyPlanner onShowTerms={setTermsPage} />
-        : <AuthPage onShowTerms={setTermsPage} />
+        : (showAuth
+            ? <AuthPage onShowTerms={setTermsPage} initialMode={authMode} onBackToLanding={() => setShowAuth(false)} />
+            : <LandingPage
+                onGetStarted={() => { setAuthMode('signup'); setShowAuth(true); }}
+                onSignIn={() => { setAuthMode('login'); setShowAuth(true); }}
+              />
+          )
       }
 
       {termsPage && <TermsModal page={termsPage} onClose={() => setTermsPage(null)} />}
