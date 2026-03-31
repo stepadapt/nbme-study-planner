@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
-import { generatePlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
+import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import Chat from '../components/Chat.jsx';
@@ -24,6 +24,8 @@ export default function StudyPlanner({ onShowTerms }) {
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
+  const [weakSystems, setWeakSystems] = useState([]);  // first-timer self-assessment
+  const [uworldPct, setUworldPct] = useState('');       // first-timer self-assessment
   const [stickingPoints, setStickingPoints] = useState([]);
   const [gapTypes, setGapTypes] = useState({});
   const [plan, setPlan] = useState(null);
@@ -410,6 +412,19 @@ export default function StudyPlanner({ onShowTerms }) {
 
         <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 80px', opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(12px)', transition: 'all 0.3s ease' }}>
 
+          {/* First-timer nudge banner */}
+          {plan?.firstTimer && assessments.length === 0 && (
+            <div style={{ background: '#fffbeb', border: '1px solid #f6c90e60', borderRadius: 12, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 18 }}>🧭</span>
+              <span style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#92600a', lineHeight: 1.4 }}>
+                <strong>Starter plan active.</strong> Take your diagnostic NBME (scheduled early this week), then add your scores to unlock a fully personalised plan.
+              </span>
+              <button style={{ ...S.btn, background: 'none', border: '1px solid #f6c90e80', color: '#92600a', padding: '6px 12px', fontSize: 12 }} onClick={() => navigate("scores")}>
+                Enter scores →
+              </button>
+            </div>
+          )}
+
           {/* Row 1: Exam countdown + Score improvement */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
             {/* Exam countdown */}
@@ -723,7 +738,106 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate("scores")}>Continue →</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate(assessments.length === 0 ? "self-assessment" : "scores")}>Continue →</button></div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── SELF-ASSESSMENT (first-timer alternate path) ──────────────────
+  if (screen === "self-assessment") {
+    const uworldNum = uworldPct !== '' && !isNaN(Number(uworldPct)) ? Number(uworldPct) : null;
+    const uworldFeedback = uworldNum === null ? null
+      : uworldNum >= 65 ? { icon: '✅', text: 'Solid baseline — plan will maintain strengths and target gaps.', color: BRAND.green }
+      : uworldNum >= 50 ? { icon: '📊', text: 'Decent start — plan will build on areas where you\'re losing points.', color: '#D85A30' }
+      : { icon: '📚', text: 'Good place to start — content-heavy early blocks will fill the gaps.', color: '#2980b9' };
+
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
+        <div style={S.wrap}>
+          <h1 style={S.h1}>Before your first NBME</h1>
+          <p style={S.sub}>Tell me where you're starting from — I'll build a diagnostic-first plan that gets you real data fast.</p>
+
+          {/* Weak systems */}
+          <div style={S.card}>
+            <label style={S.label}>Which systems felt weakest in coursework?</label>
+            <p style={{ ...S.muted, marginBottom: 14 }}>Select all that apply. These will be weighted as focus blocks in your starter plan.</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {STEP1_SYSTEM_CATEGORIES.map(sys => {
+                const on = weakSystems.includes(sys);
+                return (
+                  <div key={sys} style={{ ...S.chip, ...(on ? S.chipOn : {}), fontSize: 13 }}
+                    onClick={() => setWeakSystems(prev => on ? prev.filter(s => s !== sys) : [...prev, sys])}>
+                    {sys}
+                  </div>
+                );
+              })}
+            </div>
+            {weakSystems.length === 0 && (
+              <p style={{ ...S.muted, fontSize: 12, marginTop: 12 }}>No selection = plan treats all systems equally to start.</p>
+            )}
+          </div>
+
+          {/* UWorld % */}
+          <div style={S.card}>
+            <label style={S.label}>UWorld cumulative % (optional)</label>
+            <p style={{ ...S.muted, marginBottom: 12 }}>If you've started UWorld, enter your current cumulative % correct. Leave blank if you haven't begun.</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <input
+                type="number" min={0} max={100}
+                style={{ ...S.input, maxWidth: 110 }}
+                placeholder="e.g. 58"
+                value={uworldPct}
+                onChange={e => setUworldPct(e.target.value)}
+              />
+              <span style={{ ...S.muted, fontSize: 13 }}>%</span>
+            </div>
+            {uworldFeedback && (
+              <p style={{ ...S.muted, fontSize: 13, marginTop: 10, color: uworldFeedback.color, fontWeight: 500 }}>
+                {uworldFeedback.icon} {uworldFeedback.text}
+              </p>
+            )}
+          </div>
+
+          {/* Callout explaining the plan */}
+          <div style={{ ...S.card, background: '#fefcf8', border: '1.5px solid #e8dcc8', marginBottom: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#b45309', fontFamily: S.f, marginBottom: 8 }}>📋 What happens next</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {[
+                { icon: '1.', text: 'You get a starter plan broadly covering all systems — weighted toward your self-reported weak areas.' },
+                { icon: '2.', text: 'A diagnostic practice NBME is scheduled early in your first week (days 5–7). Take it under real test conditions.' },
+                { icon: '3.', text: 'Enter your NBME scores and the app switches to a fully data-driven, personalised plan.' },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#b45309', fontFamily: S.f, minWidth: 20, paddingTop: 1 }}>{item.icon}</span>
+                  <span style={{ fontSize: 13, fontFamily: S.f, color: '#6b6560', lineHeight: 1.5 }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+            <button style={{ ...S.btn, ...S.sec, fontSize: 13 }} onClick={() => navigate("scores")}>
+              I have NBME scores already →
+            </button>
+            <button style={{ ...S.btn, ...S.pri }} onClick={async () => {
+              const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
+              setPlan(generatedPlan);
+              setExpandedWeek(0);
+              api.plans.save({
+                planData: generatedPlan,
+                profileSnapshot: { ...profile, firstTimerData: { weakSystems, uworldPct } },
+                assessmentId: null,
+              }).then(result => {
+                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
+              }).catch(() => {});
+              navigate("plan");
+            }}>
+              Build my starter plan →
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1012,6 +1126,21 @@ export default function StudyPlanner({ onShowTerms }) {
       <div style={S.wrap}>
         <h1 style={S.h1}>Your study plan</h1>
         <p style={S.sub}>Question-driven {plan.totalWeeks}-week plan. Focused blocks attack weaknesses, random blocks maintain everything, NBMEs recalibrate.</p>
+
+        {plan.firstTimer && assessments.length === 0 && (
+          <div style={{ background: '#fffbeb', border: '1.5px solid #f6c90e60', borderRadius: 14, padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 22, flexShrink: 0 }}>🧭</span>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 4 }}>Starter plan — diagnostic NBME unlocks your full personalisation</div>
+              <div style={{ fontSize: 13, color: '#92600a', fontFamily: S.f, lineHeight: 1.5 }}>
+                This plan is seeded from your self-assessment. Check your schedule for an early diagnostic NBME (days 5–7). Once you take it and enter your scores, the app rebuilds your plan around real performance data.
+              </div>
+              <button style={{ ...S.btn, background: '#f6c90e30', color: '#92600a', border: '1px solid #f6c90e80', padding: '7px 14px', fontSize: 12, marginTop: 10 }} onClick={() => navigate("scores")}>
+                Enter NBME scores now →
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 600, fontFamily: S.f, color: "#1a1816", marginBottom: 12 }}>How every day works</div>

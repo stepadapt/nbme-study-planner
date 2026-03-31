@@ -117,6 +117,61 @@ export function getTopSubTopics(category, count = 5) {
   return [...subs].sort((a, b) => b.yield - a.yield).slice(0, count);
 }
 
+export function generateFirstTimerPlan(profile, weakSystems = [], uworldPct = null) {
+  // Derive a baseline score from UWorld% or default to 55
+  const baseline = (uworldPct != null && uworldPct !== '' && !isNaN(Number(uworldPct)))
+    ? Math.max(20, Math.min(80, Number(uworldPct)))
+    : 55;
+
+  // Build synthetic scores: weak systems 20 pts below baseline, others 5 pts above
+  const scores = {};
+  for (const cat of STEP1_CATEGORIES) {
+    const isWeak = weakSystems.includes(cat);
+    scores[cat] = isWeak ? Math.max(15, baseline - 20) : Math.min(75, baseline + 5);
+  }
+
+  // Weak systems are flagged sticking points; first-timers are mostly in knowledge-gap mode
+  const stickingPoints = [...weakSystems];
+  const gapTypes = {};
+  for (const cat of STEP1_CATEGORIES) {
+    gapTypes[cat] = weakSystems.includes(cat) ? 'knowledge' : 'application';
+  }
+
+  const plan = generatePlan(profile, scores, stickingPoints, gapTypes);
+
+  // Inject a diagnostic NBME at day 6 (prefer) → 5 → 7 → 8
+  // This gives them real data to drive the first proper plan
+  const TARGET_DAYS = [6, 5, 7, 8];
+  let nbmeInjected = false;
+  outer: for (const targetDay of TARGET_DAYS) {
+    for (const week of plan.weeks) {
+      for (let i = 0; i < week.days.length; i++) {
+        const day = week.days[i];
+        if (day.calendarDay === targetDay && day.dayType === 'study') {
+          week.days[i] = {
+            calendarDay: targetDay,
+            dayType: 'nbme',
+            totalQuestions: 0,
+            blocks: [{
+              type: 'nbme',
+              label: 'Diagnostic Practice NBME',
+              tasks: [
+                { resource: 'NBME', activity: 'Full-length diagnostic exam — establishes your real baseline, no pressure on score', hours: 4 },
+                { resource: 'Self-review', activity: 'Review scores and enter them into the app to unlock your fully personalised plan', hours: 1.5 },
+              ],
+            }],
+          };
+          plan.nbmeDays++;
+          nbmeInjected = true;
+          break outer;
+        }
+      }
+    }
+  }
+
+  return { ...plan, firstTimer: true };
+}
+
 export function getPerformanceLevel(score) {
   if (score <= 25) return { label: "Needs attention", color: "#c0392b" };
   if (score <= 50) return { label: "Below average", color: "#e67e22" };
