@@ -50,6 +50,7 @@ const aiChatLimiter = rateLimit({
   max: 40,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
   keyGenerator: (req) => req.user?.userId?.toString() || req.ip,
   message: { error: 'Chat rate limit reached. Please wait 15 minutes before sending more messages.' },
 });
@@ -60,6 +61,7 @@ const aiScreenshotLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
   keyGenerator: (req) => req.user?.userId?.toString() || req.ip,
   message: { error: 'Screenshot parse limit reached. Please wait an hour or enter scores manually.' },
 });

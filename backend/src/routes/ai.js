@@ -67,9 +67,12 @@ Rules:
     return res.status(503).json({ error: 'AI service is not configured. Please contact support.' });
   }
 
+  // PDFs require claude-3-5-sonnet (document type support); images work with haiku (cheaper)
+  const model = isPDF ? 'claude-3-5-sonnet-20241022' : 'claude-3-5-haiku-20241022';
+
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model,
       max_tokens: 1024,
       messages: [{
         role: 'user',
@@ -94,11 +97,13 @@ Rules:
 
     res.json(parsed);
   } catch (err) {
-    console.error('Screenshot parse error:', err.status, err.message);
+    // Log full error details for debugging
+    console.error('Screenshot parse error:', err.status, err.message, JSON.stringify(err.error || err.body || ''));
     if (err.status === 401) {
       return res.status(503).json({ error: 'AI service authentication failed. Check the ANTHROPIC_API_KEY in Railway Variables.' });
     }
     if (err.status === 400) {
+      console.error('Anthropic 400 details:', JSON.stringify(err.error || err.body || err.headers || ''));
       return res.status(400).json({ error: 'File could not be read by AI. Try a clearer screenshot or enter scores manually.' });
     }
     res.status(500).json({ error: 'AI parsing failed. Please enter scores manually.' });
