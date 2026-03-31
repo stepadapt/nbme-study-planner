@@ -6,7 +6,13 @@ const { requireAuth } = require('../auth');
 const router = express.Router();
 router.use(requireAuth);
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Warn loudly at startup if key is missing or placeholder
+const apiKey = process.env.ANTHROPIC_API_KEY;
+if (!apiKey || apiKey === 'your_anthropic_api_key_here') {
+  console.error('⚠️  ANTHROPIC_API_KEY is not set — AI parsing and chat will fail. Set it in Railway Variables.');
+}
+
+const anthropic = new Anthropic({ apiKey });
 
 // Multer — store upload in memory (max 20 MB)
 const upload = multer({
@@ -56,6 +62,11 @@ Rules:
 - If you cannot read a score clearly, omit that category
 - Return only valid JSON, no markdown code blocks, no explanation`;
 
+  // Guard: API key not configured
+  if (!apiKey || apiKey === 'your_anthropic_api_key_here') {
+    return res.status(503).json({ error: 'AI service is not configured. Please contact support.' });
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
@@ -83,7 +94,13 @@ Rules:
 
     res.json(parsed);
   } catch (err) {
-    console.error('Screenshot parse error:', err.message);
+    console.error('Screenshot parse error:', err.status, err.message);
+    if (err.status === 401) {
+      return res.status(503).json({ error: 'AI service authentication failed. Check the ANTHROPIC_API_KEY in Railway Variables.' });
+    }
+    if (err.status === 400) {
+      return res.status(400).json({ error: 'File could not be read by AI. Try a clearer screenshot or enter scores manually.' });
+    }
     res.status(500).json({ error: 'AI parsing failed. Please enter scores manually.' });
   }
 });
@@ -102,6 +119,12 @@ router.post('/chat', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
+
+  // Guard: API key not configured
+  if (!apiKey || apiKey === 'your_anthropic_api_key_here') {
+    res.write(`data: ${JSON.stringify({ error: 'AI service is not configured. Please contact support.' })}\n\n`);
+    return res.end();
+  }
 
   try {
     const stream = anthropic.messages.stream({
