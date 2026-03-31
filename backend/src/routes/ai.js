@@ -67,8 +67,8 @@ Rules:
     return res.status(503).json({ error: 'AI service is not configured. Please contact support.' });
   }
 
-  // PDFs require claude-3-5-sonnet (document type support); images work with haiku (cheaper)
-  const model = isPDF ? 'claude-3-5-sonnet-20241022' : 'claude-3-5-haiku-20241022';
+  // Both haiku-4-5 supports images and PDFs — cheapest option
+  const model = 'claude-haiku-4-5';
 
   try {
     const response = await anthropic.messages.create({
@@ -133,7 +133,7 @@ router.post('/chat', async (req, res) => {
 
   try {
     const stream = anthropic.messages.stream({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-haiku-4-5',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
