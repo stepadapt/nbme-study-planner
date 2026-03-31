@@ -50,7 +50,7 @@ const TERMS_HTML = `
 const PRIVACY_HTML = `
 <p style="color:#8a857e;font-size:13px;margin-top:0">Last updated: March 30, 2026</p>
 
-<p>This Privacy Notice for <strong>StepAdapt</strong> ("we," "us," or "our") describes how and why we might access, collect, store, use, and/or share your personal information when you use our services, including when you visit <a href="https://www.stepadapt.com" style="color:#1D9E75">www.stepadapt.com</a> or use our web application that generates USMLE and COMLEX study plans based on your practice exam scores.</p>
+<p>This Privacy Notice for <strong>StepAdapt</strong> ("we," "us," or "our") describes how and why we might access, collect, store, use, and/or share your personal information when you use our services, including when you visit <a href="https://www.stepadapt.com" style="color:#1D9E75">www.stepadapt.com</a> or use our web application that generates USMLE Step 1 study plans based on your practice exam scores.</p>
 
 <p><strong>Questions or concerns?</strong> Contact us at <a href="mailto:devin@stepadapt.com" style="color:#1D9E75">devin@stepadapt.com</a>.</p>
 

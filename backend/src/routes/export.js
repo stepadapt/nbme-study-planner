@@ -52,7 +52,7 @@ router.get('/pdf', (req, res) => {
   if (!data) return res.status(404).json({ error: 'No study plan found. Generate a plan first.' });
 
   const { plan, profile, assessments } = data;
-  const examName = profile.exam || 'Exam';
+  const examName = 'USMLE Step 1';
   const examDate = profile.examDate ? new Date(profile.examDate).toLocaleDateString() : 'Not set';
 
   const doc = new PDFDocument({ margin: 50, size: 'A4', compress: true });
@@ -157,7 +157,7 @@ router.get('/docx', async (req, res) => {
   if (!data) return res.status(404).json({ error: 'No study plan found. Generate a plan first.' });
 
   const { plan, profile, assessments } = data;
-  const examName = profile.exam || 'Exam';
+  const examName = 'USMLE Step 1';
   const examDate = profile.examDate ? new Date(profile.examDate).toLocaleDateString() : 'Not set';
 
   const children = [];

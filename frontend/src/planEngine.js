@@ -1,4 +1,4 @@
-import { EXAMS, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS } from './data.js';
+import { STEP1_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS } from './data.js';
 
 // ── Time-block helpers ────────────────────────────────────────────────
 
@@ -125,13 +125,12 @@ export function getPerformanceLevel(score) {
 }
 
 export function generatePlan(profile, scores, stickingPoints, gapTypes) {
-  const exam = EXAMS.find(e => e.id === profile.exam);
-  const weights = HIGH_YIELD_WEIGHTS[profile.exam] || {};
+  const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
   const hrs = profile.hoursPerDay || 8;
 
   let priorities = [];
-  for (const cat of exam.categories) {
+  for (const cat of STEP1_CATEGORIES) {
     const score = scores[cat] ?? 50;
     const weakness = Math.max(0, 100 - score);
     const yld = weights[cat] || 5;

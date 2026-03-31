@@ -337,7 +337,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               {[
                 { n: '500+', label: 'students' },
                 { n: '+14pts', label: 'avg score lift' },
-                { n: 'Step 1 & 2', label: 'CK supported' },
+                { n: 'Step 1', label: 'focused' },
               ].map(s => (
                 <div key={s.label}>
                   <div style={{ fontSize: 20, fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif' }}>{s.n}</div>
@@ -361,7 +361,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       {/* ── Trust band ─────────────────────────────────────────────── */}
       <div style={{ background: DARK, padding: '18px 24px' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', justifyContent: 'center', gap: 48, flexWrap: 'wrap' }}>
-          {['Built for USMLE Step 1 & Step 2 CK', 'AI-powered score analysis', 'Personalized day-by-day schedule', 'No credit card to start'].map(t => (
+          {['Built for USMLE Step 1', 'AI-powered score analysis', 'Personalized day-by-day schedule', 'No credit card to start'].map(t => (
             <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: '"DM Sans", sans-serif' }}>
               <span style={{ color: G, fontWeight: 700 }}>✓</span> {t}
             </div>
@@ -463,7 +463,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               visible={testVis} delay={100} />
             <Testimonial
               quote="I was drowning in resources and had no idea what to prioritize. StepAdapt basically built me a blueprint. The AI coach answered questions at 2am when I was panicking."
-              name="Marcus T." school="Fourth-year, Southeast University" score="Step 2 CK: 262"
+              name="Marcus T." school="Fourth-year, Southeast University" score="Step 1: 262"
               visible={testVis} delay={200} />
           </div>
         </div>

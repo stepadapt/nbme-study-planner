@@ -157,18 +157,17 @@ router.post('/chat', async (req, res) => {
 
 function buildSystemPrompt(ctx) {
   if (!ctx) {
-    return `You are an expert USMLE/COMLEX study coach. You help medical students build effective study plans, understand high-yield concepts, and optimize their exam preparation. Be direct, practical, and supportive. Keep responses concise unless the student asks for depth.`;
+    return `You are an expert USMLE Step 1 study coach. You help medical students build effective study plans, understand high-yield concepts, and optimize their Step 1 preparation. Be direct, practical, and supportive. Keep responses concise unless the student asks for depth.`;
   }
 
   const { profile, assessments, plan } = ctx;
-  const exam = profile?.exam || 'the boards';
   const examDate = profile?.examDate;
   const daysLeft = examDate ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000)) : null;
 
-  let context = `You are an expert USMLE/COMLEX study coach with deep knowledge of board exam preparation.
+  let context = `You are an expert USMLE Step 1 study coach with deep knowledge of board exam preparation.
 
 STUDENT PROFILE:
-- Exam: ${exam}
+- Exam: USMLE Step 1
 - ${daysLeft !== null ? `Days until exam: ${daysLeft}` : 'Exam date: not set'}
 - Hours per day: ${profile?.hoursPerDay || 8}h
 - Resources: ${(profile?.resources || []).join(', ') || 'not specified'}`;

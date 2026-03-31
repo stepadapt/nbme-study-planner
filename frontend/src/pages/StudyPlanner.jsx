@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { EXAMS, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
+import { STEP1_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
 import { generatePlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
@@ -20,7 +20,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ exam: "", resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00" });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00" });
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
@@ -77,7 +77,7 @@ export default function StudyPlanner({ onShowTerms }) {
   // Save profile whenever it changes (debounced)
   const profileSaveTimer = useRef(null);
   useEffect(() => {
-    if (!dataLoaded || !profile.exam) return;
+    if (!dataLoaded) return;
     clearTimeout(profileSaveTimer.current);
     profileSaveTimer.current = setTimeout(() => {
       api.profile.save(profile).catch(() => {});
@@ -142,7 +142,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Navigation ────────────────────────────────────────────────────
   const navigate = (s) => { setAnimIn(false); setTimeout(() => { setScreen(s); setAnimIn(true); }, 200); };
-  const selectedExam = EXAMS.find(e => e.id === profile.exam);
+  const selectedExam = { categories: STEP1_CATEGORIES };
   const previousAssessment = assessments.length > 0 ? assessments[assessments.length - 1] : null;
 
   const saveCurrentAssessment = async () => {
@@ -197,7 +197,7 @@ export default function StudyPlanner({ onShowTerms }) {
     setUploadingScreenshot(true);
     setScreenshotError('');
     try {
-      const result = await api.ai.parseScreenshot(file, profile.exam);
+      const result = await api.ai.parseScreenshot(file, 'step1');
       if (result.formName) setNbmeForm(result.formName);
       if (result.scores && typeof result.scores === 'object') {
         const cats = selectedExam?.categories || [];
@@ -333,7 +333,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const examPassed = daysUntilExam !== null && daysUntilExam === 0 && examDate && today >= examDate;
 
     // Score trend from assessments
-    const selectedExamLocal = EXAMS.find(e => e.id === profile.exam);
+    const selectedExamLocal = { categories: STEP1_CATEGORIES };
     const scoreTrend = assessments.map(a => {
       const cats = selectedExamLocal?.categories || Object.keys(a.scores || {});
       const vals = cats.map(c => Number(a.scores[c] || 0)).filter(v => v > 0);
@@ -647,7 +647,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ─── ONBOARDING ────────────────────────────────────────────────────
   if (screen === "onboarding") {
-    const ok = profile.exam && profile.resources.length > 0 && profile.examDate;
+    const ok = profile.resources.length > 0 && profile.examDate;
     return (
       <div style={S.app}>
         <VerifyBanner />
@@ -655,11 +655,6 @@ export default function StudyPlanner({ onShowTerms }) {
         <div style={S.wrap}>
           <h1 style={S.h1}>Set up your profile</h1><p style={S.sub}>Your situation shapes the plan.</p>
           <div style={S.card}>
-            <label style={S.label}>Target exam</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
-              {EXAMS.map(e => <div key={e.id} style={{ ...S.chip, ...(profile.exam === e.id ? S.chipOn : {}) }} onClick={() => { setProfile(p => ({ ...p, exam: e.id })); setScores({}); }}>{e.name}</div>)}
-            </div>
-            <hr style={S.hr} />
             <label style={S.label}>Resources available</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
               {RESOURCES.map(r => { const on = profile.resources.includes(r.id); return (
@@ -827,7 +822,7 @@ export default function StudyPlanner({ onShowTerms }) {
             <h1 style={S.h1}>Here's what I see</h1>
             <p style={S.sub}>{previousAssessment ? `Compared to ${previousAssessment.formName} — here's what shifted.` : "Weakest areas, ranked by potential score impact."}</p>
             <div style={S.card}>{sorted.length === 0 ? <p style={S.muted}>Strong across the board.</p> : <div style={{ display: "grid", gap: 4 }}>{sorted.map(cat => {
-              const s = scores[cat] ?? 50; const yld = HIGH_YIELD_WEIGHTS[profile.exam]?.[cat] || 5;
+              const s = scores[cat] ?? 50; const yld = HIGH_YIELD_WEIGHTS[cat] || 5;
               const delta = getScoreDelta(cat);
               const subs = getTopSubTopics(cat, 5);
               return (<div key={cat} style={{ padding: "10px 0", borderBottom: "1px solid #f0ece6" }}>
