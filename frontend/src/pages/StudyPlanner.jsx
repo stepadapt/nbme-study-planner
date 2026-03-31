@@ -307,7 +307,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // Logo for top bar (compact)
   const LogoMark = () => (
-    <img src="/logo.svg" alt="StepAdapt" style={{ height: 32 }} />
+    <img src="/logo.png" alt="StepAdapt" style={{ height: 32 }} />
   );
 
   // Footer with legal links
@@ -617,7 +617,7 @@ export default function StudyPlanner({ onShowTerms }) {
       <div style={S.topBar}><LogoMark /><UserBar /></div>
       <div style={S.wrap}>
         <div style={{ textAlign: "center", padding: "40px 0 40px" }}>
-          <img src="/logo.svg" alt="StepAdapt" style={{ width: 240, marginBottom: 24 }} />
+          <img src="/logo.png" alt="StepAdapt" style={{ width: 240, marginBottom: 24 }} />
           <p style={{ ...S.sub, maxWidth: 440, margin: "0 auto 32px", fontSize: 16 }}>
             A question-driven study engine. Do questions, find gaps, fix them, repeat.
           </p>

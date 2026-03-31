@@ -69,7 +69,7 @@ export default function AuthPage({ onShowTerms, initialMode = 'login', onBackToL
           </button>
         )}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img src="/logo.svg" alt="StepAdapt" style={{ width: 200, marginBottom: 16 }} />
+          <img src="/logo.png" alt="StepAdapt" style={{ width: 200, marginBottom: 16 }} />
           <p style={S.sub}>
             {mode === 'login' && 'Sign in to your account'}
             {mode === 'signup' && 'Create a free account'}

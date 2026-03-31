@@ -258,7 +258,7 @@ export default function AdminPage() {
       <div style={{ minHeight: '100vh', background: BG, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: '"DM Sans", sans-serif' }}>
         <div style={{ background: WHITE, borderRadius: 20, padding: '40px 36px', boxShadow: '0 4px 40px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.08)', width: '100%', maxWidth: 400 }}>
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: `linear-gradient(135deg, ${G}, ${G2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontSize: 22, fontWeight: 800, margin: '0 auto 14px' }}>S</div>
+            <img src="/logo.png" alt="StepAdapt" style={{ height: 48, margin: '0 auto 14px', display: 'block' }} />
             <div style={{ fontSize: 20, fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif' }}>StepAdapt Admin</div>
             <div style={{ fontSize: 13, color: LIGHT, marginTop: 6 }}>Enter your admin key to continue</div>
           </div>
@@ -303,8 +303,7 @@ export default function AdminPage() {
       {/* Top bar */}
       <div style={{ background: WHITE, borderBottom: '1px solid rgba(0,0,0,0.08)', padding: '0 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56, position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 7, background: `linear-gradient(135deg, ${G}, ${G2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontWeight: 800, fontSize: 14 }}>S</div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: DARK }}>StepAdapt</span>
+          <img src="/logo.png" alt="StepAdapt" style={{ height: 30 }} />
           <span style={{ fontSize: 12, background: '#dc26261a', color: DANGER, borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>ADMIN</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>

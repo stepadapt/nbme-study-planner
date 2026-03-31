@@ -42,7 +42,7 @@ export default function ResetPassword({ token, onDone }) {
     <div style={S.app}>
       <div style={S.card}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img src="/logo.svg" alt="StepAdapt" style={{ width: 180, marginBottom: 16 }} />
+          <img src="/logo.png" alt="StepAdapt" style={{ width: 180, marginBottom: 16 }} />
           <h1 style={S.h1}>Set a new password</h1>
           <p style={S.sub}>Choose a strong password for your account</p>
         </div>

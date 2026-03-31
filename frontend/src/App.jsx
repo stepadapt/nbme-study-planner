@@ -93,7 +93,7 @@ function AppContent() {
         minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         background: 'linear-gradient(170deg, #f4fbf8 0%, #edf7f3 100%)', gap: 16,
       }}>
-        <img src="/logo.svg" alt="StepAdapt" style={{ width: 200 }} />
+        <img src="/logo.png" alt="StepAdapt" style={{ width: 200 }} />
         <div style={{ fontFamily: '"DM Sans", sans-serif', fontSize: 14, color: '#8a857e' }}>Loading…</div>
       </div>
     );

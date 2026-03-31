@@ -265,10 +265,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg, ${G}, ${G2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontWeight: 800, fontSize: 16 }}>S</div>
-            <span style={{ fontSize: 18, fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif', letterSpacing: '-0.01em' }}>StepAdapt</span>
-          </div>
+          <img src="/logo.png" alt="StepAdapt" style={{ height: 42 }} />
 
           {/* Desktop links */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
@@ -582,10 +579,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       {/* ── Footer ─────────────────────────────────────────────────── */}
       <footer style={{ borderTop: '1px solid rgba(0,0,0,0.08)', padding: '40px 24px', background: BG }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 7, background: `linear-gradient(135deg, ${G}, ${G2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontWeight: 800, fontSize: 14 }}>S</div>
-            <span style={{ fontSize: 15, fontWeight: 700, color: DARK, fontFamily: '"Source Serif 4", serif' }}>StepAdapt</span>
-          </div>
+          <img src="/logo.png" alt="StepAdapt" style={{ height: 36 }} />
           <div style={{ fontSize: 13, color: LIGHT }}>© {new Date().getFullYear()} StepAdapt. All rights reserved.</div>
           <div style={{ display: 'flex', gap: 20 }}>
             <button onClick={() => onShowTerms?.('terms')} style={{ fontSize: 13, color: LIGHT, textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: '"DM Sans", sans-serif', transition: 'color 0.2s' }}
