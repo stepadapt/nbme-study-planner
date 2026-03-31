@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { STEP1_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
+import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
 import { generatePlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
@@ -781,27 +781,35 @@ export default function StudyPlanner({ onShowTerms }) {
             <label style={S.label}>NBME form (optional)</label>
             <input style={{ ...S.input, maxWidth: 200 }} placeholder="e.g. NBME 26" value={nbmeForm} onChange={e => setNbmeForm(e.target.value)} />
           </div>
-          <div style={S.card}><div style={{ display: "grid", gap: 10 }}>
-            {cats.map(cat => {
-              const val = scores[cat] ?? "";
-              const perf = val !== "" ? getPerformanceLevel(Number(val)) : null;
-              const prevScore = previousAssessment?.scores[cat];
-              const delta = val !== "" && prevScore !== undefined ? Number(val) - prevScore : null;
-              return (
-                <div key={cat} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
-                  <div style={{ flex: 1, fontSize: 14, fontFamily: S.f, fontWeight: 500 }}>
-                    {cat}
-                    {prevScore !== undefined && <span style={{ fontSize: 11, color: "#8a857e", fontWeight: 400 }}> (was {prevScore}%)</span>}
-                  </div>
-                  <div style={{ width: 100 }}><ProgressBar value={Number(val) || 0} color={perf?.color || "#d5d0c9"} /></div>
-                  <input type="number" min={0} max={100} style={{ ...S.input, width: 60, padding: "8px 8px", textAlign: "center", fontSize: 14 }} placeholder="—" value={val}
-                    onChange={e => { const v = e.target.value; setScores(s => ({ ...s, [cat]: v === "" ? "" : Math.min(100, Math.max(0, Number(v))) })); }} />
-                  {delta !== null && <span style={{ ...S.tag, minWidth: 42, textAlign: "center", background: delta > 5 ? "#27ae6018" : delta < -3 ? "#c0392b18" : "#6b656010", color: delta > 5 ? "#27ae60" : delta < -3 ? "#c0392b" : "#6b6560" }}>{delta > 0 ? "+" : ""}{delta}</span>}
-                  {delta === null && perf && <span style={{ ...S.tag, background: perf.color + "18", color: perf.color, minWidth: 42, textAlign: "center" }}>{perf.label}</span>}
-                </div>
-              );
-            })}
-          </div></div>
+          {[
+            { label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES },
+            { label: "Performance by Discipline", cats: STEP1_DISCIPLINE_CATEGORIES },
+          ].map(group => (
+            <div key={group.label} style={{ ...S.card, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#b45309", fontFamily: S.f, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>{group.label}</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {group.cats.map(cat => {
+                  const val = scores[cat] ?? "";
+                  const perf = val !== "" ? getPerformanceLevel(Number(val)) : null;
+                  const prevScore = previousAssessment?.scores[cat];
+                  const delta = val !== "" && prevScore !== undefined ? Number(val) - prevScore : null;
+                  return (
+                    <div key={cat} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #f0ece4" }}>
+                      <div style={{ flex: 1, fontSize: 14, fontFamily: S.f, fontWeight: 500 }}>
+                        {cat}
+                        {prevScore !== undefined && <span style={{ fontSize: 11, color: "#8a857e", fontWeight: 400 }}> (was {prevScore}%)</span>}
+                      </div>
+                      <div style={{ width: 100 }}><ProgressBar value={Number(val) || 0} color={perf?.color || "#d5d0c9"} /></div>
+                      <input type="number" min={0} max={100} style={{ ...S.input, width: 60, padding: "8px 8px", textAlign: "center", fontSize: 14 }} placeholder="—" value={val}
+                        onChange={e => { const v = e.target.value; setScores(s => ({ ...s, [cat]: v === "" ? "" : Math.min(100, Math.max(0, Number(v))) })); }} />
+                      {delta !== null && <span style={{ ...S.tag, minWidth: 42, textAlign: "center", background: delta > 5 ? "#27ae6018" : delta < -3 ? "#c0392b18" : "#6b656010", color: delta > 5 ? "#27ae60" : delta < -3 ? "#c0392b" : "#6b6560" }}>{delta > 0 ? "+" : ""}{delta}</span>}
+                      {delta === null && perf && <span style={{ ...S.tag, background: perf.color + "18", color: perf.color, minWidth: 42, textAlign: "center" }}>{perf.label}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
             <button style={{ ...S.btn, ...S.sec }} onClick={() => { const d = {}; cats.forEach(c => { d[c] = Math.floor(Math.random() * 60) + 20; }); setScores(d); }}>Demo scores</button>
             <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => { setAssessmentStep(0); navigate("assessment"); }}>Analyze →</button>

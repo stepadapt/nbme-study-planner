@@ -39,27 +39,47 @@ router.post('/parse-screenshot', upload.single('screenshot'), async (req, res) =
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } }
     : { type: 'image', source: { type: 'base64', media_type: mediaType, data: fileData } };
 
-  const promptText = `This is ${isPDF ? 'a PDF' : 'a screenshot'} of an NBME practice exam score report${examId ? ` for ${examId}` : ''}.
+  const promptText = `This is ${isPDF ? 'a PDF' : 'a screenshot'} of a USMLE Step 1 NBME CBSSA practice exam score report${examId ? ` for ${examId}` : ''}.
 
-Please extract all category/discipline scores from this report.
+Extract the scores for every category listed in the report and map them to the closest matching name from the lists below.
+
+PERFORMANCE BY SYSTEM categories (use these exact names):
+- "Reproductive & Endocrine Systems"
+- "Respiratory and Renal/Urinary Systems"
+- "Behavioral Health & Nervous Systems/Special Senses"
+- "Blood & Lymphoreticular/Immune Systems"
+- "Multisystem Processes & Disorders"
+- "Musculoskeletal, Skin & Subcutaneous Tissue"
+- "Cardiovascular System"
+- "Gastrointestinal System"
+
+PERFORMANCE BY DISCIPLINE categories (use these exact names):
+- "Pathology"
+- "Physiology"
+- "Microbiology & Immunology"
+- "Gross Anatomy & Embryology"
+- "Pharmacology"
+- "Behavioral Sciences"
+- "Biochemistry & Nutrition"
+- "Histology & Cell Biology"
+- "Genetics"
 
 Return ONLY a JSON object with this exact structure:
 {
-  "formName": "NBME 26" (or whatever form is shown, or null if not visible),
+  "formName": "NBME 26" (or whatever form number is shown, or null if not visible),
   "scores": {
-    "CategoryName": <integer 0-100 representing percentile or percent correct>,
+    "Exact Category Name From List Above": <integer 0-100>,
     ...
   },
-  "totalScore": <overall score if shown, or null>,
+  "totalScore": <overall percent correct or predicted score if shown, or null>,
   "notes": "any important observations (e.g., predicted score, passing threshold)" or null
 }
 
 Rules:
-- Use the exact category names as shown in the report
-- Convert all scores to 0-100 integer scale (if shown as fractions like 12/18, calculate as percentage)
-- If a score is shown as a percentile, use it directly (0-100)
-- Include ALL subject areas shown in the report
-- If you cannot read a score clearly, omit that category
+- Map each score to the EXACT category name from the lists above (closest match)
+- Scores are typically shown as fractions (e.g. 12/18) — convert to percentage: round(numerator/denominator * 100)
+- Include ALL categories you can find scores for
+- Omit any category you cannot read clearly
 - Return only valid JSON, no markdown code blocks, no explanation`;
 
   // Guard: API key not configured
