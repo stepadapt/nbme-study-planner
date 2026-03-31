@@ -91,6 +91,27 @@ export const RESOURCE_MAP = {
   "Genetics": { learning: ["pixorize", "firstaid", "bnb"], practice: ["uworld", "amboss"] },
 };
 
+// ── Practice assessment catalog ──────────────────────────────────────
+// Forms 26-33 are the current NBME CBSSA shelf. Special tests have fixed
+// placement roles in the plan (UWSA1 = midpoint, UWSA2 = predictor, etc.)
+export const PRACTICE_TESTS = [
+  // NBME CBSSA forms — higher number = newer = more representative of current exam
+  { id: 'nbme26', name: 'NBME 26', type: 'nbme', number: 26 },
+  { id: 'nbme27', name: 'NBME 27', type: 'nbme', number: 27 },
+  { id: 'nbme28', name: 'NBME 28', type: 'nbme', number: 28 },
+  { id: 'nbme29', name: 'NBME 29', type: 'nbme', number: 29 },
+  { id: 'nbme30', name: 'NBME 30', type: 'nbme', number: 30 },
+  { id: 'nbme31', name: 'NBME 31', type: 'nbme', number: 31 },
+  { id: 'nbme32', name: 'NBME 32', type: 'nbme', number: 32 },
+  { id: 'nbme33', name: 'NBME 33', type: 'nbme', number: 33 },
+  // Special assessments — each has a specific role and placement rule
+  { id: 'uwsa1',      name: 'UWSA 1',          type: 'uwsa',    role: 'midpoint',   icon: '📊' },
+  { id: 'uwsa2',      name: 'UWSA 2',          type: 'uwsa',    role: 'predictor',  icon: '🎯' },
+  { id: 'free120new', name: 'Free 120 (2024)', type: 'free120', role: 'calibrator', icon: '🆓' },
+  { id: 'free120old', name: 'Free 120 (old)',  type: 'free120', role: 'calibrator', icon: '🆓' },
+  { id: 'amboss',     name: 'AMBOSS SA',       type: 'amboss',  role: 'checkpoint', icon: '💡' },
+];
+
 export const SUB_TOPICS = {
   // ── System ──
   "Reproductive & Endocrine Systems": [

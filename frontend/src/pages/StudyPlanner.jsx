@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS } from '../data.js';
+import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS, PRACTICE_TESTS } from '../data.js';
 import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
@@ -20,7 +20,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00" });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [] });
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
@@ -118,6 +118,25 @@ export default function StudyPlanner({ onShowTerms }) {
     setScheduleChanged(true);
     clearTimeout(profileSaveTimer.current);
     profileSaveTimer.current = setTimeout(() => saveSchedule(updated), 1000);
+  };
+
+  // ── Practice test helpers ─────────────────────────────────────────
+  const toggleTakenAssessment = (id) => {
+    setProfile(p => {
+      const taken = p.takenAssessments || [];
+      const exists = taken.find(t => t.id === id);
+      if (exists) return { ...p, takenAssessments: taken.filter(t => t.id !== id) };
+      return { ...p, takenAssessments: [...taken, { id }] };
+    });
+  };
+
+  const updateTakenDate = (id, date) => {
+    setProfile(p => {
+      const taken = p.takenAssessments || [];
+      const exists = taken.find(t => t.id === id);
+      if (exists) return { ...p, takenAssessments: taken.map(t => t.id === id ? { ...t, takenDate: date || undefined } : t) };
+      return { ...p, takenAssessments: [...taken, { id, takenDate: date || undefined }] };
+    });
   };
 
   // ── Export handlers ───────────────────────────────────────────────
@@ -738,6 +757,81 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
+          {/* ── Practice tests already taken ── */}
+          <div style={{ ...S.card, marginTop: 0 }}>
+            <label style={S.label}>Practice tests already taken</label>
+            <p style={{ ...S.muted, marginBottom: 16, marginTop: -4 }}>
+              Select any you've already done — the plan will schedule what's left and won't repeat anything you took in the last 6 weeks.
+            </p>
+            {/* NBME Forms 26–33 */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8a857e', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>NBME CBSSA Forms</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {PRACTICE_TESTS.filter(t => t.type === 'nbme').map(test => {
+                  const entry = (profile.takenAssessments || []).find(t => t.id === test.id);
+                  const isTaken = !!entry;
+                  return (
+                    <div key={test.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div
+                        style={{ ...S.chip, ...(isTaken ? S.chipOn : {}), fontSize: 13 }}
+                        onClick={() => toggleTakenAssessment(test.id)}
+                      >
+                        {isTaken ? '✓ ' : ''}{test.name}
+                      </div>
+                      {isTaken && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>When?</span>
+                          <input
+                            type="date"
+                            style={{ ...S.input, padding: '4px 8px', fontSize: 11, width: 130 }}
+                            value={entry.takenDate || ''}
+                            onChange={e => updateTakenDate(test.id, e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Special tests */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8a857e', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>UW Self-Assessments & Other</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(test => {
+                  const entry = (profile.takenAssessments || []).find(t => t.id === test.id);
+                  const isTaken = !!entry;
+                  return (
+                    <div key={test.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div
+                        style={{ ...S.chip, ...(isTaken ? S.chipOn : {}), fontSize: 13 }}
+                        onClick={() => toggleTakenAssessment(test.id)}
+                      >
+                        {isTaken ? '✓ ' : ''}{test.icon ? `${test.icon} ` : ''}{test.name}
+                      </div>
+                      {isTaken && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>When?</span>
+                          <input
+                            type="date"
+                            style={{ ...S.input, padding: '4px 8px', fontSize: 11, width: 130 }}
+                            value={entry.takenDate || ''}
+                            onChange={e => updateTakenDate(test.id, e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {(profile.takenAssessments || []).length > 0 && (
+              <p style={{ ...S.muted, marginTop: 10, fontSize: 12 }}>
+                {(profile.takenAssessments || []).length} test{(profile.takenAssessments || []).length > 1 ? 's' : ''} marked as taken — scheduler will work around these.
+              </p>
+            )}
+          </div>
+
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate(assessments.length === 0 ? "self-assessment" : "scores")}>Continue →</button></div>
         </div>
       </div>
@@ -807,7 +901,7 @@ export default function StudyPlanner({ onShowTerms }) {
             <div style={{ display: 'grid', gap: 8 }}>
               {[
                 { icon: '1.', text: 'You get a starter plan broadly covering all systems — weighted toward your self-reported weak areas.' },
-                { icon: '2.', text: 'A diagnostic practice NBME is scheduled early in your first week (days 5–7). Take it under real test conditions.' },
+                { icon: '2.', text: 'A diagnostic practice NBME is scheduled early in your first week (days 1–3). Take it under real test conditions.' },
                 { icon: '3.', text: 'Enter your NBME scores and the app switches to a fully data-driven, personalised plan.' },
               ].map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -1133,7 +1227,7 @@ export default function StudyPlanner({ onShowTerms }) {
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 4 }}>Starter plan — diagnostic NBME unlocks your full personalisation</div>
               <div style={{ fontSize: 13, color: '#92600a', fontFamily: S.f, lineHeight: 1.5 }}>
-                This plan is seeded from your self-assessment. Check your schedule for an early diagnostic NBME (days 5–7). Once you take it and enter your scores, the app rebuilds your plan around real performance data.
+                This plan is seeded from your self-assessment. Check your schedule for an early diagnostic NBME (days 1–3). Once you take it and enter your scores, the app rebuilds your plan around real performance data.
               </div>
               <button style={{ ...S.btn, background: '#f6c90e30', color: '#92600a', border: '1px solid #f6c90e80', padding: '7px 14px', fontSize: 12, marginTop: 10 }} onClick={() => navigate("scores")}>
                 Enter NBME scores now →
@@ -1169,6 +1263,67 @@ export default function StudyPlanner({ onShowTerms }) {
             <p style={{ fontSize: 13, color: "#c0392b", fontFamily: S.f, margin: 0, fontWeight: 600 }}>⚠ Triage mode — only highest-impact topics get focus.</p>
           </div>}
         </div>
+
+        {/* ── Assessment Schedule ── */}
+        {plan.assessmentSchedule && plan.assessmentSchedule.length > 0 && (() => {
+          const planStart = latestPlanMeta?.createdAt ? new Date(latestPlanMeta.createdAt) : null;
+          const labelColors = {
+            'Baseline diagnostic': { bg: '#c0392b18', color: '#c0392b' },
+            'Baseline': { bg: '#c0392b18', color: '#c0392b' },
+            'Progress check': { bg: '#2980b918', color: '#2980b9' },
+            'Midpoint learning tool': { bg: '#8b5cf618', color: '#8b5cf6' },
+            'Score predictor': { bg: '#1D9E7518', color: '#1D9E75' },
+            'Style calibrator': { bg: '#D85A3018', color: '#D85A30' },
+            'Checkpoint': { bg: '#f59e0b18', color: '#f59e0b' },
+          };
+          const getLabelStyle = (label) => {
+            for (const [key, style] of Object.entries(labelColors)) {
+              if (label?.includes(key)) return style;
+            }
+            return { bg: '#1a181618', color: '#1a1816' };
+          };
+          return (
+            <div style={{ ...S.card, marginBottom: 20 }}>
+              <h3 style={{ ...S.h3, marginBottom: 4 }}>📋 Assessment Schedule</h3>
+              <p style={{ ...S.muted, marginBottom: 16, fontSize: 13 }}>
+                {plan.assessmentSchedule.length} practice test{plan.assessmentSchedule.length > 1 ? 's' : ''} scheduled — spaced for maximum learning and score prediction accuracy.
+              </p>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {plan.assessmentSchedule.map((a, i) => {
+                  const approxDate = planStart ? new Date(planStart.getTime() + (a.day - 1) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+                  const ls = getLabelStyle(a.label);
+                  return (
+                    <div key={i} style={{ padding: '14px 16px', borderRadius: 12, background: '#faf8f5', border: '1px solid #ece8e2' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {a.day}{approxDate ? ` · ${approxDate}` : ''}</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>{a.test?.name || a.testId}</span>
+                          {a.label && <span style={{ ...S.tag, background: ls.bg, color: ls.color }}>{a.label}</span>}
+                        </div>
+                        {a.reviewHours > 0 && (
+                          <span style={{ ...S.muted, fontSize: 11, whiteSpace: 'nowrap' }}>+{a.reviewHours}h review</span>
+                        )}
+                      </div>
+                      {a.reason && (
+                        <p style={{ ...S.muted, fontSize: 12, margin: '0 0 6px', lineHeight: 1.5, fontStyle: 'italic' }}>💡 {a.reason}</p>
+                      )}
+                      {a.overpredictWarning && (
+                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#f59e0b10', border: '1px solid #f59e0b30', fontSize: 12, color: '#b45309', fontFamily: S.f, lineHeight: 1.4 }}>
+                          ⚠️ <strong>Note:</strong> UWSA1 tends to overpredict by 10–25 points. Use for learning direction, not score prediction.
+                        </div>
+                      )}
+                      {a.predictorNote && (
+                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#1D9E7510', border: '1px solid #1D9E7530', fontSize: 12, color: '#0F6E56', fontFamily: S.f, lineHeight: 1.4 }}>
+                          🎯 <strong>Strongest predictor:</strong> UWSA2 correlates most closely with your actual Step 1 score.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ ...S.card, marginBottom: 20 }}>
           <h3 style={{ ...S.h3, marginBottom: 12 }}>Priority ranking — with highest-yield sub-topics</h3>

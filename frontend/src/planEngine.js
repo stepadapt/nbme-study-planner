@@ -1,4 +1,4 @@
-import { STEP1_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS } from './data.js';
+import { STEP1_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS } from './data.js';
 
 // ── Time-block helpers ────────────────────────────────────────────────
 
@@ -117,6 +117,212 @@ export function getTopSubTopics(category, count = 5) {
   return [...subs].sort((a, b) => b.yield - a.yield).slice(0, count);
 }
 
+// ── Practice test scheduler ───────────────────────────────────────────
+// Builds the optimal assessment sequence based on dedicated period length.
+// takenAssessments = [{ id, takenDate? }] — tests done in this study period
+// hasExistingScores = true if the student already has NBME data in the app
+
+export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false) {
+  const takenList = profile.takenAssessments || [];
+  const SIX_WEEKS_MS = 42 * 24 * 60 * 60 * 1000;
+  const now = new Date();
+
+  // "Recently taken" = no date given (assume recent) OR within last 6 weeks
+  const recentlyTaken = new Set(
+    takenList
+      .filter(t => !t.takenDate || (now - new Date(t.takenDate)) < SIX_WEEKS_MS)
+      .map(t => t.id)
+  );
+  const everTaken = new Set(takenList.map(t => t.id));
+
+  // canUse: not taken within 6 weeks (may reuse older forms if taken >6 weeks ago)
+  const canUse = (id) => !recentlyTaken.has(id);
+
+  const BLACKOUT = 2; // last N days: no full-length exams
+  const lastDay = totalCalendarDays - BLACKOUT;
+  if (lastDay < 3) return [];
+
+  // ── NBME form pools by role ─────────────────────────────────────────
+  // Baseline: prefer older forms (26-28) — diagnostic, score doesn't need to be high
+  // Midpoint: mid-range (29-31) — more predictive at this stage
+  // Late/final: newest forms (32-33) — closest to current exam difficulty
+  const nbmeByTier = {
+    baseline: PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number <= 28 && canUse(t.id)).sort((a, b) => a.number - b.number),
+    mid:      PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number >= 29 && t.number <= 31 && canUse(t.id)).sort((a, b) => a.number - b.number),
+    late:     PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number >= 32 && canUse(t.id)).sort((a, b) => b.number - a.number),
+    any:      PRACTICE_TESTS.filter(t => t.type === 'nbme' && canUse(t.id)).sort((a, b) => a.number - b.number),
+  };
+
+  const uwsa1 = canUse('uwsa1') ? PRACTICE_TESTS.find(t => t.id === 'uwsa1') : null;
+  const uwsa2 = canUse('uwsa2') ? PRACTICE_TESTS.find(t => t.id === 'uwsa2') : null;
+  // Prefer 2024 Free 120 over old; fall back if needed
+  const free120 = (canUse('free120new') ? PRACTICE_TESTS.find(t => t.id === 'free120new') : null)
+                || (canUse('free120old') ? PRACTICE_TESTS.find(t => t.id === 'free120old') : null);
+  const amboss  = canUse('amboss') ? PRACTICE_TESTS.find(t => t.id === 'amboss') : null;
+
+  const hasBaseline = hasExistingScores || everTaken.size > 0;
+
+  // ── Slot management ──────────────────────────────────────────────────
+  const result = [];
+  const claimed = new Set(); // exam day + triage day+1
+  const usedForms = new Set();
+
+  const claimDay = (day) => { claimed.add(day); claimed.add(day + 1); };
+
+  const isFree = (day, buf = 2) => {
+    if (day < 1 || day > lastDay) return false;
+    for (let d = day - buf; d <= day + buf; d++) if (claimed.has(d)) return false;
+    return true;
+  };
+
+  const findFree = (preferred, buf = 2) => {
+    const p = Math.max(1, Math.min(preferred, lastDay));
+    if (isFree(p, buf)) return p;
+    for (let delta = 1; delta <= 8; delta++) {
+      if (p + delta <= lastDay && isFree(p + delta, buf)) return p + delta;
+      if (p - delta >= 1    && isFree(p - delta, buf)) return p - delta;
+    }
+    return null;
+  };
+
+  const place = (day, test, label, reason, reviewHours, flags = {}) => {
+    result.push({ day, test, label, reason, reviewHours, ...flags });
+    claimDay(day);
+    if (test.type === 'nbme') usedForms.add(test.id);
+  };
+
+  // Pick next unused NBME from a prioritised pool list
+  const pickNbme = (...pools) => {
+    for (const pool of pools) {
+      const t = pool.find(t => !usedForms.has(t.id));
+      if (t) return t;
+    }
+    return null;
+  };
+
+  // ── Tier-based scheduling ─────────────────────────────────────────────
+  const tier = totalCalendarDays >= 56 ? '8w'
+    : totalCalendarDays >= 35 ? '5w'
+    : totalCalendarDays >= 21 ? '3w'
+    : '2w';
+
+  // ── Special fixed-position tests (placed first to anchor the timeline) ──
+
+  // UWSA2: 7-10 days before exam (not for 2-week tier)
+  let uwsa2Day = null;
+  if (uwsa2 && tier !== '2w' && lastDay >= 8) {
+    const target = tier === '3w'
+      ? totalCalendarDays - 8   // tighter window for 3-4 weeks
+      : totalCalendarDays - 8;  // 7-10 days: target 8
+    uwsa2Day = findFree(Math.max(1, target), 2);
+    if (uwsa2Day) {
+      place(uwsa2Day, uwsa2, 'Score predictor',
+        'UWSA 2 is the strongest single predictor of your actual Step 1 score. Students typically land within 3–5 points of this number. Take it under full exam conditions — 280 questions, timed, no interruptions. The score you see here is approximately where you\'ll score on exam day.',
+        2.5, { predictorNote: true });
+    }
+  }
+
+  // Free 120: 3-5 days before exam
+  let free120Day = null;
+  if (free120 && lastDay >= 3) {
+    const target = tier === '2w' ? totalCalendarDays - 4 : totalCalendarDays - 4;
+    free120Day = findFree(Math.max(1, target), 1);
+    if (free120Day) {
+      place(free120Day, free120, 'Style calibrator',
+        `The ${free120.name} is free official USMLE content — the closest format match to the real exam. This close to exam day, focus on timing and composure rather than score. Review every wrong answer to catch any final blind spots, but don\'t cram new content.`,
+        1.5);
+    }
+  }
+
+  // UWSA1: midpoint (skip for 3-week and 2-week tiers)
+  let uwsa1Day = null;
+  if (uwsa1 && (tier === '8w' || tier === '5w')) {
+    const target = Math.floor(totalCalendarDays / 2);
+    uwsa1Day = findFree(target, 3);
+    if (uwsa1Day) {
+      place(uwsa1Day, uwsa1, 'Midpoint learning tool',
+        'UWSA 1 at the halfway point shows how far you\'ve come — and where you still need work. Critical caveat: UWSA 1 consistently overpredicts by 10–25 points. A score of 245 here often translates to 220–235 on exam day. Don\'t get complacent if the number looks high. Use this to identify which systems are still dragging your score down.',
+        2.0, { overpredictWarning: 'This exam typically overpredicts by 10–25 points. Use it for learning, not as your score prediction.' });
+    }
+  }
+
+  // ── Baseline check (day 1-3) ────────────────────────────────────────
+  if (!hasBaseline) {
+    const baseNbme = pickNbme(nbmeByTier.baseline, nbmeByTier.any);
+    if (baseNbme) {
+      const baseDay = findFree(tier === '3w' ? Math.min(2, lastDay - 10) : 2, 1);
+      if (baseDay) {
+        place(baseDay, baseNbme, 'Baseline diagnostic',
+          `Your first NBME before dedicated study truly kicks in. Most students feel underprepared at this stage — that's expected and irrelevant. The score right now doesn't define where you'll land. What matters is which systems are dragging you down. That breakdown becomes the blueprint for everything that follows.`,
+          2.0);
+      }
+    }
+  }
+
+  // ── AMBOSS substitute: midpoint for 2-week tier or when UWSA1 unavailable ──
+  if (!uwsa1 && amboss && tier !== '3w' && tier !== '2w') {
+    const target = Math.floor(totalCalendarDays / 2);
+    const ambossDay = findFree(target, 3);
+    if (ambossDay) {
+      place(ambossDay, amboss, 'Midpoint check (AMBOSS)',
+        'AMBOSS SA runs harder than the real exam intentionally — students typically score 5–15 points lower than their actual Step 1 result. Use it as a high-fidelity stress test to find remaining gaps. If you can answer AMBOSS questions cleanly, you\'re in excellent shape.',
+        2.0);
+    }
+  }
+
+  if (tier === '2w' && !free120 && amboss) {
+    const ambossDay = findFree(Math.floor(totalCalendarDays / 2), 2);
+    if (ambossDay) {
+      place(ambossDay, amboss, 'Midpoint check (AMBOSS)',
+        'With limited time, AMBOSS SA serves as your midpoint stress-test. It runs harder than the real exam — use it to find gaps, not predict your score.',
+        2.0);
+    }
+  }
+
+  // ── Progress checks: fill intervals with NBME forms ──────────────────
+  const interval = tier === '8w' ? 12   // 10-14 days
+    : tier === '5w' ? 11                 // 10-12 days
+    : tier === '3w' ? 11                 // ~11 days (just 1 midpoint check)
+    : 0;                                 // 2-week: no interval fills
+
+  if (interval > 0) {
+    const baseItem = result.find(r => r.label === 'Baseline diagnostic');
+    let cursor = baseItem ? baseItem.day + interval : interval;
+
+    // Pool order: mid-range forms for early progress, late forms for final stretch
+    const progressPool = [
+      ...nbmeByTier.mid.filter(t => !usedForms.has(t.id)),
+      ...nbmeByTier.baseline.filter(t => !usedForms.has(t.id)),
+      ...nbmeByTier.late.filter(t => !usedForms.has(t.id)),
+    ];
+
+    // Target count: 8w → up to 5-6 total, 5w → 4 total, 3w → just 1 midpoint
+    const maxProgress = tier === '8w' ? 4 : tier === '5w' ? 2 : 1;
+    let progressCount = 0;
+
+    for (const nbme of progressPool) {
+      if (progressCount >= maxProgress) break;
+      if (cursor > lastDay - 8) break;
+
+      const slot = findFree(cursor, 3);
+      if (!slot || slot > lastDay - 8) break;
+
+      const isNewest = nbme.number >= 32;
+      place(slot, nbme, `Progress check #${progressCount + 1}`,
+        isNewest
+          ? `NBME ${nbme.number} is one of the newest forms — it mirrors current exam difficulty most closely. Your score here is a reliable performance signal in the final stretch.`
+          : `NBME ${nbme.number} — check whether your weak areas are actually improving. The total score matters less than whether the systems that were dragging you down are now moving up.`,
+        2.0);
+
+      cursor = slot + interval;
+      progressCount++;
+    }
+  }
+
+  result.sort((a, b) => a.day - b.day);
+  return result;
+}
+
 export function generateFirstTimerPlan(profile, weakSystems = [], uworldPct = null) {
   // Derive a baseline score from UWorld% or default to 55
   const baseline = (uworldPct != null && uworldPct !== '' && !isNaN(Number(uworldPct)))
@@ -137,38 +343,8 @@ export function generateFirstTimerPlan(profile, weakSystems = [], uworldPct = nu
     gapTypes[cat] = weakSystems.includes(cat) ? 'knowledge' : 'application';
   }
 
-  const plan = generatePlan(profile, scores, stickingPoints, gapTypes);
-
-  // Inject a diagnostic NBME at day 6 (prefer) → 5 → 7 → 8
-  // This gives them real data to drive the first proper plan
-  const TARGET_DAYS = [6, 5, 7, 8];
-  let nbmeInjected = false;
-  outer: for (const targetDay of TARGET_DAYS) {
-    for (const week of plan.weeks) {
-      for (let i = 0; i < week.days.length; i++) {
-        const day = week.days[i];
-        if (day.calendarDay === targetDay && day.dayType === 'study') {
-          week.days[i] = {
-            calendarDay: targetDay,
-            dayType: 'nbme',
-            totalQuestions: 0,
-            blocks: [{
-              type: 'nbme',
-              label: 'Diagnostic Practice NBME',
-              tasks: [
-                { resource: 'NBME', activity: 'Full-length diagnostic exam — establishes your real baseline, no pressure on score', hours: 4 },
-                { resource: 'Self-review', activity: 'Review scores and enter them into the app to unlock your fully personalised plan', hours: 1.5 },
-              ],
-            }],
-          };
-          plan.nbmeDays++;
-          nbmeInjected = true;
-          break outer;
-        }
-      }
-    }
-  }
-
+  // hasExistingScores: false → scheduleAssessments will place a baseline NBME at day 1-3
+  const plan = generatePlan(profile, scores, stickingPoints, gapTypes, { hasExistingScores: false });
   return { ...plan, firstTimer: true };
 }
 
@@ -179,7 +355,7 @@ export function getPerformanceLevel(score) {
   return { label: "Strong", color: "#27ae60" };
 }
 
-export function generatePlan(profile, scores, stickingPoints, gapTypes) {
+export function generatePlan(profile, scores, stickingPoints, gapTypes, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
   const hrs = profile.hoursPerDay || 8;
@@ -201,16 +377,33 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes) {
   else if (totalCalendarDays >= 10) { timelineMode = "compressed"; contentRampDays = 0; }
   else { timelineMode = "triage"; contentRampDays = 0; }
 
-  const nbmeInterval = timelineMode === "triage" ? 999 : timelineMode === "compressed" ? 10 : 12;
-  let daySchedule = [];
-  let nbmeCount = 0;
+  // ── Assessment scheduler (replaces simple nbmeInterval logic) ────────
+  const hasExistingScores = options.hasExistingScores ?? Object.keys(scores).length > 0;
+  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores);
+  const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
+  // triage days = day after each assessment (unless that day is also an assessment day)
+  const triageDayMap = new Map(
+    assessmentSchedule
+      .filter(a => !assessmentDayMap.has(a.day + 1))
+      .map(a => [a.day + 1, a])
+  );
 
+  // Build day schedule using assessment schedule as the source of truth for exam days
+  let daySchedule = [];
   for (let d = 0; d < totalCalendarDays; d++) {
+    const calendarDay = d + 1;
     const isLastDay = d === totalCalendarDays - 1;
-    if (isLastDay) { daySchedule.push({ calendarDay: d + 1, type: "rest" }); }
-    else if (d > 0 && d % nbmeInterval === 0 && d < totalCalendarDays - 2) { daySchedule.push({ calendarDay: d + 1, type: "nbme", nbmeNum: ++nbmeCount }); }
-    else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") { daySchedule.push({ calendarDay: d + 1, type: "light" }); }
-    else { daySchedule.push({ calendarDay: d + 1, type: "study" }); }
+    if (isLastDay) {
+      daySchedule.push({ calendarDay, type: "rest" });
+    } else if (assessmentDayMap.has(calendarDay)) {
+      daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
+    } else if (triageDayMap.has(calendarDay)) {
+      daySchedule.push({ calendarDay, type: "triage", prevAssessItem: triageDayMap.get(calendarDay) });
+    } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
+      daySchedule.push({ calendarDay, type: "light" });
+    } else {
+      daySchedule.push({ calendarDay, type: "study" });
+    }
   }
 
   const getRes = (cat) => {
@@ -238,15 +431,51 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes) {
       currentWeek = { week: weekNum, days: [], phase: "", focusTopics: [] };
     }
 
+    // ── Assessment day ─────────────────────────────────────────────────
     if (sched.type === "nbme") {
-      currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "nbme", blocks: [
-        { type: "nbme", label: `Practice NBME #${sched.nbmeNum}`, tasks: [
-          { resource: "NBME", activity: "Full-length practice exam under test conditions", hours: 4 },
-          { resource: "Self-review", activity: "Score review + identify shifts in weak areas", hours: 1.5 },
-        ]}
-      ] });
+      const ai = sched.assessItem;
+      const testName = ai?.test?.name || 'Practice Assessment';
+      const reviewHrs = ai?.reviewHours || 2.0;
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay, dayType: "nbme",
+        assessmentLabel: ai?.label, assessmentReason: ai?.reason,
+        assessmentTest: ai?.test, overpredictWarning: ai?.overpredictWarning,
+        predictorNote: ai?.predictorNote,
+        blocks: [{ type: "nbme", label: testName, tasks: [
+          { resource: testName, activity: 'Full-length exam — timed, test-day conditions, no interruptions', hours: 4 },
+          { resource: 'Self-review', activity: 'Thorough review of every wrong answer — understand the concept, annotate patterns, make cards for missed topics', hours: reviewHrs },
+        ]}],
+      });
       continue;
     }
+
+    // ── Triage day (day after each assessment) ─────────────────────────
+    if (sched.type === "triage") {
+      const ai = sched.prevAssessItem;
+      const testName = ai?.test?.name || 'assessment';
+      const focusForTriage = priorities[0];
+      const trRes = focusForTriage ? getRes(focusForTriage.category) : { learning: [], practice: [] };
+      const trQBank = trRes.practice.length > 0 ? rn(trRes.practice[0]) : 'Question bank';
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay, dayType: "triage", triageFor: testName,
+        blocks: [
+          { type: "anki", label: "Morning retention", tasks: [
+            { resource: hasAnki ? "AnKing Deck" : "Flashcards", activity: "All due reviews — essential after an assessment day", hours: ankiHrs },
+          ]},
+          { type: "catchup", label: `${testName} — complete debrief`, tasks: [
+            { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read the explanation — understand the underlying concept and why each wrong answer is wrong.`, hours: 2.0 },
+          ]},
+          { type: "questions-focus", label: `Rapid response: top revealed weakness`, tasks: [
+            { resource: trQBank, activity: `40 Qs on ${focusForTriage?.category || 'your highest-yield gap'} — attack the system ${testName} exposed most`, hours: 1.0 },
+            { resource: "Self-review", activity: "Review all explanations — connect today's questions to yesterday's gaps", hours: 1.0 },
+          ]},
+        ],
+        totalQuestions: qBlockSize,
+      });
+      continue;
+    }
+
+    // ── Rest day ────────────────────────────────────────────────────────
     if (sched.type === "rest") {
       currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", blocks: [
         { type: "rest", label: "Pre-exam rest", tasks: [
@@ -256,6 +485,7 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes) {
       continue;
     }
 
+    // ── Study / light day ───────────────────────────────────────────────
     studyDayNum++;
     const isLight = sched.type === "light";
     const isRamp = studyDayNum <= contentRampDays;
@@ -355,9 +585,9 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes) {
     else w.phase = "Sharpen — simulate test conditions, full blocks";
   });
 
-  const totalStudyDays = daySchedule.filter(d => d.type === "study" || d.type === "light").length;
+  const totalStudyDays = daySchedule.filter(d => ["study", "light", "triage"].includes(d.type)).length;
   const totalQEstimate = totalStudyDays * (1 + Math.max(0, Math.min(Math.floor(((hrs - ankiHrs) - 2.5) / 1.75), 4))) * qBlockSize;
-  const nbmeDays = daySchedule.filter(d => d.type === "nbme").length;
+  const nbmeDays = assessmentSchedule.length;
 
-  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays };
+  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule };
 }
