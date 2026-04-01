@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS, PRACTICE_TESTS } from '../data.js';
-import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
+import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getQbankFilterTip, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import Chat from '../components/Chat.jsx';
@@ -88,6 +88,82 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
   );
 }
 
+// ── Sub-topic Progress Panel ──────────────────────────────────────────────
+// Shows highest-yield sub-topics within a focus block as interactive chips.
+// Student marks each as ✓ improving or ✗ still struggling to get adaptive guidance.
+function SubTopicProgressPanel({ highYield, subTopicProgress = {}, onToggle, qbankFilterTip, compact = false }) {
+  if (!highYield || highYield.length === 0) return null;
+
+  const f = 'Georgia, "Times New Roman", serif';
+
+  // Compute adaptive narrative
+  const improvingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'improving');
+  const strugglingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'struggling');
+  const activeTopics = highYield.filter(hy => subTopicProgress[hy.topic] !== 'improving');
+
+  let narrativeText = null;
+  if (improvingTopics.length > 0 && activeTopics.length > 0) {
+    const improvingNames = improvingTopics.map(t => t.topic.split('(')[0].trim()).join(' + ');
+    const nextPriority = strugglingTopics[0] || activeTopics[0];
+    const nextName = nextPriority?.topic.split('(')[0].trim();
+    narrativeText = `↑ ${improvingNames} improving — shift focus to ${nextName}`;
+  } else if (improvingTopics.length > 0 && activeTopics.length === 0) {
+    narrativeText = '↑ All tracked sub-topics improving — run random blocks across systems to consolidate';
+  }
+
+  const chipStyle = (status) => {
+    if (status === 'improving') return { bg: '#1d9e7510', border: '#1d9e75', text: '#1d6e56', icon: '✓' };
+    if (status === 'struggling') return { bg: '#c0392b0d', border: '#c0392b', text: '#a93226', icon: '✗' };
+    return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: '○' };
+  };
+
+  return (
+    <div style={{ marginBottom: 6, padding: compact ? '6px 8px' : '8px 10px', background: '#fefcf8', borderRadius: 8, border: '1px solid #e8dcc8' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: f }}>
+          Prioritize within this system:
+        </div>
+        <div style={{ fontSize: 10, color: '#b0a898', fontFamily: f }}>tap to track progress</div>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: narrativeText || qbankFilterTip ? 8 : 0 }}>
+        {highYield.map((hy, hi) => {
+          const status = subTopicProgress[hy.topic] || null;
+          const c = chipStyle(status);
+          const shortName = hy.topic.split('(')[0].trim();
+          return (
+            <button
+              key={hi}
+              onClick={() => onToggle && onToggle(hy.topic)}
+              title={`Click to mark as: ${status === null ? 'improving' : status === 'improving' ? 'struggling' : 'reset'}`}
+              style={{
+                fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4,
+                background: c.bg, color: c.text, fontWeight: 600,
+                border: `1px solid ${c.border}`, cursor: onToggle ? 'pointer' : 'default',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                transition: 'all 0.15s',
+              }}
+            >
+              <span style={{ fontSize: 10 }}>{c.icon}</span>
+              {hy.yield >= 9 && <span style={{ fontSize: 9, color: '#b45309' }}>★</span>}
+              {shortName}
+            </button>
+          );
+        })}
+      </div>
+      {narrativeText && (
+        <div style={{ fontSize: 11, color: '#1d6e56', fontFamily: f, fontWeight: 600, padding: '5px 8px', background: '#1d9e750d', borderRadius: 6, marginBottom: qbankFilterTip ? 6 : 0 }}>
+          {narrativeText}
+        </div>
+      )}
+      {qbankFilterTip && (
+        <div style={{ fontSize: 11, color: '#6b6560', fontFamily: f, padding: '5px 8px', background: '#2563eb08', borderRadius: 6, borderLeft: '2px solid #2563eb50' }}>
+          🔍 {qbankFilterTip}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -95,7 +171,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [] });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {} });
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
@@ -209,6 +285,20 @@ export default function StudyPlanner({ onShowTerms }) {
       const exists = taken.find(t => t.id === id);
       if (exists) return { ...p, takenAssessments: taken.map(t => t.id === id ? { ...t, takenDate: date || undefined } : t) };
       return { ...p, takenAssessments: [...taken, { id, takenDate: date || undefined }] };
+    });
+  };
+
+  // ── Sub-topic progress tracking ──────────────────────────────────
+  // Cycles: null → 'improving' → 'struggling' → null
+  const toggleSubTopicProgress = (topicKey) => {
+    setProfile(p => {
+      const current = (p.subTopicProgress || {})[topicKey];
+      const next = current === undefined || current === null ? 'improving'
+        : current === 'improving' ? 'struggling'
+        : null;
+      const updated = { ...(p.subTopicProgress || {}), [topicKey]: next };
+      if (next === null) delete updated[topicKey];
+      return { ...p, subTopicProgress: updated };
     });
   };
 
@@ -613,10 +703,19 @@ export default function StudyPlanner({ onShowTerms }) {
                         <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, flexShrink: 0 }}>{block.startTime} – {block.endTime}</span>
                       </div>
                       {block.tasks?.map((task, j) => (
-                        <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5 }}>
+                        <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
                           <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
                         </div>
                       ))}
+                      {block.highYield && block.highYield.length > 0 && (
+                        <SubTopicProgressPanel
+                          highYield={block.highYield}
+                          subTopicProgress={profile.subTopicProgress}
+                          onToggle={toggleSubTopicProgress}
+                          qbankFilterTip={block.qbankFilterTip}
+                          compact={true}
+                        />
+                      )}
                       {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} compact={true} />}
                     </div>
                   );
@@ -1448,12 +1547,12 @@ export default function StudyPlanner({ onShowTerms }) {
                           <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: bc.border, fontFamily: S.f }}>{block.label}</span>
                         </div>
                         {block.highYield && block.highYield.length > 0 && (
-                          <div style={{ marginBottom: 6, padding: "6px 10px", background: "#fefcf8", borderRadius: 8, border: "1px solid #e8dcc8" }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#8a857e", fontFamily: S.f, marginBottom: 4 }}>Highest-yield within this system:</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                              {block.highYield.map((hy, hi) => <span key={hi} style={{ fontSize: 11, fontFamily: S.f, padding: "3px 8px", borderRadius: 4, background: hy.yield >= 9 ? "#b4530915" : hy.yield >= 7 ? "#2980b910" : "#6b656010", color: hy.yield >= 9 ? "#b45309" : hy.yield >= 7 ? "#2980b9" : "#6b6560", fontWeight: 600 }}>{hy.yield >= 9 ? "★ " : ""}{hy.topic}</span>)}
-                            </div>
-                          </div>
+                          <SubTopicProgressPanel
+                            highYield={block.highYield}
+                            subTopicProgress={profile.subTopicProgress}
+                            onToggle={toggleSubTopicProgress}
+                            qbankFilterTip={block.qbankFilterTip}
+                          />
                         )}
                         <div style={{ display: "grid", gap: 3 }}>
                           {block.tasks.map((task, ti) => (

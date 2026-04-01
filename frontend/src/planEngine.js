@@ -112,10 +112,45 @@ export function calcPlanProgress(plan, planCreatedAt, examDate) {
   return { completedDays, totalDays, percent };
 }
 
-export function getTopSubTopics(category, count = 5) {
+export function getTopSubTopics(category, count = 5, subTopicProgress = {}) {
   const subs = SUB_TOPICS[category];
   if (!subs) return [];
-  return [...subs].sort((a, b) => b.yield - a.yield).slice(0, count);
+  // Improving sub-topics are de-prioritized to the bottom — struggling/untouched stay at top
+  return [...subs].sort((a, b) => {
+    const aImproving = subTopicProgress[a.topic] === 'improving';
+    const bImproving = subTopicProgress[b.topic] === 'improving';
+    if (aImproving !== bImproving) return aImproving ? 1 : -1;
+    return b.yield - a.yield;
+  }).slice(0, count);
+}
+
+// ── QBank-specific filter tip ─────────────────────────────────────────────
+// Generates actionable filter guidance based on which QBank the student uses
+// and whether any top sub-topics cross into pharmacology territory.
+const PHARM_SUB_KEYWORDS = ['pharmacol', 'drug', 'antiarrhythm', 'antihyperten', 'diuretic', 'antimicrobial', 'antibiotic', 'anticoagul', 'anticancer', 'antiepileptic'];
+
+export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
+  if (!primaryQBank || primaryQBank === 'Question bank') return null;
+  const qb = primaryQBank.toLowerCase();
+  const isUworld = qb.includes('uworld');
+  const isAmboss = qb.includes('amboss');
+
+  const pharmSubs = (topSubTopics || []).filter(st =>
+    PHARM_SUB_KEYWORDS.some(kw => st.topic.toLowerCase().includes(kw))
+  );
+  const hasCrossPharm = pharmSubs.length > 0 && category !== 'Pharmacology';
+
+  if (isUworld) {
+    return hasCrossPharm
+      ? `UWorld filter: System → "${category}". For the drug sub-topics, also run a separate Pharmacology filter session to isolate those Qs.`
+      : `UWorld filter: System → "${category}" to focus all 40 Qs on this system.`;
+  }
+  if (isAmboss) {
+    return hasCrossPharm
+      ? `Amboss filter: Subjects → "${category}". For drug sub-topics, add Pharmacology as a second subject to target those Qs.`
+      : `Amboss filter: Subjects → "${category}" to focus all Qs on this system.`;
+  }
+  return `Filter your QBank to "${category}" if sub-filtering is available — this focuses every question on your weak system.`;
 }
 
 // ── Practice test scheduler ───────────────────────────────────────────
@@ -539,12 +574,22 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       // Content block: cap at MAX_CONTENT_HRS; ramp days get content prioritised first
       const contentHrs = rawRemaining > 0 ? Math.min(rawRemaining, isRamp ? MAX_CONTENT_HRS : MAX_CONTENT_HRS) : 0;
 
-      // Focus block
-      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 3) : [];
-      blocks.push({ type: "questions-focus", label: `Focus block: ${focusTopic?.category || "Weak area"}`, highYield: focusSubTopics, tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category} only (timed, test mode)`, hours: 1.0 },
-        { resource: "Self-review", activity: "Thorough review of every Q — annotate wrong answers, make Anki cards", hours: 1.5 },
-      ]});
+      // Focus block — get top 5 sub-topics (extra 2 give the adaptive layer options as topics improve)
+      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5) : [];
+      const top3Short = focusSubTopics.slice(0, 3).map(s => s.topic.split('(')[0].trim());
+      const prioritizeStr = top3Short.length > 0 ? ` Prioritize: ${top3Short.join(', ')}.` : '';
+      const qbankFilterTip = getQbankFilterTip(primaryQBank, focusTopic?.category, focusSubTopics);
+      blocks.push({
+        type: "questions-focus",
+        label: `Focus block: ${focusTopic?.category || "Weak area"}`,
+        highYield: focusSubTopics,
+        primaryQBank,
+        qbankFilterTip,
+        tasks: [
+          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category} only (timed, test mode).${prioritizeStr}`, hours: 1.0 },
+          { resource: "Self-review", activity: "Thorough review of every Q — annotate wrong answers, make Anki cards for every missed concept", hours: 1.5 },
+        ],
+      });
 
       // Random blocks
       for (let rb = 0; rb < randomBlockCount; rb++) {
