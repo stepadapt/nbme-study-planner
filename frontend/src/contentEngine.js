@@ -110,10 +110,7 @@ const CONTENT_MAP = {
       label: "Pathoma — Ch. 8: Neuropathology",
       query: "Pathoma neuropathology chapter 8 brain tumors",
     },
-    sketchy: {
-      label: "Sketchy — Psychiatry & Neuro pharmacology",
-      query: "Sketchy Medical psychiatry neurology pharmacology antidepressants antipsychotics",
-    },
+    // NO sketchy field — Sketchy does not cover neurology/behavioral science
     subTopicVideos: {
       "Stroke": [
         { channel: "Ninja Nerd", query: "Ninja Nerd stroke syndromes vascular territories deficits step 1" },
@@ -160,10 +157,7 @@ const CONTENT_MAP = {
       label: "Pathoma — Ch. 4 & 11: Hematopathology & Immune",
       query: "Pathoma hematology chapter 4 immunopathology chapter 11",
     },
-    sketchy: {
-      label: "Sketchy — Hematology/Oncology",
-      query: "Sketchy Medical hematology oncology anemia leukemia",
-    },
+    // NO sketchy field — Sketchy does not cover hematology/oncology
     subTopicVideos: {
       "Anemias": [
         { channel: "Ninja Nerd", query: "Ninja Nerd anemias iron deficiency B12 sickle cell thalassemia step 1" },
@@ -292,10 +286,7 @@ const CONTENT_MAP = {
       label: "Pathoma — Ch. 16–17: Endocrine & Reproductive",
       query: "Pathoma endocrine chapter 16 reproductive chapter 17",
     },
-    sketchy: {
-      label: "Sketchy — Endocrine & Reproductive",
-      query: "Sketchy Medical endocrine reproductive pharmacology hormones",
-    },
+    // NO sketchy field — Sketchy does not cover endocrine/reproductive physiology
     subTopicVideos: {
       "Diabetes mellitus": [
         { channel: "Ninja Nerd", query: "Ninja Nerd diabetes mellitus type 1 2 DKA HHS insulin step 1" },
@@ -383,9 +374,9 @@ const CONTENT_MAP = {
       { channel: "Ninja Nerd", query: "Ninja Nerd microbiology immunology step 1 USMLE" },
       { channel: "Boards & Beyond", query: "Boards Beyond microbiology immunology USMLE step 1" },
     ],
+    // Sketchy Micro: text-only recommendation (paid platform, no YouTube link)
     sketchy: {
-      label: "Sketchy — Microbiology (Bacteria, Viruses, Fungi)",
-      query: "Sketchy Medical microbiology bacteria viruses fungi mnemonics step 1",
+      label: "Sketchy Micro",
     },
     subTopicVideos: {
       "Bacterial identification": [
@@ -447,9 +438,9 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan pharmacology drug mechanisms pharmacokinetics" },
       { channel: "Boards & Beyond", query: "Boards Beyond pharmacology USMLE step 1" },
     ],
+    // Sketchy Pharm: text-only recommendation (paid platform, no YouTube link)
     sketchy: {
-      label: "Sketchy — Pharmacology",
-      query: "Sketchy Medical pharmacology drug mnemonics step 1 USMLE",
+      label: "Sketchy Pharm",
     },
     subTopicVideos: {
       "Autonomic drugs": [
@@ -619,6 +610,30 @@ function matchSubTopicVideos(category, topSubTopics) {
   return matched;
 }
 
+// ── Validation gate ───────────────────────────────────────────────────────
+// Safety net: blocks any Sketchy or Pathoma recommendation outside their valid domains.
+// Sketchy: ONLY Pharmacology or Microbiology & Immunology.
+// Pathoma: ONLY Pathology discipline or path-specific topics.
+const SKETCHY_ALLOWED_CATEGORIES = new Set(['Pharmacology', 'Microbiology & Immunology']);
+const PATHOMA_ALLOWED_CATEGORIES = new Set([
+  'Pathology', 'Multisystem Processes & Disorders',
+  'Cardiovascular System', 'Gastrointestinal System',
+  'Respiratory and Renal/Urinary Systems', 'Blood & Lymphoreticular/Immune Systems',
+  'Musculoskeletal, Skin & Subcutaneous Tissue', 'Reproductive & Endocrine Systems',
+  'Behavioral Health & Nervous Systems/Special Senses', 'Histology & Cell Biology',
+]);
+
+function validateRecommendation(resource, category) {
+  const r = (resource || '').toLowerCase();
+  if (r.includes('sketchy')) {
+    return SKETCHY_ALLOWED_CATEGORIES.has(category);
+  }
+  if (r.includes('pathoma')) {
+    return PATHOMA_ALLOWED_CATEGORIES.has(category);
+  }
+  return true;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────
 /**
  * Returns a structured study sequence for the given category and gap type.
@@ -633,8 +648,8 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
   const bucket = CONTENT_MAP[category];
   if (!bucket) return { gapType, sequence: [] };
 
-  const hasPathoma  = resources.includes('pathoma')  && !!bucket.pathoma;
-  const hasSketchy  = resources.includes('sketchy')  && !!bucket.sketchy;
+  const hasPathoma  = resources.includes('pathoma')  && !!bucket.pathoma  && validateRecommendation('pathoma', category);
+  const hasSketchy  = resources.includes('sketchy')  && !!bucket.sketchy  && validateRecommendation('sketchy', category);
   const hasBnb      = resources.includes('bnb');
   const hasPhyseo   = resources.includes('physeo');
   const hasFirstAid = resources.includes('firstaid');
@@ -651,13 +666,21 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       links: [{ channel: 'Pathoma', url: ytLink(bucket.pathoma.query), label: `Search: ${bucket.pathoma.query.slice(0, 50)}` }],
     };
   } else if (hasSketchy) {
+    // Sketchy is ONLY valid for Pharmacology and Microbiology & Immunology.
+    // It is a paid platform — never generate a YouTube link. Text-only recommendation.
+    const isPharm = category === 'Pharmacology';
+    const sketchyType = isPharm ? 'Pharm' : 'Micro';
+    const topSubTopic = subTopics?.[0]?.topic?.split('(')[0]?.trim() || '';
+    const sketchyLabel = topSubTopic
+      ? `Sketchy ${sketchyType}: ${topSubTopic}`
+      : bucket.sketchy.label;
     primaryVideoStep = {
       type: 'video',
       emoji: '🎨',
-      label: bucket.sketchy.label,
+      label: sketchyLabel,
       timeLabel: '~30 min',
-      instruction: 'Use Sketchy — the visual stories are the most efficient way to encode this content. Watch and build memory palaces.',
-      links: [{ channel: 'Sketchy', url: ytLink(bucket.sketchy.query), label: `Search: ${bucket.sketchy.query.slice(0, 50)}` }],
+      instruction: `Open your Sketchy subscription and watch the Sketchy ${sketchyType} scene for this topic. Build the memory palace as you watch — draw the scene from memory afterward to test encoding.`,
+      links: [], // Paid platform — student accesses via their own subscription. No YouTube link.
     };
   } else {
     // Build YouTube video list: sub-topic matches first, then fallback to main videos
