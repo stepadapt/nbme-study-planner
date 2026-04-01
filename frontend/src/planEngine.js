@@ -1,4 +1,5 @@
 import { STEP1_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS } from './data.js';
+import { getContentSequence } from './contentEngine.js';
 
 // ── Time-block helpers ────────────────────────────────────────────────
 
@@ -558,19 +559,28 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       if (contentHrs >= 0.5) {
         const isKG = focusTopic?.gapType === "knowledge";
         const learnRes = isKG && res1.learning.length > 0 ? rn(res1.learning[0]) : "First Aid + notes";
-        const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 2).map(s => s.topic.split("(")[0].trim()) : [];
-        const subHint = topSubs.length > 0 ? ` (especially ${topSubs.join(" and ")})` : "";
+        const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3) : [];
+        const topSubStrings = topSubs.map(s => s.topic.split("(")[0].trim());
+        const subHint = topSubStrings.length > 0 ? ` (especially ${topSubStrings.slice(0,2).join(" and ")})` : "";
         const contentLabel = isRamp
           ? `Content foundation: ${focusTopic?.category}`
           : isKG ? `Targeted review: ${focusTopic?.category}` : "Missed concept review";
-        blocks.push({ type: isRamp ? "content" : "content-reactive", label: contentLabel, tasks: [
-          { resource: learnRes, activity: isRamp
-            ? `Build the framework before questions — review core concepts${subHint}`
-            : isKG
-              ? `Review concepts missed in today's Qs${subHint}`
-              : `Look up missed concepts from today's Qs — make Anki cards${subHint}`,
-            hours: contentHrs },
-        ]});
+
+        // Build content sequence with specific YouTube/resource recommendations
+        const contentSeq = focusTopic
+          ? getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs)
+          : null;
+
+        blocks.push({ type: isRamp ? "content" : "content-reactive", label: contentLabel,
+          contentSequence: contentSeq,
+          tasks: [
+            { resource: learnRes, activity: isRamp
+              ? `Build the framework before questions — review core concepts${subHint}`
+              : isKG
+                ? `Review concepts missed in today's Qs${subHint}`
+                : `Look up missed concepts from today's Qs — make Anki cards${subHint}`,
+              hours: contentHrs },
+          ]});
       }
     }
 

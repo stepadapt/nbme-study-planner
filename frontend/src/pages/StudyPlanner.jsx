@@ -13,6 +13,81 @@ function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
   );
 }
 
+// ── Content Sequence Panel ────────────────────────────────────────────────
+// Renders recommended study steps (Watch → Read → Practice) for content blocks.
+function ContentSequencePanel({ contentSequence, compact = false }) {
+  const [open, setOpen] = useState(false);
+  if (!contentSequence || !contentSequence.sequence || contentSequence.sequence.length === 0) return null;
+
+  const { gapType, sequence } = contentSequence;
+  const tagColor = gapType === 'knowledge' ? '#7c3aed' : '#0369a1';
+  const tagBg   = gapType === 'knowledge' ? '#7c3aed12' : '#0369a112';
+  const tagLabel = gapType === 'knowledge' ? 'Knowledge gap — build the framework first' : 'Application gap — practice-first approach';
+
+  const typeColor = (type) => ({
+    video:    { bg: '#7c3aed0c', border: '#7c3aed', text: '#5b21b6' },
+    read:     { bg: '#92400e0c', border: '#b45309', text: '#92400e' },
+    practice: { bg: '#1d6e5610', border: '#1D9E75', text: '#1d6e56' },
+    annotate: { bg: '#0369a10c', border: '#0369a1', text: '#01508a' },
+  }[type] || { bg: '#6b65600c', border: '#6b6560', text: '#6b6560' });
+
+  return (
+    <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e8dcc8' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '7px 10px' : '9px 12px', background: '#fefcf8', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: compact ? 12 : 13 }}>🗺️</span>
+          <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: '#1a1816', fontFamily: 'Georgia, "Times New Roman", serif' }}>How to study this</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: tagBg, color: tagColor, fontFamily: 'Georgia, "Times New Roman", serif', whiteSpace: 'nowrap' }}>{gapType === 'knowledge' ? '📖 Knowledge' : '⚡ Application'}</span>
+        </div>
+        <span style={{ fontSize: 14, color: '#8a857e', transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3', display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 11, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: 2 }}>{tagLabel}</div>
+          {sequence.map((step, si) => {
+            const c = typeColor(step.type);
+            return (
+              <div key={si} style={{ padding: '9px 11px', background: c.bg, borderRadius: 7, borderLeft: `3px solid ${c.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: step.instruction ? 4 : 0 }}>
+                  <span style={{ fontSize: 14 }}>{step.emoji}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: c.text, fontFamily: 'Georgia, "Times New Roman", serif', flex: 1 }}>
+                    Step {si + 1}: {step.label}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', whiteSpace: 'nowrap' }}>{step.timeLabel}</span>
+                </div>
+                {step.instruction && (
+                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', lineHeight: 1.5, marginBottom: step.links?.length > 0 ? 6 : 0, paddingLeft: 20 }}>
+                    {step.instruction}
+                  </div>
+                )}
+                {step.links && step.links.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingLeft: 20 }}>
+                    {step.links.map((link, li) => (
+                      <a
+                        key={li}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 11, fontWeight: 600, color: '#c0392b', fontFamily: 'Georgia, "Times New Roman", serif', padding: '3px 9px', borderRadius: 12, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        ▶ {link.channel}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -542,6 +617,7 @@ export default function StudyPlanner({ onShowTerms }) {
                           <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
                         </div>
                       ))}
+                      {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} compact={true} />}
                     </div>
                   );
                 })}
@@ -1388,6 +1464,7 @@ export default function StudyPlanner({ onShowTerms }) {
                             </div>
                           ))}
                         </div>
+                        {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} />}
                       </div>
                     ); })}
                   </div>
