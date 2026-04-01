@@ -336,15 +336,9 @@ export function generateFirstTimerPlan(profile, weakSystems = [], uworldPct = nu
     scores[cat] = isWeak ? Math.max(15, baseline - 20) : Math.min(75, baseline + 5);
   }
 
-  // Weak systems are flagged sticking points; first-timers are mostly in knowledge-gap mode
   const stickingPoints = [...weakSystems];
-  const gapTypes = {};
-  for (const cat of STEP1_CATEGORIES) {
-    gapTypes[cat] = weakSystems.includes(cat) ? 'knowledge' : 'application';
-  }
-
   // hasExistingScores: false → scheduleAssessments will place a baseline NBME at day 1-3
-  const plan = generatePlan(profile, scores, stickingPoints, gapTypes, { hasExistingScores: false });
+  const plan = generatePlan(profile, scores, stickingPoints, { hasExistingScores: false });
   return { ...plan, firstTimer: true };
 }
 
@@ -355,7 +349,7 @@ export function getPerformanceLevel(score) {
   return { label: "Strong", color: "#27ae60" };
 }
 
-export function generatePlan(profile, scores, stickingPoints, gapTypes, options = {}) {
+export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
   const hrs = profile.hoursPerDay || 8;
@@ -366,29 +360,31 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
     const weakness = Math.max(0, 100 - score);
     const yld = weights[cat] || 5;
     const flagged = stickingPoints.includes(cat);
+    // Auto-derive gap type: knowledge gap when score < 50, application gap otherwise
+    const gapType = score < 50 ? "knowledge" : "application";
     const compositeScore = (weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0);
-    priorities.push({ category: cat, score, weakness, yield: yld, flagged, compositeScore, gapType: gapTypes[cat] || "application" });
+    priorities.push({ category: cat, score, weakness, yield: yld, flagged, compositeScore, gapType });
   }
   priorities.sort((a, b) => b.compositeScore - a.compositeScore);
 
   let timelineMode, contentRampDays;
-  if (totalCalendarDays >= 42) { timelineMode = "full"; contentRampDays = 5; }
-  else if (totalCalendarDays >= 21) { timelineMode = "standard"; contentRampDays = 2; }
+  if (totalCalendarDays >= 42) { timelineMode = "full"; contentRampDays = 3; }
+  else if (totalCalendarDays >= 21) { timelineMode = "standard"; contentRampDays = 1; }
   else if (totalCalendarDays >= 10) { timelineMode = "compressed"; contentRampDays = 0; }
   else { timelineMode = "triage"; contentRampDays = 0; }
 
-  // ── Assessment scheduler (replaces simple nbmeInterval logic) ────────
+  // ── Assessment scheduler ──────────────────────────────────────────────
   const hasExistingScores = options.hasExistingScores ?? Object.keys(scores).length > 0;
   const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
-  // triage days = day after each assessment (unless that day is also an assessment day)
-  const triageDayMap = new Map(
+  // Rest/debrief days = day after each assessment (unless that day is also an assessment day)
+  const restDebriefMap = new Map(
     assessmentSchedule
       .filter(a => !assessmentDayMap.has(a.day + 1))
       .map(a => [a.day + 1, a])
   );
 
-  // Build day schedule using assessment schedule as the source of truth for exam days
+  // Build day schedule
   let daySchedule = [];
   for (let d = 0; d < totalCalendarDays; d++) {
     const calendarDay = d + 1;
@@ -397,8 +393,8 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
       daySchedule.push({ calendarDay, type: "rest" });
     } else if (assessmentDayMap.has(calendarDay)) {
       daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
-    } else if (triageDayMap.has(calendarDay)) {
-      daySchedule.push({ calendarDay, type: "triage", prevAssessItem: triageDayMap.get(calendarDay) });
+    } else if (restDebriefMap.has(calendarDay)) {
+      daySchedule.push({ calendarDay, type: "rest-debrief", prevAssessItem: restDebriefMap.get(calendarDay) });
     } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
       daySchedule.push({ calendarDay, type: "light" });
     } else {
@@ -408,7 +404,10 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
 
   const getRes = (cat) => {
     const pool = RESOURCE_MAP[cat] || { learning: ["firstaid"], practice: ["uworld"] };
-    return { learning: pool.learning?.filter(r => profile.resources.includes(r)) || [], practice: pool.practice?.filter(r => profile.resources.includes(r)) || [] };
+    return {
+      learning: pool.learning?.filter(r => profile.resources.includes(r)) || [],
+      practice: pool.practice?.filter(r => profile.resources.includes(r)) || [],
+    };
   };
   const rn = (id) => RESOURCES.find(r => r.id === id)?.name || id;
   const hasAnki = profile.resources.includes("anking");
@@ -417,7 +416,12 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
   const midPriorities = priorities.filter(p => !p.flagged && p.score > 50 && p.score <= 70);
 
   const qBlockSize = 40;
-  const ankiHrs = Math.min(1, Math.round(hrs * 0.12 * 10) / 10);
+  // Anki block only if student has AnKing
+  const ankiHrs = hasAnki ? Math.min(1, Math.round(hrs * 0.12 * 10) / 10) : 0;
+
+  const FOCUS_BLOCK_HRS = 2.5;   // 1h questions + 1.5h review
+  const RANDOM_BLOCK_HRS = 1.8;  // 1h questions + 0.8h review
+  const MAX_CONTENT_HRS = 1.5;
 
   let focusCursor = 0, maintCursor = 0, studyDayNum = 0;
   let weeks = [];
@@ -431,7 +435,7 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
       currentWeek = { week: weekNum, days: [], phase: "", focusTopics: [] };
     }
 
-    // ── Assessment day ─────────────────────────────────────────────────
+    // ── Assessment day ────────────────────────────────────────────────
     if (sched.type === "nbme") {
       const ai = sched.assessItem;
       const testName = ai?.test?.name || 'Practice Assessment';
@@ -449,43 +453,42 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
       continue;
     }
 
-    // ── Triage day (day after each assessment) ─────────────────────────
-    if (sched.type === "triage") {
+    // ── Rest + debrief day (day after each assessment) ────────────────
+    if (sched.type === "rest-debrief") {
       const ai = sched.prevAssessItem;
       const testName = ai?.test?.name || 'assessment';
-      const focusForTriage = priorities[0];
-      const trRes = focusForTriage ? getRes(focusForTriage.category) : { learning: [], practice: [] };
-      const trQBank = trRes.practice.length > 0 ? rn(trRes.practice[0]) : 'Question bank';
+      const debriefBlocks = [];
+      if (hasAnki) {
+        debriefBlocks.push({ type: "anki", label: "Morning retention", tasks: [
+          { resource: "AnKing Deck", activity: "Due reviews only — keep the streak, protect mental energy", hours: ankiHrs },
+        ]});
+      }
+      debriefBlocks.push({ type: "catchup", label: `${testName} — full debrief`, tasks: [
+        { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read explanations — understand the concept and why each distractor is wrong. Annotate First Aid. Make cards for any missed patterns.`, hours: 2.5 },
+      ]});
       currentWeek.days.push({
-        calendarDay: sched.calendarDay, dayType: "triage", triageFor: testName,
-        blocks: [
-          { type: "anki", label: "Morning retention", tasks: [
-            { resource: hasAnki ? "AnKing Deck" : "Flashcards", activity: "All due reviews — essential after an assessment day", hours: ankiHrs },
-          ]},
-          { type: "catchup", label: `${testName} — complete debrief`, tasks: [
-            { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read the explanation — understand the underlying concept and why each wrong answer is wrong.`, hours: 2.0 },
-          ]},
-          { type: "questions-focus", label: `Rapid response: top revealed weakness`, tasks: [
-            { resource: trQBank, activity: `40 Qs on ${focusForTriage?.category || 'your highest-yield gap'} — attack the system ${testName} exposed most`, hours: 1.0 },
-            { resource: "Self-review", activity: "Review all explanations — connect today's questions to yesterday's gaps", hours: 1.0 },
-          ]},
-        ],
-        totalQuestions: qBlockSize,
+        calendarDay: sched.calendarDay, dayType: "rest", triageFor: testName,
+        blocks: debriefBlocks, totalQuestions: 0,
       });
       continue;
     }
 
-    // ── Rest day ────────────────────────────────────────────────────────
+    // ── Rest day (last day / exam eve) ────────────────────────────────
     if (sched.type === "rest") {
-      currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", blocks: [
-        { type: "rest", label: "Pre-exam rest", tasks: [
-          { resource: hasAnki ? "AnKing Deck" : "Light review", activity: "Light Anki only — protect sleep and mental energy", hours: 0.5 },
-        ]}
-      ] });
+      const restBlocks = [];
+      if (hasAnki) {
+        restBlocks.push({ type: "anki", label: "Light retention", tasks: [
+          { resource: "AnKing Deck", activity: "Due reviews only — 30 min max. Protect sleep and mental energy.", hours: 0.5 },
+        ]});
+      }
+      restBlocks.push({ type: "rest", label: "Pre-exam rest", tasks: [
+        { resource: "Self", activity: "Rest. No new content. Light review of your own notes if needed. Early bedtime.", hours: 1 },
+      ]});
+      currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", blocks: restBlocks });
       continue;
     }
 
-    // ── Study / light day ───────────────────────────────────────────────
+    // ── Study / light day ─────────────────────────────────────────────
     studyDayNum++;
     const isLight = sched.type === "light";
     const isRamp = studyDayNum <= contentRampDays;
@@ -507,64 +510,67 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
     const res1 = focusTopic ? getRes(focusTopic.category) : { learning: [], practice: [] };
     const primaryQBank = res1.practice.length > 0 ? rn(res1.practice[0]) : "Question bank";
 
-    blocks.push({ type: "anki", label: "Morning retention", tasks: [
-      { resource: hasAnki ? "AnKing Deck" : "Flashcards", activity: "All due reviews — do these first, every day", hours: ankiHrs }
-    ] });
+    // Morning Anki — only if student has AnKing
+    if (hasAnki) {
+      blocks.push({ type: "anki", label: "Morning retention", tasks: [
+        { resource: "AnKing Deck", activity: "All due reviews — do these first, every day", hours: ankiHrs }
+      ]});
+    }
 
-    if (isRamp && focusTopic) {
-      const learnRes = res1.learning.length > 0 ? rn(res1.learning[0]) : "First Aid";
-      const contentH = Math.round((availHrs - ankiHrs) * 0.45 * 10) / 10;
-      const qH = Math.round((availHrs - ankiHrs) * 0.40 * 10) / 10;
-      const revH = Math.round((availHrs - ankiHrs) * 0.15 * 10) / 10;
-      const rampSubs = getTopSubTopics(focusTopic.category, 3);
-      const rampHint = rampSubs.length > 0 ? ` — prioritize: ${rampSubs.slice(0, 2).map(s => s.topic.split("(")[0].trim()).join(", ")}` : "";
-      blocks.push({ type: "content", label: `Content foundation: ${focusTopic.category}`, highYield: rampSubs, tasks: [
-        { resource: learnRes, activity: `Core concepts — build the framework before questions${rampHint}`, hours: contentH }
-      ] });
-      blocks.push({ type: "questions", label: `Targeted questions: ${focusTopic.category}`, tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} system-specific questions (tutor mode OK in ramp)`, hours: qH },
-        { resource: "Self-review", activity: "Review every question — right AND wrong — note gaps", hours: revH },
-      ] });
-    } else if (isLight) {
-      const qH = Math.round((availHrs - ankiHrs) * 0.6 * 10) / 10;
-      const catchH = Math.round((availHrs - ankiHrs) * 0.4 * 10) / 10;
-      blocks.push({ type: "questions", label: "Mixed review questions", tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} random/mixed questions across all systems`, hours: qH }
-      ] });
+    if (isLight) {
+      // Light day: 1 random block + catch-up review
+      const qH = 1.0;
+      const catchH = Math.max(0.5, Math.round((availHrs - ankiHrs - qH) * 10) / 10);
+      blocks.push({ type: "questions-random", label: "Light random block: all systems", tasks: [
+        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems (lighter pace today)`, hours: qH },
+        { resource: "Self-review", activity: "Review wrong answers only", hours: 0.75 },
+      ]});
       blocks.push({ type: "catchup", label: "Catch-up + flagged review", tasks: [
-        { resource: "Self-review", activity: "Revisit flagged questions from the week", hours: catchH }
-      ] });
+        { resource: "Self-review", activity: "Revisit flagged questions and weak notes from the week", hours: Math.min(catchH, 1.5) }
+      ]});
     } else {
+      // Standard study day: 1 focus block + N random blocks + optional content (capped 1.5h)
       const hrsAfterAnki = availHrs - ankiHrs;
-      const focusBlockHrs = 2.5;
-      const randomBlockHrs = 1.75;
-      const hrsAfterFocus = hrsAfterAnki - focusBlockHrs;
-      const randomBlockCount = Math.max(0, Math.min(Math.floor(hrsAfterFocus / randomBlockHrs), 4));
-      const qBudget = focusBlockHrs + (randomBlockCount * randomBlockHrs);
-      const remainingHrs = Math.max(0, Math.round((hrsAfterAnki - qBudget) * 10) / 10);
+      const hrsAfterFocus = hrsAfterAnki - FOCUS_BLOCK_HRS;
+      const randomBlockCount = Math.max(0, Math.min(Math.floor(hrsAfterFocus / RANDOM_BLOCK_HRS), 4));
+      const qBudget = FOCUS_BLOCK_HRS + (randomBlockCount * RANDOM_BLOCK_HRS);
+      const rawRemaining = Math.max(0, hrsAfterAnki - qBudget);
+      // Content block: cap at MAX_CONTENT_HRS; ramp days get content prioritised first
+      const contentHrs = rawRemaining > 0 ? Math.min(rawRemaining, isRamp ? MAX_CONTENT_HRS : MAX_CONTENT_HRS) : 0;
 
+      // Focus block
       const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 3) : [];
       blocks.push({ type: "questions-focus", label: `Focus block: ${focusTopic?.category || "Weak area"}`, highYield: focusSubTopics, tasks: [
         { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category} only (timed, test mode)`, hours: 1.0 },
-        { resource: "Self-review", activity: "Thorough review of every Q — annotate wrong answers, make cards", hours: 1.5 },
-      ] });
+        { resource: "Self-review", activity: "Thorough review of every Q — annotate wrong answers, make Anki cards", hours: 1.5 },
+      ]});
 
+      // Random blocks
       for (let rb = 0; rb < randomBlockCount; rb++) {
         const blockLabel = randomBlockCount === 1 ? "Random block: all systems" : `Random block ${rb + 1} of ${randomBlockCount}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
           { resource: primaryQBank, activity: rb === 0 ? `${qBlockSize} Qs — RANDOM, all systems, timed` : `${qBlockSize} Qs — RANDOM, all systems, timed (build stamina)`, hours: 1.0 },
           { resource: "Self-review", activity: rb === 0 ? "Focused review — every wrong Q fully, right Qs skim." : "Efficient review — wrong answers only.", hours: 0.8 },
-        ] });
+        ]});
       }
 
-      if (remainingHrs >= 0.5) {
+      // Reactive content review (capped at 1.5h) — knowledge gaps get learning resource, else notes
+      if (contentHrs >= 0.5) {
         const isKG = focusTopic?.gapType === "knowledge";
         const learnRes = isKG && res1.learning.length > 0 ? rn(res1.learning[0]) : "First Aid + notes";
         const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 2).map(s => s.topic.split("(")[0].trim()) : [];
         const subHint = topSubs.length > 0 ? ` (especially ${topSubs.join(" and ")})` : "";
-        blocks.push({ type: "content-reactive", label: isKG ? `Targeted review: ${focusTopic.category}` : "Missed concept review", tasks: [
-          { resource: learnRes, activity: isKG ? `Review concepts missed in today's Qs${subHint}` : `Look up missed concepts from today's Qs — make Anki cards${subHint}`, hours: remainingHrs },
-        ] });
+        const contentLabel = isRamp
+          ? `Content foundation: ${focusTopic?.category}`
+          : isKG ? `Targeted review: ${focusTopic?.category}` : "Missed concept review";
+        blocks.push({ type: isRamp ? "content" : "content-reactive", label: contentLabel, tasks: [
+          { resource: learnRes, activity: isRamp
+            ? `Build the framework before questions — review core concepts${subHint}`
+            : isKG
+              ? `Review concepts missed in today's Qs${subHint}`
+              : `Look up missed concepts from today's Qs — make Anki cards${subHint}`,
+            hours: contentHrs },
+        ]});
       }
     }
 
@@ -579,14 +585,17 @@ export function generatePlan(profile, scores, stickingPoints, gapTypes, options 
 
   const totalWeeks = weeks.length;
   weeks.forEach((w, i) => {
-    if (i === 0 && contentRampDays > 0) w.phase = "Foundation — build base, ramp into questions";
+    if (i === 0 && contentRampDays > 0) w.phase = "Foundation — build framework, ramp into questions";
     else if (i < Math.ceil(totalWeeks * 0.55)) w.phase = "Build — question-heavy, attack weak + high-yield";
     else if (i < Math.ceil(totalWeeks * 0.8)) w.phase = "Strengthen — broad coverage, refine weak spots";
     else w.phase = "Sharpen — simulate test conditions, full blocks";
   });
 
-  const totalStudyDays = daySchedule.filter(d => ["study", "light", "triage"].includes(d.type)).length;
-  const totalQEstimate = totalStudyDays * (1 + Math.max(0, Math.min(Math.floor(((hrs - ankiHrs) - 2.5) / 1.75), 4))) * qBlockSize;
+  const totalStudyDays = daySchedule.filter(d => ["study", "light"].includes(d.type)).length;
+  const ankiHrsCalc = hasAnki ? Math.min(1, Math.round(hrs * 0.12 * 10) / 10) : 0;
+  const hrsAfterAnki = hrs - ankiHrsCalc;
+  const randomBlocksPerDay = Math.max(0, Math.min(Math.floor((hrsAfterAnki - FOCUS_BLOCK_HRS) / RANDOM_BLOCK_HRS), 4));
+  const totalQEstimate = totalStudyDays * (1 + randomBlocksPerDay) * qBlockSize;
   const nbmeDays = assessmentSchedule.length;
 
   return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule };

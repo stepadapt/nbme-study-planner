@@ -27,9 +27,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [weakSystems, setWeakSystems] = useState([]);  // first-timer self-assessment
   const [uworldPct, setUworldPct] = useState('');       // first-timer self-assessment
   const [stickingPoints, setStickingPoints] = useState([]);
-  const [gapTypes, setGapTypes] = useState({});
   const [plan, setPlan] = useState(null);
-  const [assessmentStep, setAssessmentStep] = useState(0);
   const [expandedWeek, setExpandedWeek] = useState(0);
   const [animIn, setAnimIn] = useState(true);
   const [assessments, setAssessments] = useState([]);
@@ -171,7 +169,6 @@ export default function StudyPlanner({ onShowTerms }) {
       formName: nbmeForm || `NBME #${assessments.length + 1}`,
       scores: { ...scores },
       stickingPoints: [...stickingPoints],
-      gapTypes: { ...gapTypes },
     };
     try {
       const { assessment } = await api.assessments.save(entry);
@@ -190,7 +187,6 @@ export default function StudyPlanner({ onShowTerms }) {
     setScores({});
     setNbmeForm("");
     setStickingPoints([]);
-    setGapTypes({});
     navigate("scores");
   };
 
@@ -295,7 +291,7 @@ export default function StudyPlanner({ onShowTerms }) {
     "rest": { bg: "#27ae600c", border: "#27ae60", icon: "😴", label: "Rest" },
   };
 
-  const steps = ["welcome", "onboarding", "scores", "assessment", "gaps", "comparison", "plan"];
+  const steps = ["welcome", "onboarding", "scores", "sticking-points", "comparison", "plan"];
   const dots = (idx) => <div style={{ display: "flex", gap: 6 }}>{steps.slice(1).map((_, i) => <div key={i} style={S.dot(i === idx)} />)}</div>;
 
   // Email verification banner
@@ -986,8 +982,25 @@ export default function StudyPlanner({ onShowTerms }) {
           )}
 
           <div style={{ marginBottom: 16 }}>
-            <label style={S.label}>NBME form (optional)</label>
-            <input style={{ ...S.input, maxWidth: 200 }} placeholder="e.g. NBME 26" value={nbmeForm} onChange={e => setNbmeForm(e.target.value)} />
+            <label style={S.label}>Which practice test is this?</label>
+            <select
+              style={{ ...S.input, maxWidth: 240 }}
+              value={nbmeForm}
+              onChange={e => setNbmeForm(e.target.value)}
+            >
+              <option value="">— Select (optional) —</option>
+              <optgroup label="NBME CBSSA Forms">
+                {PRACTICE_TESTS.filter(t => t.type === 'nbme').map(t => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </optgroup>
+              <optgroup label="UW Self-Assessments & Other">
+                {PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(t => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
+                ))}
+              </optgroup>
+              <option value="Other">Other / Unknown</option>
+            </select>
           </div>
           {[
             { label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES },
@@ -1020,124 +1033,102 @@ export default function StudyPlanner({ onShowTerms }) {
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
             <button style={{ ...S.btn, ...S.sec }} onClick={() => { const d = {}; cats.forEach(c => { d[c] = Math.floor(Math.random() * 60) + 20; }); setScores(d); }}>Demo scores</button>
-            <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => { setAssessmentStep(0); navigate("assessment"); }}>Analyze →</button>
+            <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => navigate("sticking-points")}>Analyze →</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // ─── ASSESSMENT ────────────────────────────────────────────────────
-  if (screen === "assessment") {
-    const sorted = [...(selectedExam?.categories || [])].filter(c => (scores[c] ?? 50) <= 60).sort((a, b) => (scores[a] ?? 50) - (scores[b] ?? 50));
+  // ─── STICKING POINTS ───────────────────────────────────────────────
+  if (screen === "sticking-points") {
+    const cats = selectedExam?.categories || [];
+    const sorted = [...cats].filter(c => (scores[c] ?? 50) <= 60).sort((a, b) => (scores[a] ?? 50) - (scores[b] ?? 50));
+    const stubbornTopics = getStubbornTopics();
+
+    const generateAndNavigate = async () => {
+      const generatedPlan = generatePlan(profile, scores, stickingPoints);
+      setPlan(generatedPlan);
+      setExpandedWeek(0);
+      const latestAssessment = await saveCurrentAssessment();
+      api.plans.save({
+        planData: generatedPlan,
+        profileSnapshot: profile,
+        assessmentId: latestAssessment?.id || null,
+      }).then(result => {
+        if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
+      }).catch(() => {});
+      navigate(previousAssessment ? "comparison" : "plan");
+    };
+
     return (
       <div style={S.app}>
         <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("scores")}>← Back</button>{dots(2)}<UserBar /></div>
         <div style={S.wrap}>
-          {assessmentStep === 0 ? (<>
-            <h1 style={S.h1}>Here's what I see</h1>
-            <p style={S.sub}>{previousAssessment ? `Compared to ${previousAssessment.formName} — here's what shifted.` : "Weakest areas, ranked by potential score impact."}</p>
-            <div style={S.card}>{sorted.length === 0 ? <p style={S.muted}>Strong across the board.</p> : <div style={{ display: "grid", gap: 4 }}>{sorted.map(cat => {
-              const s = scores[cat] ?? 50; const yld = HIGH_YIELD_WEIGHTS[cat] || 5;
-              const delta = getScoreDelta(cat);
-              const subs = getTopSubTopics(cat, 5);
-              return (<div key={cat} style={{ padding: "10px 0", borderBottom: "1px solid #f0ece6" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ flex: 1 }}><div style={{ fontSize: 15, fontWeight: 600, fontFamily: S.f, color: "#1a1816" }}>{cat}</div><div style={{ fontSize: 12, color: "#8a857e", fontFamily: S.f, marginTop: 2 }}>Score: {s}%{delta !== null ? ` (was ${previousAssessment.scores[cat]}%)` : ""} · Weight: {yld}/10</div></div>
-                  {delta !== null && <span style={{ ...S.tag, background: delta > 5 ? "#27ae6018" : delta < -3 ? "#c0392b18" : "#6b656010", color: delta > 5 ? "#27ae60" : delta < -3 ? "#c0392b" : "#6b6560" }}>{delta > 0 ? "+" : ""}{delta}</span>}
-                  <span style={{ ...S.tag, background: yld >= 8 ? "#b4530918" : "#6b656018", color: yld >= 8 ? "#b45309" : "#6b6560" }}>{yld >= 8 ? "High yield" : "Moderate"}</span>
-                </div>
-                {subs.length > 0 && (
-                  <div style={{ marginTop: 6, padding: "6px 10px", background: "#faf8f5", borderRadius: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#8a857e", fontFamily: S.f, marginBottom: 4 }}>Most tested within {cat}:</div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
-                      {subs.map((sub, si) => <span key={si} style={{ fontSize: 11, fontFamily: S.f, padding: "2px 7px", borderRadius: 4, background: sub.yield >= 9 ? "#b4530912" : "#2980b90c", color: sub.yield >= 9 ? "#b45309" : "#2980b9", fontWeight: 500 }}>{sub.yield >= 9 ? "★ " : ""}{sub.topic}</span>)}
-                    </div>
-                  </div>
-                )}
-              </div>);
-            })}</div>}</div>
-            <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8" }}>
-              <div style={{ display: "flex", gap: 12 }}><div style={{ fontSize: 20 }}>💬</div><div>
-                <p style={{ fontSize: 15, fontFamily: S.f, color: "#2c2a26", margin: "0 0 4px", fontWeight: 500 }}>{previousAssessment ? "What still feels like a sticking point?" : "Which of these are genuine sticking points?"}</p>
-                <p style={{ fontSize: 14, fontFamily: S.f, color: "#6b6560", margin: 0, lineHeight: 1.5 }}>{previousAssessment ? "Flag the ones that genuinely trouble you right now — not last time, but today." : "Not just low scores — topics that still trip you up even when you study them."}</p>
-              </div></div>
+          <h1 style={S.h1}>Review your scores</h1>
+          <p style={S.sub}>{previousAssessment ? `Compared to ${previousAssessment.formName} — flag what still trips you up.` : "Weak areas ranked by score impact — flag your genuine sticking points."}</p>
+
+          {/* Stubborn topics warning */}
+          {previousAssessment && stubbornTopics.length > 0 && (
+            <div style={{ ...S.card, background: "#b4530908", border: "1.5px solid #b4530920", marginBottom: 4, padding: "14px 18px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#b45309", fontFamily: S.f, marginBottom: 4 }}>⚠ These barely moved since last time:</div>
+              <div style={{ fontSize: 13, fontFamily: S.f, color: "#6b6560" }}>{stubbornTopics.join(", ")} — consider flagging these.</div>
             </div>
-            <button style={{ ...S.btn, ...S.pri }} onClick={() => setAssessmentStep(1)}>Select sticking points →</button>
-          </>) : (<>
-            <h1 style={S.h1}>Flag your sticking points</h1>
-            <p style={S.sub}>{previousAssessment ? "Previously flagged topics are highlighted. Update based on how you feel now." : "These get priority focus blocks."}</p>
-            {previousAssessment && getStubbornTopics().length > 0 && (
-              <div style={{ ...S.card, background: "#b4530908", border: "1.5px solid #b4530920", marginBottom: 12, padding: "14px 18px" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#b45309", fontFamily: S.f, marginBottom: 4 }}>⚠ These barely moved since last time:</div>
-                <div style={{ fontSize: 13, fontFamily: S.f, color: "#6b6560" }}>{getStubbornTopics().join(", ")} — consider flagging these again.</div>
+          )}
+
+          {/* Weak areas + sticking point toggle combined */}
+          <div style={S.card}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+              Tap any topic to flag it as a sticking point — it gets priority focus blocks
+            </div>
+            {sorted.length === 0 ? (
+              <p style={S.muted}>Strong across the board — no categories below 60%.</p>
+            ) : (
+              <div style={{ display: "grid", gap: 4 }}>
+                {sorted.map(cat => {
+                  const s = scores[cat] ?? 50;
+                  const yld = HIGH_YIELD_WEIGHTS[cat] || 5;
+                  const delta = getScoreDelta(cat);
+                  const on = stickingPoints.includes(cat);
+                  const isStubborn = stubbornTopics.includes(cat);
+                  const subs = getTopSubTopics(cat, 4);
+                  return (
+                    <div
+                      key={cat}
+                      onClick={() => setStickingPoints(sp => on ? sp.filter(x => x !== cat) : [...sp, cat])}
+                      style={{ padding: "12px", borderRadius: 10, border: `1.5px solid ${on ? '#b45309' : isStubborn ? '#b4530960' : '#ece8e2'}`, background: on ? '#b4530908' : isStubborn ? '#b4530904' : '#faf8f5', cursor: 'pointer', marginBottom: 4 }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: subs.length > 0 ? 6 : 0 }}>
+                        <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${on ? '#b45309' : '#d5d0c9'}`, background: on ? '#b45309' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                          {on && <span style={{ color: '#fff', fontSize: 11, fontWeight: 700 }}>✓</span>}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, fontFamily: S.f, color: on ? '#b45309' : '#1a1816' }}>{cat}</span>
+                          <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, marginLeft: 8 }}>
+                            {s}%{delta !== null ? ` (${delta > 0 ? '+' : ''}${delta} from prev)` : ''} · {yld >= 8 ? '⚡ High-yield' : `Weight ${yld}/10`}
+                          </span>
+                        </div>
+                        {delta !== null && <span style={{ ...S.tag, background: delta > 5 ? "#27ae6018" : delta < -3 ? "#c0392b18" : "#6b656010", color: delta > 5 ? "#27ae60" : delta < -3 ? "#c0392b" : "#6b6560" }}>{delta > 0 ? "+" : ""}{delta}</span>}
+                      </div>
+                      {on && subs.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, paddingLeft: 30 }}>
+                          {subs.map((sub, si) => <span key={si} style={{ fontSize: 10, fontFamily: S.f, padding: "2px 6px", borderRadius: 3, background: sub.yield >= 9 ? "#b4530915" : "#6b656010", color: sub.yield >= 9 ? "#b45309" : "#6b6560", fontWeight: 500 }}>{sub.yield >= 9 ? "★ " : ""}{sub.topic}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-            <div style={S.card}><div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(selectedExam?.categories || []).map(cat => {
-                const on = stickingPoints.includes(cat);
-                const s = scores[cat] ?? 50;
-                const wasPrevFlagged = previousAssessment?.stickingPoints?.includes(cat);
-                const isStubborn = getStubbornTopics().includes(cat);
-                return (
-                  <div key={cat} style={{ ...S.chip, ...(on ? { background: "#b45309", color: "#fff", borderColor: "#b45309" } : isStubborn ? { borderColor: "#b4530960", background: "#b4530908" } : {}), opacity: s <= 50 || isStubborn ? 1 : 0.6 }}
-                    onClick={() => setStickingPoints(sp => on ? sp.filter(x => x !== cat) : [...sp, cat])}>
-                    {on ? "✓ " : ""}{cat} <span style={{ fontSize: 11, opacity: 0.7 }}>({s}%{wasPrevFlagged ? " · prev" : ""})</span>
-                  </div>
-                );
-              })}
-            </div></div>
-            {stickingPoints.length > 0 && <p style={{ ...S.muted, textAlign: "center" }}>{stickingPoints.length} flagged.</p>}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
-              <button style={{ ...S.btn, ...S.sec }} onClick={() => setAssessmentStep(0)}>← Back</button>
-              <button style={{ ...S.btn, ...S.pri }} onClick={() => navigate("gaps")}>Classify gaps →</button>
-            </div>
-          </>)}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── GAP CLASSIFICATION ────────────────────────────────────────────
-  if (screen === "gaps") {
-    const cats = stickingPoints.length > 0 ? stickingPoints : (selectedExam?.categories || []).filter(c => (scores[c] ?? 50) <= 50);
-    const ok = cats.every(c => gapTypes[c]);
-    return (
-      <div style={S.app}>
-        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => { setAssessmentStep(1); navigate("assessment"); }}>← Back</button>{dots(3)}<UserBar /></div>
-        <div style={S.wrap}>
-          <h1 style={S.h1}>What kind of gap?</h1><p style={S.sub}>This shapes whether focus blocks are paired with content or pure practice.</p>
-          <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", marginBottom: 20 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div><div style={{ fontSize: 14, fontWeight: 700, color: "#b45309", marginBottom: 4, fontFamily: S.f }}>📚 Knowledge gap</div><div style={{ fontSize: 13, color: "#6b6560", fontFamily: S.f, lineHeight: 1.4 }}>"Never learned this" — Qs + content review</div></div>
-              <div><div style={{ fontSize: 14, fontWeight: 700, color: "#2980b9", marginBottom: 4, fontFamily: S.f }}>🎯 Application gap</div><div style={{ fontSize: 13, color: "#6b6560", fontFamily: S.f, lineHeight: 1.4 }}>"Get it but miss Qs" — more Qs + deeper review</div></div>
-            </div>
+            {stickingPoints.length > 0 && (
+              <p style={{ ...S.muted, marginTop: 12, fontSize: 13 }}>
+                ★ {stickingPoints.length} sticking point{stickingPoints.length > 1 ? 's' : ''} flagged — these get doubled focus block priority.
+              </p>
+            )}
           </div>
-          <div style={S.card}><div style={{ display: "grid", gap: 10 }}>{cats.map(cat => { const gt = gapTypes[cat]; return (
-            <div key={cat} style={{ padding: "12px 0", borderBottom: "1px solid #f0ece6" }}>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8, fontFamily: S.f, color: "#1a1816" }}>{cat} <span style={{ fontWeight: 400, color: "#8a857e" }}>({scores[cat]}%)</span></div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ ...S.chip, flex: 1, justifyContent: "center", ...(gt === "knowledge" ? { background: "#b45309", color: "#fff", borderColor: "#b45309" } : {}) }} onClick={() => setGapTypes(g => ({ ...g, [cat]: "knowledge" }))}>📚 Knowledge</div>
-                <div style={{ ...S.chip, flex: 1, justifyContent: "center", ...(gt === "application" ? { background: "#2980b9", color: "#fff", borderColor: "#2980b9" } : {}) }} onClick={() => setGapTypes(g => ({ ...g, [cat]: "application" }))}>🎯 Application</div>
-              </div>
-            </div>
-          ); })}</div></div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
-            <button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={async () => {
-              const generatedPlan = generatePlan(profile, scores, stickingPoints, gapTypes);
-              setPlan(generatedPlan);
-              setExpandedWeek(0);
-              // Save plan to backend
-              const latestAssessment = await saveCurrentAssessment();
-              api.plans.save({
-                planData: generatedPlan,
-                profileSnapshot: profile,
-                assessmentId: latestAssessment?.id || null,
-              }).then(result => {
-                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
-              }).catch(() => {});
-              navigate(previousAssessment ? "comparison" : "plan");
-            }}>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+            <button style={{ ...S.btn, ...S.pri }} onClick={generateAndNavigate}>
               {previousAssessment ? "Compare & generate plan →" : "Generate plan →"}
             </button>
           </div>
@@ -1158,7 +1149,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const avgDelta = Math.round(avgCurr - avgPrev);
     return (
       <div style={S.app}>
-        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("gaps")}>← Back</button>{dots(4)}<UserBar /></div>
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("sticking-points")}>← Back</button>{dots(3)}<UserBar /></div>
         <div style={S.wrap}>
           <h1 style={S.h1}>Score comparison</h1>
           <p style={S.sub}>{previousAssessment.formName} → {nbmeForm || `NBME #${assessments.length + 1}`}</p>
@@ -1183,8 +1174,8 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>}
           {stagnant.length > 0 && <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><span>⚠️</span><span style={{ fontSize: 14, fontWeight: 700, color: "#b45309", fontFamily: S.f }}>Stubborn areas</span></div>
-            <div style={{ display: "grid", gap: 6 }}>{stagnant.map(cat => { const d = getScoreDelta(cat) || 0; const prev = previousAssessment.scores[cat]; const prevGap = previousAssessment.gapTypes?.[cat];
-              const suggestion = prevGap === "knowledge" ? "Try switching to video resources" : "Try switching to tutor mode or a different question bank";
+            <div style={{ display: "grid", gap: 6 }}>{stagnant.map(cat => { const d = getScoreDelta(cat) || 0; const prev = previousAssessment.scores[cat];
+              const suggestion = scores[cat] < 50 ? "Try switching to video resources or a different content source" : "Try switching to tutor mode — work through explanations more carefully";
               return <div key={cat} style={{ padding: "10px 12px", background: "#b4530908", borderRadius: 8, borderLeft: "3px solid #b45309" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                   <span style={{ flex: 1, fontSize: 14, fontFamily: S.f, fontWeight: 500 }}>{cat}</span>
