@@ -919,7 +919,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       label: bucket.pathoma.label,
       timeLabel: '~30 min',
       instruction: `${focusClause} Watch the sections covering these specific concepts — Hussain is dense, so pause frequently and annotate.${skipClause}`,
-      links: [{ channel: 'Pathoma', url: ytLink(bucket.pathoma.query), label: `Search: ${bucket.pathoma.query.slice(0, 50)}` }],
+      links: [], // Paid platform — student accesses via their own Pathoma subscription. No YouTube link.
     };
   } else if (hasSketchy) {
     // Sketchy is ONLY valid for Pharmacology and Microbiology & Immunology.
