@@ -168,6 +168,179 @@ function SubTopicProgressPanel({ highYield, subTopicProgress = {}, onToggle, qba
   );
 }
 
+// ── AI Enrichment helpers ──────────────────────────────────────────────────
+// Builds the student_data payload for the plan-intelligence endpoint.
+function buildEnrichmentStudentData(profile, assessments, stickingPoints, plan) {
+  const COHORT = 70;
+  const latest = assessments.length > 0 ? assessments[assessments.length - 1] : null;
+  const latestScores = latest?.scores || {};
+  const weakSystems = Object.entries(latestScores)
+    .filter(([, s]) => s < COHORT).sort((a, b) => a[1] - b[1]).map(([sys]) => sys);
+  const strongSystems = Object.entries(latestScores)
+    .filter(([, s]) => s >= COHORT).sort((a, b) => b[1] - a[1]).map(([sys]) => sys);
+  const gapTypes = {};
+  for (const p of plan?.priorities || []) {
+    if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
+  }
+  const examDate = profile.examDate || null;
+  const daysRemaining = examDate
+    ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000))
+    : null;
+  return {
+    exam_date: examDate,
+    days_remaining: daysRemaining,
+    nbme_scores: assessments.map(a => ({
+      form: a.formName || 'Unknown',
+      date: a.date || a.created_at || null,
+      total_epc: a.totalScore || null,
+      systems: a.scores || {},
+    })),
+    weak_systems: weakSystems,
+    strong_systems: strongSystems,
+    sticking_points: stickingPoints || [],
+    gap_types: gapTypes,
+    study_hours_per_day: profile.hoursPerDay || 8,
+    resources_available: profile.resources || [],
+  };
+}
+
+// Returns the next `maxDays` study days from the plan (calendarDay order).
+function getNextStudyDays(plan, maxDays = 7) {
+  const allDays = [];
+  for (const week of plan?.weeks || []) {
+    for (const day of week.days || []) {
+      allDays.push(day);
+    }
+  }
+  allDays.sort((a, b) => a.calendarDay - b.calendarDay);
+  return allDays.slice(0, maxDays);
+}
+
+// ── AI Enrichment Panel ────────────────────────────────────────────────────
+// Shown inside content blocks in the plan view.
+// Shows loading shimmer, then AI-specific sub-topics and step-by-step sequence.
+function AIEnrichmentPanel({ dayN, enrichment, loading, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const f = 'Georgia, "Times New Roman", serif';
+
+  const dayData = enrichment?.enrichments?.[`day_${dayN}`]?.content_review;
+  const hasData = !!dayData;
+  const isLoading = loading && !enrichment;
+
+  if (!isLoading && !hasData) return null;
+
+  // YouTube-only resources get a link pill
+  const ytResources = new Set(['Ninja Nerd', 'Dirty Medicine', 'Armando Hasudungan', 'Randy Neil MD', 'HY Guru']);
+  const buildYtUrl = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+
+  const stepColors = {
+    video: { bg: '#7c3aed0c', border: '#7c3aed', text: '#5b21b6' },
+    read:  { bg: '#92400e0c', border: '#b45309', text: '#92400e' },
+    practice: { bg: '#1d6e5610', border: '#1D9E75', text: '#1d6e56' },
+  };
+  const stepEmoji = (resource) => {
+    if (['Ninja Nerd', 'Dirty Medicine', 'Armando Hasudungan', 'Randy Neil MD', 'HY Guru'].includes(resource)) return '📺';
+    if (resource === 'Pathoma' || resource === 'Sketchy') return '📖';
+    if (resource === 'First Aid') return '📗';
+    if (resource === 'UWorld' || resource === 'Amboss') return '🎯';
+    return '📌';
+  };
+
+  return (
+    <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e8dcc8' }}>
+      <button
+        onClick={() => !isLoading && setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '7px 10px' : '9px 12px', background: '#f0f9f5', border: 'none', cursor: isLoading ? 'default' : 'pointer', textAlign: 'left' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: compact ? 12 : 13 }}>✨</span>
+          <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: '#1a1816', fontFamily: f }}>AI Study Plan</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: '#1D9E7515', color: '#1D9E75', fontFamily: f }}>Personalized</span>
+          {isLoading && <span style={{ fontSize: 10, color: '#8a857e', fontFamily: f }}>Generating…</span>}
+        </div>
+        {!isLoading && <span style={{ fontSize: 14, color: '#8a857e', transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▾</span>}
+      </button>
+
+      {isLoading && (
+        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3' }}>
+          {[0.7, 0.5, 0.85].map((w, i) => (
+            <div key={i} style={{ height: 10, background: '#f0ebe3', borderRadius: 5, marginBottom: 6, width: `${w * 100}%`, animation: 'pulse 1.4s ease-in-out infinite' }} />
+          ))}
+        </div>
+      )}
+
+      {open && hasData && (
+        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3', display: 'grid', gap: 10 }}>
+          {/* Sub-topics */}
+          {dayData.sub_topics?.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: f, marginBottom: 5 }}>Focus on these sub-topics</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {dayData.sub_topics.map((topic, i) => (
+                  <span key={i} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 4, background: '#1D9E7510', color: '#1d6e56', fontWeight: 600, border: '1px solid #1D9E7530', fontFamily: f }}>{topic}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Skip topics */}
+          {dayData.skip_topics?.length > 0 && (
+            <div style={{ padding: '5px 8px', background: '#6b65600a', borderRadius: 6, border: '1px solid #6b656020' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#8a857e', fontFamily: f, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Skip: </span>
+              <span style={{ fontSize: 11, color: '#8a857e', fontFamily: f }}>{dayData.skip_topics.join(' · ')}</span>
+            </div>
+          )}
+          {/* Step-by-step sequence */}
+          {dayData.steps?.length > 0 && (
+            <div style={{ display: 'grid', gap: 6 }}>
+              {dayData.steps.map((step, si) => {
+                const isYt = ytResources.has(step.resource);
+                const c = step.resource === 'UWorld' || step.resource === 'Amboss'
+                  ? stepColors.practice
+                  : step.resource === 'First Aid' || step.resource === 'Pathoma' || step.resource === 'Sketchy'
+                  ? stepColors.read
+                  : stepColors.video;
+                return (
+                  <div key={si} style={{ padding: '9px 11px', background: c.bg, borderRadius: 7, borderLeft: `3px solid ${c.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 14 }}>{stepEmoji(step.resource)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: c.text, fontFamily: f, flex: 1 }}>
+                        Step {step.step}: {step.resource} — {step.topic}
+                      </span>
+                      {step.duration && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: f, whiteSpace: 'nowrap' }}>{step.duration}</span>}
+                    </div>
+                    {step.specific_focus && (
+                      <div style={{ fontSize: 11, color: '#6b6560', fontFamily: f, lineHeight: 1.5, paddingLeft: 20, marginBottom: step.skip || (isYt && step.youtube_search_query) ? 4 : 0 }}>
+                        <span style={{ fontWeight: 600 }}>Focus:</span> {step.specific_focus}
+                      </div>
+                    )}
+                    {step.skip && (
+                      <div style={{ fontSize: 11, color: '#8a857e', fontFamily: f, paddingLeft: 20, marginBottom: (isYt && step.youtube_search_query) ? 4 : 0 }}>
+                        <span style={{ fontWeight: 600 }}>Skip:</span> {step.skip}
+                      </div>
+                    )}
+                    {isYt && step.youtube_search_query && (
+                      <div style={{ paddingLeft: 20 }}>
+                        <a
+                          href={buildYtUrl(step.youtube_search_query)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: 11, fontWeight: 600, color: '#c0392b', fontFamily: f, padding: '3px 9px', borderRadius: 12, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          ▶ {step.resource}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -200,6 +373,8 @@ export default function StudyPlanner({ onShowTerms }) {
   // ── AI features state ─────────────────────────────────────────────
   const [showChat, setShowChat] = useState(false);
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
+  const [planEnrichment, setPlanEnrichment] = useState(null);
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [screenshotError, setScreenshotError] = useState('');
   const fileInputRef = useRef(null);
 
@@ -395,6 +570,8 @@ export default function StudyPlanner({ onShowTerms }) {
         setStickingPoints([]);
         setPlan(null);
         setLatestPlanMeta(null);
+        setPlanEnrichment(null);
+        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         navigate("welcome");
@@ -402,6 +579,8 @@ export default function StudyPlanner({ onShowTerms }) {
         await api.reset.keepScores();
         setPlan(null);
         setLatestPlanMeta(null);
+        setPlanEnrichment(null);
+        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         startNewPlanFromScores();
@@ -414,6 +593,8 @@ export default function StudyPlanner({ onShowTerms }) {
         setStickingPoints([]);
         setPlan(null);
         setLatestPlanMeta(null);
+        setPlanEnrichment(null);
+        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         navigate("welcome");
@@ -1359,6 +1540,8 @@ export default function StudyPlanner({ onShowTerms }) {
             <button style={{ ...S.btn, ...S.pri }} onClick={async () => {
               const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
               setPlan(generatedPlan);
+              setPlanEnrichment(null);
+              setEnrichmentLoading(true);
               setExpandedWeek(0);
               api.plans.save({
                 planData: generatedPlan,
@@ -1367,6 +1550,13 @@ export default function StudyPlanner({ onShowTerms }) {
               }).then(result => {
                 if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
               }).catch(() => {});
+              // Fire enrichment with what we know (no NBME scores yet)
+              const studentData = { weak_systems: weakSystems, study_hours_per_day: profile.hoursPerDay || 8, resources_available: profile.resources || [], exam_date: profile.examDate || null, nbme_scores: [], sticking_points: [] };
+              const nextDays = getNextStudyDays(generatedPlan, 7);
+              api.ai.planIntelligence(studentData, { days: nextDays })
+                .then(enrichment => setPlanEnrichment(enrichment))
+                .catch(() => {})
+                .finally(() => setEnrichmentLoading(false));
               navigate("plan");
             }}>
               Build my starter plan →
@@ -1495,6 +1685,8 @@ export default function StudyPlanner({ onShowTerms }) {
       skipAssessmentSaveRef.current = false;
       const generatedPlan = generatePlan(profile, scores, stickingPoints);
       setPlan(generatedPlan);
+      setPlanEnrichment(null);
+      setEnrichmentLoading(true);
       setExpandedWeek(0);
       let savedAssessment;
       if (isRebuild) {
@@ -1509,6 +1701,13 @@ export default function StudyPlanner({ onShowTerms }) {
       }).then(result => {
         if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
       }).catch(() => {});
+      // Fire AI enrichment asynchronously — plan still renders without it
+      const studentData = buildEnrichmentStudentData(profile, assessments, stickingPoints, generatedPlan);
+      const nextDays = getNextStudyDays(generatedPlan, 7);
+      api.ai.planIntelligence(studentData, { days: nextDays })
+        .then(enrichment => setPlanEnrichment(enrichment))
+        .catch(() => {})
+        .finally(() => setEnrichmentLoading(false));
       navigate(previousAssessment && !isRebuild ? "comparison" : "plan");
     };
 
@@ -1865,6 +2064,18 @@ export default function StudyPlanner({ onShowTerms }) {
                           ))}
                         </div>
                         {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} />}
+                        {(block.type === 'content' || block.type === 'content-reactive') && (
+                          <AIEnrichmentPanel dayN={day.calendarDay} enrichment={planEnrichment} loading={enrichmentLoading} />
+                        )}
+                        {block.type === 'questions-focus' && planEnrichment?.enrichments?.[`day_${day.calendarDay}`]?.targeted_questions && (() => {
+                          const tq = planEnrichment.enrichments[`day_${day.calendarDay}`].targeted_questions;
+                          return (
+                            <div style={{ marginTop: 6, padding: '7px 10px', background: '#2563eb08', borderRadius: 7, borderLeft: '3px solid #2563eb50' }}>
+                              {tq.filter_suggestion && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: tq.what_to_watch_for ? 4 : 0 }}><span style={{ fontWeight: 700 }}>🔍 Filter:</span> {tq.filter_suggestion}</div>}
+                              {tq.what_to_watch_for && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif' }}><span style={{ fontWeight: 700 }}>⚠ Watch for:</span> {tq.what_to_watch_for}</div>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ); })}
                   </div>
@@ -1873,6 +2084,14 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>}
           </div>
         ))}
+
+        {/* ── Strategic insight card ── */}
+        {planEnrichment?.strategic_insight && (
+          <div style={{ ...S.card, background: '#f0f9f5', border: '1.5px solid #1D9E7530', marginTop: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>✨ AI Strategic Insight</div>
+            <p style={{ fontSize: 14, color: '#2c2a26', fontFamily: 'Georgia, "Times New Roman", serif', lineHeight: 1.7, margin: 0 }}>{planEnrichment.strategic_insight}</p>
+          </div>
+        )}
 
         {/* ── Export plan ── */}
         <div style={{ ...S.card, marginTop: 20, marginBottom: 0 }}>

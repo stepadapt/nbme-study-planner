@@ -56,6 +56,17 @@ const aiChatLimiter = rateLimit({
   message: { error: 'Chat rate limit reached. Please wait 15 minutes before sending more messages.' },
 });
 
+// AI plan intelligence: 5 per hour per user (once-per-plan-generation call)
+const aiPlanIntelligenceLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => req.user?.userId?.toString() || req.ip,
+  message: { error: 'Plan intelligence limit reached. Please wait an hour.' },
+});
+
 // AI screenshot: 10 per hour per IP/user
 const aiScreenshotLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -90,6 +101,7 @@ app.use('/api/auth/signup', authLimiter);
 app.use('/api/auth/forgot-password', forgotPasswordLimiter);
 app.use('/api/ai/chat', aiChatLimiter);
 app.use('/api/ai/parse-screenshot', aiScreenshotLimiter);
+app.use('/api/ai/plan-intelligence', aiPlanIntelligenceLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);

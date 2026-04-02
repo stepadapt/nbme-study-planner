@@ -73,6 +73,10 @@ export const api = {
       return data;
     },
 
+    // Enrich a generated plan with AI-specific sub-topics and step recommendations
+    planIntelligence: (studentData, basePlan) =>
+      request('POST', '/ai/plan-intelligence', { student_data: studentData, base_plan: basePlan }),
+
     // Streaming chat — returns an async iterator of text chunks
     chat: async function* (messages, planContext) {
       const token = getToken();

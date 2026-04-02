@@ -176,5 +176,98 @@ router.post('/chat', async (req, res) => {
   }
 });
 
+// ── POST /api/ai/plan-intelligence ──────────────────────────────────
+// Called once after planEngine generates a base plan. Returns AI enrichment
+// (specific sub-topics, step-by-step resource sequence, strategic insight)
+// that gets merged into the rendered plan on the frontend.
+// Graceful degradation: if this fails, the base plan still renders.
+router.post('/plan-intelligence', async (req, res) => {
+  const { student_data, base_plan } = req.body;
+  if (!student_data || !base_plan) {
+    return res.status(400).json({ error: 'student_data and base_plan required' });
+  }
+
+  if (!apiKey || apiKey === 'your_anthropic_api_key_here') {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  const userMessage = `Analyze the student's NBME performance data and enrich their next study days with specific, targeted recommendations.
+
+Return ONLY valid JSON (no markdown, no explanation) matching this exact schema:
+{
+  "enrichments": {
+    "day_N": {
+      "content_review": {
+        "sub_topics": ["Sub-topic 1", "Sub-topic 2"],
+        "skip_topics": ["Low-yield topic to skip"],
+        "steps": [
+          {
+            "step": 1,
+            "resource": "Ninja Nerd",
+            "topic": "Exact topic name",
+            "specific_focus": "Exactly what to focus on within this resource",
+            "skip": "What to skip",
+            "duration": "30 min",
+            "youtube_search_query": "Ninja Nerd Topic Name"
+          }
+        ]
+      },
+      "targeted_questions": {
+        "filter_suggestion": "UWorld: System — Sub-topic A + Sub-topic B",
+        "what_to_watch_for": "Common NBME pattern or trap to notice"
+      }
+    }
+  },
+  "priority_summary": {
+    "weak_systems": [{"system": "...", "score": 0, "gap_type": "knowledge", "top_sub_topics": ["..."]}],
+    "top_5_opportunities": [{"system": "...", "sub_topic": "...", "yield": 10, "estimated_point_gain": "2-3 points"}],
+    "sticky_weaknesses": []
+  },
+  "strategic_insight": "3-5 sentences directly to the student about their score trajectory and this week's single most important priority."
+}
+
+Rules:
+- Only generate enrichment for days that have a content block in the base plan
+- "day_N" keys must match the calendarDay numbers from the base plan
+- Pathoma: ONLY for Pathology content — never for Physiology, Pharmacology, Anatomy, Biochemistry
+- Sketchy: ONLY for Pharmacology and Microbiology
+- Ninja Nerd: knowledge gaps (deep conceptual understanding, physiology, pathophysiology)
+- Dirty Medicine: application gaps (quick mnemonics, recall hooks, memorization)
+- youtube_search_query: include ONLY for YouTube resources (Ninja Nerd, Dirty Medicine, Armando Hasudungan, Randy Neil MD, HY Guru). OMIT for Pathoma, Sketchy, First Aid.
+- NEVER recommend watching an entire video or chapter — always specify which sub-topic and for how long
+- strategic_insight must reference the student's actual scores and trajectory — no generic advice
+
+STUDENT DATA:
+${JSON.stringify(student_data, null, 2)}
+
+BASE PLAN — NEXT STUDY DAYS:
+${JSON.stringify(base_plan.days, null, 2)}`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 4096,
+      system: TUTOR_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    const raw = response.content.find(b => b.type === 'text')?.text || '';
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    let enrichment;
+    try {
+      enrichment = JSON.parse(cleaned);
+    } catch {
+      console.error('Plan intelligence JSON parse failed:', cleaned.slice(0, 300));
+      return res.status(422).json({ error: 'Failed to parse AI enrichment response' });
+    }
+
+    res.json(enrichment);
+  } catch (err) {
+    console.error('Plan intelligence error:', err.status, err.message);
+    if (err.status === 401) return res.status(503).json({ error: 'AI authentication failed' });
+    res.status(500).json({ error: 'Plan intelligence generation failed' });
+  }
+});
 
 module.exports = router;
