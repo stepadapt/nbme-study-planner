@@ -24,34 +24,53 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
   const windowMins = Math.max(1, windowEnd - windowStart);
   const midpoint = windowStart + Math.floor(windowMins / 2);
 
-  // Total study minutes from block tasks
+  // If blocks already contain an explicit lunch block, skip auto-insertion
+  const hasExplicitLunch = blocks.some(b => b.type === 'lunch');
+
+  // Compute study minutes — exclude fixed lunch blocks from scaling
   const totalStudyMins = blocks.reduce((sum, b) => {
+    if (b.type === 'lunch') return sum;
     return sum + b.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0);
   }, 0);
+  const explicitLunchMins = hasExplicitLunch
+    ? (blocks.find(b => b.type === 'lunch')?.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0) || 0)
+    : 0;
 
   const BREAK_INTERVAL = 120; // 15-min break every 2h of study
   const LUNCH_DURATION = 30;
   const SHORT_BREAK = 15;
 
-  // Estimate total time including breaks
   const numShortBreaks = Math.max(0, Math.floor(totalStudyMins / BREAK_INTERVAL));
-  // lunch replaces one break if window spans midpoint
-  const needsLunch = windowMins >= 240;
-  const estimatedTotal = totalStudyMins + numShortBreaks * SHORT_BREAK + (needsLunch ? LUNCH_DURATION : 0);
+  const needsAutoLunch = windowMins >= 240 && !hasExplicitLunch;
+  const estimatedTotal = totalStudyMins + numShortBreaks * SHORT_BREAK
+    + (needsAutoLunch ? LUNCH_DURATION : 0) + explicitLunchMins;
 
-  // Scale blocks to fit window if they overflow
-  const scale = estimatedTotal > windowMins ? (windowMins - (numShortBreaks * SHORT_BREAK + (needsLunch ? LUNCH_DURATION : 0))) / Math.max(1, totalStudyMins) : 1;
+  // Scale study blocks to fit window (lunch duration excluded from scaling)
+  const scale = estimatedTotal > windowMins
+    ? (windowMins - numShortBreaks * SHORT_BREAK - (needsAutoLunch ? LUNCH_DURATION : 0) - explicitLunchMins)
+      / Math.max(1, totalStudyMins)
+    : 1;
 
   let cursor = windowStart;
-  let studyAccum = 0; // track study mins since last break
+  let studyAccum = 0;
   let lunchInserted = false;
   const result = [];
 
   for (const block of blocks) {
+    // Explicit lunch block — fixed duration, not scaled, resets break counter
+    if (block.type === 'lunch') {
+      const lunchMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0));
+      result.push({ ...block, startTime: fmt12(cursor), endTime: fmt12(cursor + lunchMins), durationMinutes: lunchMins });
+      cursor += lunchMins;
+      studyAccum = 0;
+      lunchInserted = true;
+      continue;
+    }
+
     const blockMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) * scale);
 
-    // Check if we should insert lunch at midpoint before this block
-    if (needsLunch && !lunchInserted && cursor + blockMins > midpoint) {
+    // Auto-insert lunch at midpoint (only when no explicit lunch block present)
+    if (needsAutoLunch && !lunchInserted && cursor + blockMins > midpoint) {
       const lunchStart = cursor;
       const lunchEnd = cursor + LUNCH_DURATION;
       result.push({ type: 'break', label: 'Lunch break', startTime: fmt12(lunchStart), endTime: fmt12(lunchEnd), durationMinutes: LUNCH_DURATION });
@@ -60,7 +79,7 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
       studyAccum = 0;
     }
 
-    // Check if we need a short break (every 2h of study)
+    // Short break every 2h of study
     if (studyAccum >= BREAK_INTERVAL) {
       const brStart = cursor;
       const brEnd = cursor + SHORT_BREAK;
@@ -359,6 +378,46 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   return result;
 }
 
+// ── Study-day time allocation by hours-per-day ────────────────────────────
+// Returns fixed block durations for the 5-block daily structure.
+// All numbers in hours. Sums match the student's declared hours/day.
+function getStudyDayParams(hrs, hasAnki) {
+  const b1Hrs = hasAnki ? (hrs >= 8 ? 1.0 : 0.75) : 0.5;
+  // 10+ h/day: 3 random blocks
+  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 3, b5Hrs: 0.75 };
+  // 9 h/day  : 2 random blocks, longer lunch
+  if (hrs >= 9)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 2, b5Hrs: 0.75 };
+  // 8 h/day  : 2 random blocks
+  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5  };
+  // 6–7 h/day: 1 random block
+  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5  };
+}
+
+// ── Day structure validator ────────────────────────────────────────────────
+// Confirms the 5-block sequence is correct: content before questions, targeted before random.
+// Logs a console error if ordering is wrong (acts as a sanity check, does not throw).
+export function validateDayStructure(dayBlocks) {
+  let contentIndex = -1, targetedQIndex = -1, randomQIndex = -1;
+  dayBlocks.forEach((block, i) => {
+    if (block.type === 'content' || block.type === 'content-reactive') contentIndex = i;
+    if (block.type === 'questions-focus' || block.type === 'questions-targeted') targetedQIndex = i;
+    if (block.type === 'questions-random') randomQIndex = Math.max(randomQIndex, i);
+  });
+  if (contentIndex > -1 && targetedQIndex > -1 && contentIndex > targetedQIndex) {
+    console.error(`BUG: Content review (idx ${contentIndex}) placed AFTER targeted questions (idx ${targetedQIndex})`);
+    return false;
+  }
+  if (contentIndex > -1 && randomQIndex > -1 && contentIndex > randomQIndex) {
+    console.error(`BUG: Content review (idx ${contentIndex}) placed AFTER random questions (idx ${randomQIndex})`);
+    return false;
+  }
+  if (targetedQIndex > -1 && randomQIndex > -1 && targetedQIndex > randomQIndex) {
+    console.error(`BUG: Targeted questions (idx ${targetedQIndex}) placed AFTER random questions (idx ${randomQIndex})`);
+    return false;
+  }
+  return true;
+}
+
 export function generateFirstTimerPlan(profile, weakSystems = [], uworldPct = null) {
   // Derive a baseline score from UWorld% or default to 55
   const baseline = (uworldPct != null && uworldPct !== '' && !isNaN(Number(uworldPct)))
@@ -619,94 +678,124 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const res1 = focusTopic ? getRes(focusTopic.category) : { learning: [], practice: [] };
     const primaryQBank = res1.practice.length > 0 ? rn(res1.practice[0]) : "Question bank";
 
-    // Morning Anki — only if student has AnKing
+    // ── BLOCK 1: Morning retention — always first, every day ──────────────
     if (hasAnki) {
       blocks.push({ type: "anki", label: "Morning retention", tasks: [
-        { resource: "AnKing Deck", activity: "All due reviews — do these first, every day", hours: ankiHrs }
+        { resource: "AnKing Deck", activity: "All due reviews — do these first, every day, before anything else. Retrieval reps from yesterday's learning.", hours: ankiHrs },
+      ]});
+    } else {
+      blocks.push({ type: "anki", label: "Morning retention", tasks: [
+        { resource: "UWorld incorrect", activity: "Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning.", hours: 0.5 },
       ]});
     }
 
     if (isLight) {
-      // Light day: 1 random block + catch-up review
-      const qH = 1.0;
-      const catchH = Math.max(0.5, Math.round((availHrs - ankiHrs - qH) * 10) / 10);
-      blocks.push({ type: "questions-random", label: "Light random block: all systems", tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems (lighter pace today)`, hours: qH },
-        { resource: "Self-review", activity: "Review wrong answers only", hours: 0.75 },
-      ]});
-      blocks.push({ type: "catchup", label: "Catch-up + flagged review", tasks: [
-        { resource: "Self-review", activity: "Revisit flagged questions and weak notes from the week", hours: Math.min(catchH, 1.5) }
-      ]});
-    } else {
-      // Standard study day: 1 focus block + N random blocks + optional content (capped 1.5h)
-      const hrsAfterAnki = availHrs - ankiHrs;
-      const hrsAfterFocus = hrsAfterAnki - FOCUS_BLOCK_HRS;
-      const randomBlockCount = Math.max(0, Math.min(Math.floor(hrsAfterFocus / RANDOM_BLOCK_HRS), 4));
-      const qBudget = FOCUS_BLOCK_HRS + (randomBlockCount * RANDOM_BLOCK_HRS);
-      const rawRemaining = Math.max(0, hrsAfterAnki - qBudget);
-      // Content block: cap at MAX_CONTENT_HRS; ramp days get content prioritised first
-      const contentHrs = rawRemaining > 0 ? Math.min(rawRemaining, isRamp ? MAX_CONTENT_HRS : MAX_CONTENT_HRS) : 0;
-
-      // Focus block — get top 5 sub-topics (extra 2 give the adaptive layer options as topics improve)
-      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5) : [];
-      const top3Short = focusSubTopics.slice(0, 3).map(s => s.topic.split('(')[0].trim());
-      const prioritizeStr = top3Short.length > 0 ? ` Prioritize: ${top3Short.join(', ')}.` : '';
-      const qbankFilterTip = getQbankFilterTip(primaryQBank, focusTopic?.category, focusSubTopics);
+      // ── LIGHT DAY: Block 1 + shortened targeted Qs + 1 random block ──────
+      // No Block 2 content review. Recovery pace — keep the habit, don't push.
+      const lightFocusSubs = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}) : [];
       blocks.push({
         type: "questions-focus",
-        label: `Focus block: ${focusTopic?.category || "Weak area"}`,
+        label: `Targeted questions: ${focusTopic?.category || "focus system"} — 20 Qs`,
+        highYield: lightFocusSubs,
+        primaryQBank,
+        tasks: [
+          { resource: primaryQBank, activity: `20 Qs — ${focusTopic?.category || "focus system"} only, timed. Lighter pace today.`, hours: 0.5 },
+          { resource: "Self-review", activity: "Review wrong answers only — quick lookup, no deep dives.", hours: 0.5 },
+        ],
+      });
+      blocks.push({ type: "questions-random", label: "Random block: all systems", tasks: [
+        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Recovery day — keep the habit, don't push.`, hours: 0.75 },
+        { resource: "Self-review", activity: "Wrong answers only — quick flag and move on. Save energy for tomorrow.", hours: 0.25 },
+      ]});
+    } else {
+      // ── STANDARD STUDY DAY: Evidence-based 5-block sequence ──────────────
+      // Block 1 (retention) → Block 2 (content, morning) → Block 3 (targeted Qs, same system) →
+      // Lunch → Block 4 (random Qs, afternoon) → Block 5 (end-of-day review)
+      const params = getStudyDayParams(availHrs, hasAnki);
+      const isKG = focusTopic?.gapType === "knowledge";
+      const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3, profile.subTopicProgress || {}) : [];
+      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}) : [];
+      const top3Short = topSubs.map(s => s.topic.split("(")[0].trim());
+      const qbankFilterTip = getQbankFilterTip(primaryQBank, focusTopic?.category, focusSubTopics);
+
+      // BLOCK 2 — Content review: gap-fill on high-yield sub-topics (MORNING, brain fresh)
+      // NEVER placed after questions. Maximum 1.5h. Targets 2–3 highest-yield sub-topics only.
+      if (focusTopic) {
+        const b2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75); // ~45 min for application gaps
+        const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
+        // Build content sequence and strip practice/annotate steps — those belong in Block 3
+        const contentSeqFull = getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs);
+        const contentSeqB2 = contentSeqFull
+          ? { gapType: contentSeqFull.gapType, sequence: (contentSeqFull.sequence || []).filter(s => s.type !== "practice" && s.type !== "annotate") }
+          : null;
+        const b2Resource = isKG
+          ? (res1.learning.length > 0 ? rn(res1.learning[0]) : "Ninja Nerd + First Aid")
+          : "Dirty Medicine + First Aid";
+        const b2Activity = isKG
+          ? `Content review: ${focusTopic.category} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. Time: ${Math.round(b2Hrs * 60)} min.`
+          : `Content review: ${focusTopic.category} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. Time: ~45 min.`;
+        const b2Label = isRamp
+          ? `Content foundation: ${focusTopic.category}`
+          : `Content review: ${focusTopic.category}`;
+        blocks.push({
+          type: "content",
+          label: b2Label,
+          contentSequence: contentSeqB2,
+          highYield: topSubs,
+          tasks: [{ resource: b2Resource, activity: b2Activity, hours: b2Hrs }],
+        });
+      }
+
+      // BLOCK 3 — Targeted question block on the SAME system as Block 2
+      // Immediately tests whether the morning's content review stuck.
+      const prioritizeStr = top3Short.length > 0 ? ` Prioritize: ${top3Short.join(", ")}.` : "";
+      blocks.push({
+        type: "questions-focus",
+        label: `Targeted questions: ${focusTopic?.category || "focus system"}`,
         highYield: focusSubTopics,
         primaryQBank,
         qbankFilterTip,
         tasks: [
-          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category} only (timed, test mode).${prioritizeStr}`, hours: 1.0 },
-          { resource: "Self-review", activity: "Thorough review of every Q — annotate wrong answers, make Anki cards for every missed concept", hours: 1.5 },
+          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode.${qbankFilterTip ? " " + qbankFilterTip : ""}${prioritizeStr}`, hours: params.b3QHrs },
+          { resource: "Self-review", activity: "Thorough review of EVERY question — right and wrong. Annotate First Aid for wrong answers. Track which sub-topics you're still missing.", hours: params.b3ReviewHrs },
         ],
       });
 
-      // Random blocks
-      for (let rb = 0; rb < randomBlockCount; rb++) {
-        const blockLabel = randomBlockCount === 1 ? "Random block: all systems" : `Random block ${rb + 1} of ${randomBlockCount}: all systems`;
+      // LUNCH — explicit break between Block 3 (targeted) and Block 4 (random)
+      blocks.push({
+        type: "lunch",
+        label: "Lunch break",
+        tasks: [{ resource: "Break", activity: "Step away completely — eat, move, decompress. Mental reset before afternoon execution mode.", hours: params.lunchHrs }],
+      });
+
+      // BLOCK 4 — Mixed random timed question blocks (afternoon execution mode)
+      // Two or three blocks of 40 Qs each. ALL systems, RANDOM. Context-switching is the point.
+      for (let rb = 0; rb < params.numRandom; rb++) {
+        const blockLabel = params.numRandom === 1
+          ? "Random block: all systems"
+          : `Random block ${rb + 1} of ${params.numRandom}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
-          { resource: primaryQBank, activity: rb === 0 ? `${qBlockSize} Qs — RANDOM, all systems, timed` : `${qBlockSize} Qs — RANDOM, all systems, timed (build stamina)`, hours: 1.0 },
-          { resource: "Self-review", activity: rb === 0 ? "Focused review — every wrong Q fully, right Qs skim." : "Efficient review — wrong answers only.", hours: 0.8 },
+          { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: 0.75 },
+          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.25 },
         ]});
       }
 
-      // Reactive content review (capped at 1.5h) — knowledge gaps get learning resource, else notes
-      if (contentHrs >= 0.5) {
-        const isKG = focusTopic?.gapType === "knowledge";
-        const learnRes = isKG && res1.learning.length > 0 ? rn(res1.learning[0]) : "First Aid + notes";
-        const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3) : [];
-        const topSubStrings = topSubs.map(s => s.topic.split("(")[0].trim());
-        const subHint = topSubStrings.length > 0 ? ` (especially ${topSubStrings.slice(0,2).join(" and ")})` : "";
-        const contentLabel = isRamp
-          ? `Content foundation: ${focusTopic?.category}`
-          : isKG ? `Targeted review: ${focusTopic?.category}` : "Missed concept review";
-
-        // Build content sequence with specific YouTube/resource recommendations
-        const contentSeq = focusTopic
-          ? getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs)
-          : null;
-
-        blocks.push({ type: isRamp ? "content" : "content-reactive", label: contentLabel,
-          contentSequence: contentSeq,
-          tasks: [
-            { resource: learnRes, activity: isRamp
-              ? `Build the framework before questions — review core concepts${subHint}`
-              : isKG
-                ? `Review concepts missed in today's Qs${subHint}`
-                : `Look up missed concepts from today's Qs — make Anki cards${subHint}`,
-              hours: contentHrs },
-          ]});
-      }
+      // BLOCK 5 — End-of-day review: consolidate the day, triage misses, prep tomorrow's retention
+      blocks.push({ type: "end-review", label: "End-of-day review", tasks: [
+        { resource: "Self-review", activity: "Review ALL wrong answers from today's random blocks. Quick First Aid lookup for each missed concept (2 min max). Make Anki cards for anything you're unsure of. Flag patterns for tomorrow's retention session.", hours: params.b5Hrs },
+      ]});
     }
+
+    // Validate block order — content must always precede questions
+    validateDayStructure(blocks);
 
     if (focusTopic && !currentWeek.focusTopics.includes(focusTopic.category)) currentWeek.focusTopics.push(focusTopic.category);
     currentWeek.days.push({
       calendarDay: sched.calendarDay, dayType: sched.type, focusTopic: focusTopic?.category,
       focusGapType: focusTopic?.gapType, maintainTopics: [maint1, maint2].filter(Boolean).map(t => t.category),
-      blocks, totalQuestions: blocks.reduce((sum, b) => sum + (b.type.includes("questions") ? qBlockSize : 0), 0),
+      blocks, totalQuestions: isLight
+        ? (20 + qBlockSize)  // light day: 20 targeted + 40 random
+        : blocks.reduce((sum, b) => sum + (b.type.includes("questions") ? qBlockSize : 0), 0),
     });
   }
   if (currentWeek.days.length > 0) weeks.push(currentWeek);
@@ -725,11 +814,11 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     else w.phase = "Sharpen — simulate test conditions, full blocks";
   });
 
-  const totalStudyDays = daySchedule.filter(d => ["study", "light"].includes(d.type)).length;
-  const ankiHrsCalc = hasAnki ? Math.min(1, Math.round(hrs * 0.12 * 10) / 10) : 0;
-  const hrsAfterAnki = hrs - ankiHrsCalc;
-  const randomBlocksPerDay = Math.max(0, Math.min(Math.floor((hrsAfterAnki - FOCUS_BLOCK_HRS) / RANDOM_BLOCK_HRS), 4));
-  const totalQEstimate = totalStudyDays * (1 + randomBlocksPerDay) * qBlockSize;
+  const totalStudyDays = daySchedule.filter(d => d.type === "study").length;
+  const totalLightDays  = daySchedule.filter(d => d.type === "light").length;
+  const sdParams = getStudyDayParams(hrs, hasAnki);
+  const totalQEstimate = totalStudyDays * (1 + sdParams.numRandom) * qBlockSize
+    + totalLightDays * (20 + qBlockSize);
   const nbmeDays = assessmentSchedule.length;
 
   return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule };

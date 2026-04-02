@@ -512,12 +512,14 @@ export default function StudyPlanner({ onShowTerms }) {
 
   const blockColors = {
     "anki": { bg: "#27ae6010", border: "#27ae60", icon: "🧠", label: "Retention" },
-    "questions-focus": { bg: "#b4530912", border: "#b45309", icon: "🔥", label: "Focus Qs" },
+    "questions-focus": { bg: "#b4530912", border: "#b45309", icon: "🔥", label: "Targeted Qs" },
     "questions-random": { bg: "#2563eb0c", border: "#2563eb", icon: "🎲", label: "Random Qs" },
     "questions": { bg: "#2980b90c", border: "#2980b9", icon: "🎯", label: "Questions" },
-    "content": { bg: "#8b5cf610", border: "#8b5cf6", icon: "📚", label: "Content build" },
+    "content": { bg: "#8b5cf610", border: "#8b5cf6", icon: "📚", label: "Content review" },
     "content-reactive": { bg: "#8b5cf60c", border: "#8b5cf6", icon: "📚", label: "Gap review" },
     "catchup": { bg: "#6b656010", border: "#8a857e", icon: "🔄", label: "Catch-up" },
+    "lunch": { bg: "#fefce80c", border: "#d97706", icon: "☕", label: "Lunch" },
+    "end-review": { bg: "#0369a10c", border: "#0369a1", icon: "✅", label: "End review" },
     "nbme": { bg: "#c0392b0c", border: "#c0392b", icon: "📋", label: "Practice exam" },
     "rest": { bg: "#27ae600c", border: "#27ae60", icon: "😴", label: "Rest" },
   };
@@ -600,7 +602,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
     // Block icons
     const blockIcon = (type) => {
-      const icons = { anki: '🧠', 'questions-focus': '🔥', 'questions-random': '🎲', questions: '🎯', content: '📚', 'content-reactive': '📚', catchup: '🔄', nbme: '📋', rest: '😴', break: '⏸' };
+      const icons = { anki: '🧠', 'questions-focus': '🔥', 'questions-random': '🎲', questions: '🎯', content: '📚', 'content-reactive': '📚', catchup: '🔄', lunch: '☕', 'end-review': '✅', nbme: '📋', rest: '😴', break: '⏸' };
       return icons[type] || '📌';
     };
 
@@ -766,10 +768,10 @@ export default function StudyPlanner({ onShowTerms }) {
                   </div>
                 )}
                 {todayBlocksWithTimes.map((block, i) => {
-                  if (block.type === 'break') {
+                  if (block.type === 'break' || block.type === 'lunch') {
                     return (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#faf8f5', borderRadius: 8, opacity: 0.7 }}>
-                        <span style={{ fontSize: 14 }}>{block.label === 'Lunch break' ? '☕' : '⏸'}</span>
+                        <span style={{ fontSize: 14 }}>{block.type === 'lunch' || block.label === 'Lunch break' ? '☕' : '⏸'}</span>
                         <span style={{ flex: 1, fontSize: 13, color: '#8a857e', fontFamily: S.f }}>{block.label}</span>
                         <span style={{ fontSize: 12, color: '#aaa9a6', fontFamily: S.f }}>{block.startTime} – {block.endTime}</span>
                       </div>
@@ -1824,7 +1826,18 @@ export default function StudyPlanner({ onShowTerms }) {
                     {day.totalQuestions > 0 && <span style={{ ...S.tag, background: "#1a181610", color: "#1a1816", marginLeft: "auto" }}>{day.totalQuestions} Qs</span>}
                   </div>
                   <div style={{ display: "grid", gap: 10 }}>
-                    {day.blocks.map((block, bi) => { const bc = blockColors[block.type] || blockColors.questions; return (
+                    {day.blocks.map((block, bi) => {
+                      // Lunch blocks render as a simple break row
+                      if (block.type === 'lunch') {
+                        return (
+                          <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fefce8', borderRadius: 8, opacity: 0.85, borderLeft: '3px solid #d97706' }}>
+                            <span style={{ fontSize: 13 }}>☕</span>
+                            <span style={{ fontSize: 12, fontFamily: S.f, color: '#92400e', fontWeight: 600 }}>{block.label}</span>
+                            <span style={{ fontSize: 11, color: '#b45309', fontFamily: S.f, marginLeft: 'auto' }}>{block.tasks[0]?.hours}h</span>
+                          </div>
+                        );
+                      }
+                      const bc = blockColors[block.type] || blockColors.questions; return (
                       <div key={bi}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                           <span style={{ fontSize: 13 }}>{bc.icon}</span>
