@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { requireAuth } = require('../auth');
+const { buildTutorSystemPrompt } = require('../config/system-prompt');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -138,7 +139,7 @@ router.post('/chat', async (req, res) => {
     return res.status(400).json({ error: 'messages array required' });
   }
 
-  const systemPrompt = buildSystemPrompt(planContext);
+  const systemPrompt = buildTutorSystemPrompt(planContext);
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -154,7 +155,7 @@ router.post('/chat', async (req, res) => {
   try {
     const stream = anthropic.messages.stream({
       model: 'claude-haiku-4-5',
-      max_tokens: 1024,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
     });
@@ -175,61 +176,5 @@ router.post('/chat', async (req, res) => {
   }
 });
 
-function buildSystemPrompt(ctx) {
-  if (!ctx) {
-    return `You are an expert USMLE Step 1 study coach. You help medical students build effective study plans, understand high-yield concepts, and optimize their Step 1 preparation. Be direct, practical, and supportive. Keep responses concise unless the student asks for depth.`;
-  }
-
-  const { profile, assessments, plan } = ctx;
-  const examDate = profile?.examDate;
-  const daysLeft = examDate ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000)) : null;
-
-  let context = `You are an expert USMLE Step 1 study coach with deep knowledge of board exam preparation.
-
-STUDENT PROFILE:
-- Exam: USMLE Step 1
-- ${daysLeft !== null ? `Days until exam: ${daysLeft}` : 'Exam date: not set'}
-- Hours per day: ${profile?.hoursPerDay || 8}h
-- Resources: ${(profile?.resources || []).join(', ') || 'not specified'}`;
-
-  if (assessments && assessments.length > 0) {
-    const latest = assessments[assessments.length - 1];
-    const scores = latest.scores || {};
-    const sorted = Object.entries(scores).sort((a, b) => a[1] - b[1]);
-    const weakest = sorted.slice(0, 5).map(([cat, s]) => `${cat} (${s}%)`).join(', ');
-    const strongest = sorted.slice(-3).reverse().map(([cat, s]) => `${cat} (${s}%)`).join(', ');
-
-    context += `
-
-MOST RECENT ASSESSMENT (${latest.formName || `Assessment #${assessments.length}`}, ${latest.date}):
-- Weakest areas: ${weakest}
-- Strongest areas: ${strongest}
-- Flagged sticking points: ${(latest.stickingPoints || []).join(', ') || 'none'}
-- Total assessments on file: ${assessments.length}`;
-  }
-
-  if (plan) {
-    context += `
-
-CURRENT STUDY PLAN:
-- Timeline: ${plan.totalCalendarDays} days, ${plan.totalWeeks} weeks
-- Mode: ${plan.timelineMode}
-- Estimated questions: ~${plan.totalQEstimate}
-- NBMEs scheduled: ${plan.nbmeDays}
-- Top 3 priority topics: ${(plan.priorities || []).slice(0, 3).map(p => `${p.category} (score: ${p.score}%, yield: ${p.yield}/10)`).join('; ')}`;
-  }
-
-  context += `
-
-YOUR ROLE:
-- Help the student understand their study plan and why it's structured the way it is
-- Answer questions about study strategies, specific topics, or resource recommendations
-- Give honest, targeted advice — don't sugarcoat weak areas
-- Reference the student's specific data (scores, topics, timeline) when relevant
-- Keep responses focused and actionable. Use markdown formatting for clarity.
-- If asked about specific medical content, provide accurate, board-relevant information`;
-
-  return context;
-}
 
 module.exports = router;
