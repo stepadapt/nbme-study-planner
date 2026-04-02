@@ -60,9 +60,19 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS study_cycles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT 'Archived cycle',
+    assessment_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    archived_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_assessments_user ON assessments(user_id);
   CREATE INDEX IF NOT EXISTS idx_plans_user ON study_plans(user_id);
   CREATE INDEX IF NOT EXISTS idx_schedule_user ON class_schedule(user_id);
+  CREATE INDEX IF NOT EXISTS idx_cycles_user ON study_cycles(user_id);
 `);
 
 // ── Migrations (safe: no-op if column already exists) ────────────────
@@ -76,5 +86,7 @@ addCol('ALTER TABLE user_profiles ADD COLUMN study_start_time TEXT DEFAULT "07:0
 addCol('ALTER TABLE user_profiles ADD COLUMN study_end_time TEXT DEFAULT "17:00"');
 addCol('ALTER TABLE user_profiles ADD COLUMN taken_assessments TEXT DEFAULT "[]"');
 addCol('ALTER TABLE user_profiles ADD COLUMN sub_topic_progress TEXT DEFAULT "{}"');
+addCol('ALTER TABLE assessments ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
+addCol('ALTER TABLE study_plans ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
 
 module.exports = db;

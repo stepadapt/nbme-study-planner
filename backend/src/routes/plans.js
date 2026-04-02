@@ -5,11 +5,19 @@ const { requireAuth } = require('../auth');
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/plans — list saved plans (summary only)
+// GET /api/plans/archived-cycles — list archived study cycles
+router.get('/archived-cycles', (req, res) => {
+  const cycles = db.prepare(
+    'SELECT id, label, assessment_count, archived_at FROM study_cycles WHERE user_id = ? ORDER BY archived_at DESC'
+  ).all(req.user.userId);
+  res.json({ cycles });
+});
+
+// GET /api/plans — list active (non-archived) plans (summary only)
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT id, assessment_id, profile_snapshot, created_at
-    FROM study_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 20
+    FROM study_plans WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL) ORDER BY created_at DESC LIMIT 20
   `).all(req.user.userId);
 
   const plans = rows.map(row => ({
@@ -22,10 +30,10 @@ router.get('/', (req, res) => {
   res.json({ plans });
 });
 
-// GET /api/plans/latest — get most recent plan with full data
+// GET /api/plans/latest — get most recent active (non-archived) plan with full data
 router.get('/latest', (req, res) => {
   const row = db.prepare(`
-    SELECT * FROM study_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
+    SELECT * FROM study_plans WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL) ORDER BY created_at DESC LIMIT 1
   `).get(req.user.userId);
 
   if (!row) return res.json({ plan: null });

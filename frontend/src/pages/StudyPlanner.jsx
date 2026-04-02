@@ -184,6 +184,15 @@ export default function StudyPlanner({ onShowTerms }) {
   const [assessments, setAssessments] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  // ── Reset / fresh-start state ─────────────────────────────────────
+  const [resetType, setResetType] = useState(null);       // 'full' | 'keep-scores' | 'archive'
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetConfirmed, setResetConfirmed] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [archivedCycles, setArchivedCycles] = useState([]);
+  // Skip saveCurrentAssessment() when regenerating plan from existing scores
+  const skipAssessmentSaveRef = useRef(false);
+
   // ── AI features state ─────────────────────────────────────────────
   const [showChat, setShowChat] = useState(false);
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
@@ -207,7 +216,8 @@ export default function StudyPlanner({ onShowTerms }) {
       api.assessments.list().catch(() => ({ assessments: [] })),
       api.schedule.get().catch(() => ({ schedule: [] })),
       api.plans.latest().catch(() => ({ plan: null })),
-    ]).then(([{ profile: savedProfile }, { assessments: savedAssessments }, { schedule: savedSchedule }, { plan: savedPlan }]) => {
+      api.cycles.list().catch(() => ({ cycles: [] })),
+    ]).then(([{ profile: savedProfile }, { assessments: savedAssessments }, { schedule: savedSchedule }, { plan: savedPlan }, { cycles: savedCycles }]) => {
       if (savedProfile) setProfile(p => ({ ...p, ...savedProfile }));
       if (savedAssessments.length > 0) setAssessments(savedAssessments);
       if (savedSchedule) setSchedule(savedSchedule);
@@ -215,6 +225,7 @@ export default function StudyPlanner({ onShowTerms }) {
         setPlan(savedPlan.planData);
         setLatestPlanMeta({ id: savedPlan.id, createdAt: savedPlan.createdAt });
       }
+      if (savedCycles?.length > 0) setArchivedCycles(savedCycles);
     }).finally(() => setDataLoaded(true));
   }, [user]);
 
@@ -353,6 +364,61 @@ export default function StudyPlanner({ onShowTerms }) {
     setNbmeForm("");
     setStickingPoints([]);
     navigate("scores");
+  };
+
+  // Rebuild plan from existing scores (Quick Actions "New Plan" + Option B reset)
+  const startNewPlanFromScores = () => {
+    setStickingPoints([]);
+    if (assessments.length > 0) {
+      const latest = assessments[assessments.length - 1];
+      setScores({ ...latest.scores });
+      setNbmeForm('');
+      skipAssessmentSaveRef.current = true;
+      navigate("sticking-points");
+    } else {
+      navigate("onboarding");
+    }
+  };
+
+  // Execute the chosen reset type
+  const handleReset = async () => {
+    setResetLoading(true);
+    try {
+      if (resetType === 'full') {
+        await api.reset.full();
+        setAssessments([]);
+        setScores({});
+        setStickingPoints([]);
+        setPlan(null);
+        setLatestPlanMeta(null);
+        setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
+        setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
+        navigate("welcome");
+      } else if (resetType === 'keep-scores') {
+        await api.reset.keepScores();
+        setPlan(null);
+        setLatestPlanMeta(null);
+        setProfile(p => ({ ...p, subTopicProgress: {} }));
+        setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
+        startNewPlanFromScores();
+      } else if (resetType === 'archive') {
+        await api.reset.archive();
+        const { cycles: updatedCycles } = await api.cycles.list().catch(() => ({ cycles: [] }));
+        setArchivedCycles(updatedCycles || []);
+        setAssessments([]);
+        setScores({});
+        setStickingPoints([]);
+        setPlan(null);
+        setLatestPlanMeta(null);
+        setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
+        setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
+        navigate("welcome");
+      }
+    } catch (err) {
+      alert('Reset failed: ' + err.message);
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   const getScoreDelta = (cat) => {
@@ -586,6 +652,7 @@ export default function StudyPlanner({ onShowTerms }) {
           <LogoMark />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {plan && <button style={{ ...S.btn, ...S.sec, padding: '8px 16px', fontSize: 13 }} onClick={() => navigate("plan")}>📅 Full plan</button>}
+            <button style={{ ...S.btn, ...S.ghost, padding: '8px 14px', fontSize: 13, color: '#8a857e' }} onClick={() => navigate("reset")}>↺ Start fresh</button>
             <UserBar />
           </div>
         </div>
@@ -813,7 +880,7 @@ export default function StudyPlanner({ onShowTerms }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {[
                   { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
-                  { icon: '📋', label: 'New Plan', action: () => navigate("onboarding") },
+                  { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
                   { icon: '💬', label: 'AI Coach', action: () => setShowChat(true) },
                   { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
                 ].map((item, i) => (
@@ -824,6 +891,186 @@ export default function StudyPlanner({ onShowTerms }) {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // ─── RESET ─────────────────────────────────────────────────────────
+  if (screen === "reset") {
+    const RESET_OPTIONS = [
+      {
+        type: 'full',
+        icon: '🗑️',
+        title: 'Reset everything',
+        subtitle: 'Complete fresh start',
+        desc: 'Deletes all assessment history, scores, and study plans. Your account and subscription will not be affected.',
+        color: '#c0392b',
+      },
+      {
+        type: 'keep-scores',
+        icon: '🔄',
+        title: 'Keep scores, rebuild plan',
+        subtitle: 'Recalibrate with existing data',
+        desc: 'Removes your current study plan. Preserves all assessment scores and history. Takes you to sticking-points to generate a fresh plan.',
+        color: '#D85A30',
+      },
+      {
+        type: 'archive',
+        icon: '📦',
+        title: 'Archive and start new cycle',
+        subtitle: 'New workspace, old data saved',
+        desc: 'Archives your current plan and all assessments into a Previous cycles record (viewable read-only). Starts a completely fresh workspace.',
+        color: '#7c3aed',
+      },
+    ];
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}>
+          <button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(plan ? "dashboard" : "welcome")}>← Back</button>
+          <UserBar />
+        </div>
+        <div style={S.wrap}>
+          <h1 style={S.h1}>Start fresh</h1>
+          <p style={S.sub}>Choose how to reset your study data. Your account will not be affected.</p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {RESET_OPTIONS.map(opt => (
+              <div
+                key={opt.type}
+                style={{ ...S.card, marginBottom: 0, border: `1.5px solid ${opt.color}28`, cursor: 'pointer', transition: 'box-shadow 0.2s' }}
+                onClick={() => { setResetType(opt.type); navigate("reset-confirm"); }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                  <span style={{ fontSize: 26, flexShrink: 0, marginTop: 2 }}>{opt.icon}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1816', marginBottom: 2 }}>{opt.title}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: opt.color, fontFamily: S.f, marginBottom: 6 }}>{opt.subtitle}</div>
+                    <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>{opt.desc}</div>
+                  </div>
+                  <span style={{ fontSize: 16, color: opt.color, flexShrink: 0, marginTop: 6 }}>→</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          {archivedCycles.length > 0 && (
+            <div style={{ ...S.card, background: '#faf8f5', border: '1px solid #ece8e2', marginTop: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: S.f, marginBottom: 10 }}>
+                Previous cycles ({archivedCycles.length})
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {archivedCycles.map((cycle, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#fff', borderRadius: 8, border: '1px solid #f0ece6' }}>
+                    <span style={{ fontSize: 14 }}>📦</span>
+                    <div style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816' }}>{cycle.label}</div>
+                    <div style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{cycle.assessment_count} assessment{cycle.assessment_count !== 1 ? 's' : ''}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  // ─── RESET CONFIRM ─────────────────────────────────────────────────
+  if (screen === "reset-confirm" && resetType) {
+    const isDestructive = resetType !== 'keep-scores';
+    const confirmReady = isDestructive ? resetConfirmText === 'RESET' : resetConfirmed;
+    const DETAILS = {
+      full: {
+        title: '⚠️ Reset everything',
+        color: '#c0392b',
+        bullets: [
+          'All assessment history and NBME scores — deleted',
+          'All study plans — deleted',
+          'Sticking points and gap classifications — cleared',
+          'Your account, email, and profile settings — preserved ✓',
+        ],
+        warning: 'This permanently deletes all your study data and cannot be undone.',
+      },
+      'keep-scores': {
+        title: '🔄 Keep scores, rebuild plan',
+        color: '#D85A30',
+        bullets: [
+          'All assessment scores and history — preserved ✓',
+          'Current study plan — removed',
+          'Sticking points selections — cleared (you\'ll re-select them)',
+          'You\'ll be taken to the sticking points screen to generate a fresh plan',
+        ],
+        warning: null,
+      },
+      archive: {
+        title: '📦 Archive and start new cycle',
+        color: '#7c3aed',
+        bullets: [
+          'Current plan and all assessments — archived (viewable under Previous cycles)',
+          'New clean workspace — created',
+          'Your account, email, and profile settings — preserved ✓',
+        ],
+        warning: 'Archived data will appear in Previous cycles on the Start fresh screen.',
+      },
+    };
+    const d = DETAILS[resetType];
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}>
+          <button style={{ ...S.btn, ...S.ghost }} onClick={() => { setResetConfirmText(''); setResetConfirmed(false); navigate("reset"); }}>← Back</button>
+          <UserBar />
+        </div>
+        <div style={S.wrap}>
+          <h1 style={{ ...S.h1, color: d.color }}>{d.title}</h1>
+          <div style={{ ...S.card, border: `1.5px solid ${d.color}28` }}>
+            <div style={{ fontSize: 13, fontWeight: 700, fontFamily: S.f, color: '#1a1816', marginBottom: 10 }}>What will happen:</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {d.bullets.map((b, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, fontSize: 13, fontFamily: S.f, color: '#6b6560', lineHeight: 1.5 }}>
+                  <span style={{ flexShrink: 0 }}>•</span><span>{b}</span>
+                </div>
+              ))}
+            </div>
+            {d.warning && (
+              <div style={{ marginTop: 14, padding: '10px 14px', background: `${d.color}08`, borderRadius: 8, border: `1px solid ${d.color}30`, fontSize: 13, fontWeight: 600, color: d.color, fontFamily: S.f }}>
+                {isDestructive ? '⚠️ ' : 'ℹ️ '}{d.warning}
+              </div>
+            )}
+          </div>
+          {isDestructive ? (
+            <div style={S.card}>
+              <label style={S.label}>Type "RESET" to confirm</label>
+              <input
+                style={S.input}
+                placeholder="RESET"
+                value={resetConfirmText}
+                onChange={e => setResetConfirmText(e.target.value.toUpperCase())}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+          ) : (
+            <div style={{ ...S.card, display: 'flex', alignItems: 'flex-start', gap: 14, cursor: 'pointer' }} onClick={() => setResetConfirmed(r => !r)}>
+              <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${resetConfirmed ? d.color : '#d5d0c9'}`, background: resetConfirmed ? d.color : 'transparent', flexShrink: 0, marginTop: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+                {resetConfirmed && <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>}
+              </div>
+              <span style={{ fontSize: 14, fontFamily: S.f, color: '#1a1816', lineHeight: 1.5 }}>
+                I understand my current plan will be removed and I'll re-select sticking points to generate a fresh plan using my existing scores.
+              </span>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 4 }}>
+            <button style={{ ...S.btn, ...S.sec }} onClick={() => { setResetConfirmText(''); setResetConfirmed(false); navigate("reset"); }}>Cancel</button>
+            <button
+              disabled={!confirmReady || resetLoading}
+              style={{ ...S.btn, background: d.color, color: '#fff', opacity: confirmReady && !resetLoading ? 1 : 0.4, cursor: confirmReady && !resetLoading ? 'pointer' : 'not-allowed' }}
+              onClick={handleReset}
+            >
+              {resetLoading ? 'Working…' : resetType === 'full' ? 'Delete all data' : resetType === 'archive' ? 'Archive and start fresh' : 'Confirm — rebuild my plan'}
+            </button>
           </div>
         </div>
         <Footer />
@@ -1238,18 +1485,25 @@ export default function StudyPlanner({ onShowTerms }) {
     const stubbornTopics = getStubbornTopics();
 
     const generateAndNavigate = async () => {
+      const isRebuild = skipAssessmentSaveRef.current;
+      skipAssessmentSaveRef.current = false;
       const generatedPlan = generatePlan(profile, scores, stickingPoints);
       setPlan(generatedPlan);
       setExpandedWeek(0);
-      const latestAssessment = await saveCurrentAssessment();
+      let savedAssessment;
+      if (isRebuild) {
+        savedAssessment = assessments.length > 0 ? assessments[assessments.length - 1] : null;
+      } else {
+        savedAssessment = await saveCurrentAssessment();
+      }
       api.plans.save({
         planData: generatedPlan,
         profileSnapshot: profile,
-        assessmentId: latestAssessment?.id || null,
+        assessmentId: savedAssessment?.id || null,
       }).then(result => {
         if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
       }).catch(() => {});
-      navigate(previousAssessment ? "comparison" : "plan");
+      navigate(previousAssessment && !isRebuild ? "comparison" : "plan");
     };
 
     return (
@@ -1664,6 +1918,13 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
         )}
+      </div>
+
+      {/* Reset / start fresh link */}
+      <div style={{ textAlign: 'center', padding: '8px 0 28px', borderTop: '1px solid #f0ece6', marginTop: 8 }}>
+        <button style={{ ...S.btn, ...S.ghost, fontSize: 13, color: '#8a857e', padding: '8px 16px' }} onClick={() => navigate("reset")}>
+          ↺ Start fresh / reset plan
+        </button>
       </div>
 
       {/* Floating chat button */}

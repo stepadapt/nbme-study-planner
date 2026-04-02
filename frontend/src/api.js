@@ -113,6 +113,16 @@ export const api = {
     },
   },
 
+  reset: {
+    full: () => request('POST', '/reset/full'),
+    keepScores: () => request('POST', '/reset/keep-scores'),
+    archive: () => request('POST', '/reset/archive'),
+  },
+
+  cycles: {
+    list: () => request('GET', '/plans/archived-cycles'),
+  },
+
   schedule: {
     get: () => request('GET', '/schedule'),
     save: (blocks) => request('PUT', '/schedule', { blocks }),

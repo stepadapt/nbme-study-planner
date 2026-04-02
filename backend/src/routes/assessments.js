@@ -5,11 +5,11 @@ const { requireAuth } = require('../auth');
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/assessments — list all assessments for user
+// GET /api/assessments — list active (non-archived) assessments for user
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT id, form_name, scores, sticking_points, gap_types, created_at
-    FROM assessments WHERE user_id = ? ORDER BY created_at ASC
+    FROM assessments WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL) ORDER BY created_at ASC
   `).all(req.user.userId);
 
   const assessments = rows.map(row => ({
