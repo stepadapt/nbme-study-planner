@@ -610,6 +610,250 @@ function matchSubTopicVideos(category, topSubTopics) {
   return matched;
 }
 
+// ── First Aid section map ─────────────────────────────────────────────────
+// Maps each category + sub-topic keyword → specific First Aid section name
+// and a focus hint telling the student exactly what to look at on those pages.
+// Sections reference chapter/section names (not page numbers — those change by edition).
+// Matching: strip parenthetical suffix from sub-topic topic string, then case-insensitive includes.
+
+const FIRST_AID_MAP = {
+  "Cardiovascular System": {
+    default: { section: "Cardiovascular — Overview & Physiology", focus: "Start with the cardiac cycle diagram and Frank-Starling curve before moving to pathology" },
+    subTopics: {
+      "Heart failure":           { section: "Cardiovascular — Heart Failure", focus: "Study the HFrEF vs HFpEF comparison table and the Frank-Starling curve; the treatment algorithm (ACE-I/ARB, beta-blocker, diuretic, digoxin) is highly tested" },
+      "Ischemic heart disease":  { section: "Cardiovascular — Ischemic Heart Disease / MI", focus: "Memorize the MI timeline table (0–6h through >2mo cell changes) and the ECG change by coronary territory; cardiac enzyme timing (troponin peaks, CK-MB window) is a guaranteed question" },
+      "Valvular":                { section: "Cardiovascular — Valvular Heart Disease", focus: "The murmur summary table is the single most tested page — know timing, location, radiation, and what Valsalva/squatting/standing does to each murmur" },
+      "Cardiac pharmacology":    { section: "Cardiovascular — Antiarrhythmics (+ cross-ref Pharmacology chapter)", focus: "Vaughan-Williams table (Class I–IV): memorize mechanism, prototype drug, and key side effect for each class; note which classes prolong QT" },
+      "Arrhythmias":             { section: "Cardiovascular — Arrhythmias & ECG", focus: "The ECG abnormalities table; SVT vs VT distinction; WPW delta wave; torsades de pointes causes and treatment" },
+      "Congenital":              { section: "Cardiovascular — Congenital Heart Defects", focus: "Left-to-right vs right-to-left shunt table; which lesions cause cyanosis; PDA treatment (indomethacin vs PGE1 to keep it open)" },
+      "Hypertension":            { section: "Cardiovascular — Hypertension", focus: "Secondary causes table (renal artery stenosis, Conn's, pheochromocytoma); hypertensive emergency first-line drugs" },
+      "Shock":                   { section: "Cardiovascular — Shock", focus: "The 4-column shock table (CO, SVR, PCWP, mixed SvO2) — know how each type differs; septic shock is low SVR not high" },
+      "Atherosclerosis":         { section: "Cardiovascular — Atherosclerosis & Arteriosclerosis", focus: "Foam cell formation pathway; risk factor weighting; fatty streak → fibrous plaque progression" },
+      "Cardiac cycle":           { section: "Cardiovascular — Cardiac Physiology", focus: "Pressure-volume loop diagram: know where valves open/close; preload vs afterload effects on the loop shape" },
+      "Aortic dissection":       { section: "Cardiovascular — Aortic Pathology", focus: "Stanford A vs B classification (A involves ascending — surgical; B = medical); Marfan and hypertension as risk factors" },
+      "Pericardial":             { section: "Cardiovascular — Pericardial Disease", focus: "Beck's triad for tamponade; pulsus paradoxus; constrictive pericarditis vs cardiac tamponade comparison (Kussmaul's sign vs absent x-descent)" },
+    },
+  },
+
+  "Respiratory and Renal/Urinary Systems": {
+    default: { section: "Respiratory & Renal — Overview", focus: "Review the V/Q mismatch table and the nephron transport diagram as anchors for both systems" },
+    subTopics: {
+      "Acid-base":               { section: "Renal — Acid-Base Disorders", focus: "The ABG compensation formulas table is the highest-yield page; also master anion gap vs non-anion gap acidosis causes and the Winter's formula for metabolic acidosis" },
+      "Obstructive lung":        { section: "Respiratory — Obstructive Lung Diseases", focus: "COPD vs asthma comparison table; obstructive PFT pattern (↓FEV1/FVC, ↑TLC, ↑RV); emphysema (centriacinar vs panacinar) vs chronic bronchitis distinction" },
+      "Glomerulonephritis":      { section: "Renal — Glomerular Diseases", focus: "The nephrotic vs nephritic syndrome comparison; the glomerulonephritis table (IgA nephropathy, post-strep GN, RPGN, MPGN, membranous, minimal change) — EM findings are tested" },
+      "Diuretics":               { section: "Pharmacology — Diuretics", focus: "The nephron segment diagram showing site of action for each class; electrolyte effects table; clinical uses (thiazides for nephrogenic DI is a classic reversal question)" },
+      "Electrolyte":             { section: "Renal — Fluid & Electrolyte Disorders", focus: "Hyponatremia algorithm (iso/hypo/hyperosmolar → measure urine Na); hyperkalemia ECG changes (peaked T → wide QRS → sine wave); calcium disorders and PTH feedback" },
+      "Pulmonary embolism":      { section: "Respiratory — Pulmonary Embolism & DVT", focus: "Wells criteria; saddle embolus anatomy; treatment algorithm (anticoagulation first, then IVC filter vs thrombolytics for massive PE)" },
+      "Acute kidney injury":     { section: "Renal — Acute Kidney Injury", focus: "Pre-renal vs intrinsic vs post-renal table: BUN/Cr ratio, FeNa, urine osmolality, and urine casts by category — this table appears on every NBME" },
+      "Lung cancer":             { section: "Respiratory — Lung Cancer", focus: "The 4-type comparison table (SCC, adenocarcinoma, SCLC, large cell): location, histology, and paraneoplastic syndrome column — paraneoplastic syndromes are extremely high yield" },
+      "Restrictive lung":        { section: "Respiratory — Restrictive Lung Diseases", focus: "Intrinsic vs extrinsic causes; PFT pattern (↓FEV1 and ↓FVC but normal FEV1/FVC ratio); fibrosis vs weakness distinction" },
+      "Renal tubular":           { section: "Renal — Renal Tubular Disorders", focus: "RTA type I, II, IV comparison table: urine pH, serum K+, and anion gap for each; Fanconi syndrome associations" },
+    },
+  },
+
+  "Behavioral Health & Nervous Systems/Special Senses": {
+    default: { section: "Neuroscience — Overview & Neuroanatomy", focus: "Master the vascular territory table and neurotransmitter pathways before jumping to specific pathologies" },
+    subTopics: {
+      "Stroke":                  { section: "Neurology — Cerebrovascular Disease", focus: "Vascular territory table (ACA, MCA, PCA, posterior circulation deficits) — know which specific deficits localise to each vessel; lacunar infarct locations (internal capsule, thalamus, pons)" },
+      "Ethics":                  { section: "Behavioral Science — Medical Ethics", focus: "The 4 principles table (autonomy, beneficence, non-maleficence, justice); informed consent vs capacity vs competence distinction; when to override patient wishes" },
+      "Neurotransmitters":       { section: "Neuroscience — Neurotransmitters & Receptors", focus: "Receptor type table (ionotropic vs metabotropic); pathology associations (↓DA in Parkinson's, ↓ACh in Alzheimer's, ↑DA in schizophrenia); drug mechanism MOA column" },
+      "Mood disorders":          { section: "Psychiatry — Mood Disorders", focus: "MDD vs bipolar I vs II vs dysthymia diagnostic criteria; antidepressant mechanism table — SSRI vs TCA vs MAOI side effects; serotonin syndrome vs NMS comparison" },
+      "Seizure":                 { section: "Neurology — Seizures & Epilepsy", focus: "Seizure classification table (focal vs generalized); antiepileptic drug MOA and key side effects (valproate teratogenicity, phenytoin gingival hyperplasia, carbamazepine SIADH)" },
+      "Neurodegenerative":       { section: "Neurology — Neurodegenerative Diseases", focus: "Alzheimer's vs Parkinson's vs Huntington's vs ALS comparison table; histological findings (amyloid plaques, Lewy bodies, caudate atrophy); drug treatments and MOA" },
+      "Cranial nerves":          { section: "Neuroscience — Cranial Nerves", focus: "The 12 CN table: function (motor/sensory/both), foramen, and classic lesion findings; CN III vs Horner syndrome for ptosis; CN VII upper vs lower motor neuron lesion" },
+      "Biostatistics":           { section: "Behavioral Sciences — Biostatistics", focus: "The 2×2 table — practice calculating all 8 values from scratch; sensitivity vs specificity trade-off; PPV/NPV dependence on prevalence is almost always tested clinically" },
+      "Sleep":                   { section: "Behavioral Sciences — Sleep Disorders", focus: "Sleep stage EEG patterns (alpha, theta, delta, sawtooth); REM vs NREM disorders; narcolepsy (cataplexy, sleep paralysis) and treatment" },
+    },
+  },
+
+  "Blood & Lymphoreticular/Immune Systems": {
+    default: { section: "Hematology & Immunology — Overview", focus: "The CBC interpretation algorithm and the basic lymphocyte development diagram are the anchors for this entire chapter" },
+    subTopics: {
+      "Anemias":                 { section: "Hematology — Anemias", focus: "The anemia algorithm (MCV → peripheral smear morphology → specific lab findings); memorize the distinguishing labs for iron deficiency vs thalassemia vs ACD vs B12/folate deficiency" },
+      "Leukemias":               { section: "Hematology — Leukemias & Lymphomas", focus: "ALL vs AML vs CLL vs CML comparison table; cytogenetic associations (Philadelphia chromosome/BCR-ABL for CML, t(15;17) for AML-M3, t(8;14) for Burkitt) are guaranteed questions" },
+      "Hypersensitivity":        { section: "Immunology — Hypersensitivity Reactions", focus: "Types I–IV table (mechanism, cells involved, timing, clinical examples, treatment); Type III immune complex disease examples (SLE, serum sickness, post-strep GN)" },
+      "Coagulation":             { section: "Hematology — Coagulation Disorders", focus: "Coagulation cascade: intrinsic (PTT) vs extrinsic (PT) pathway; DIC vs TTP vs HUS vs ITP vs hemophilia comparison table; heparin vs warfarin MOA and monitoring" },
+      "Immunodeficiency":        { section: "Immunology — Primary Immunodeficiencies", focus: "The immunodeficiency summary table — T-cell, B-cell, combined, phagocyte, complement deficiencies: key clinical features (recurrent infections types) and lab findings per disorder" },
+      "Lymphomas":               { section: "Hematology — Lymphomas", focus: "Hodgkin vs non-Hodgkin comparison; Reed-Sternberg cells; NHL subtypes and cytogenetics; B symptoms (fever, night sweats, weight loss)" },
+      "Platelet disorders":      { section: "Hematology — Platelet Disorders & Bleeding", focus: "Platelet plug formation; ITP vs TTP vs DIC comparison; von Willebrand disease types; bleeding time vs PT vs PTT in each disorder" },
+    },
+  },
+
+  "Multisystem Processes & Disorders": {
+    default: { section: "General Pathology — Cell Injury, Inflammation & Neoplasia", focus: "These are the foundational pathology chapters — master the mechanisms before tackling organ-system pathology" },
+    subTopics: {
+      "Neoplasia":               { section: "General Pathology — Neoplasia", focus: "Benign vs malignant features; tumor grading (differentiation) vs staging (spread); tumor marker table (AFP, CEA, PSA, CA-125, CA 19-9, β-HCG) — test yourself on which cancer each marker tracks" },
+      "Inflammation":            { section: "General Pathology — Inflammation", focus: "Acute vs chronic: cell types (neutrophils early → macrophages/lymphocytes chronic); mediator table (histamine, prostaglandins, leukotrienes, complement, cytokines); granuloma types (caseating vs non-caseating with disease associations)" },
+      "Hemodynamics":            { section: "General Pathology — Hemodynamics", focus: "Virchow's triad; edema mechanisms (hydrostatic vs oncotic vs lymphatic); shock classification table; infarction morphology by organ (white vs red infarcts)" },
+      "Cell injury":             { section: "General Pathology — Cell Injury & Death", focus: "Reversible vs irreversible injury markers (Na/K pump failure → cell swelling; membrane rupture → irreversible); necrosis type table (coagulative, liquefactive, caseous, gangrenous, fat, fibrinoid) with clinical examples" },
+      "Wound healing":           { section: "General Pathology — Wound Healing & Repair", focus: "Primary vs secondary intention; granulation tissue components; keloid vs hypertrophic scar; factors impairing healing (vitamin C deficiency → scurvy, zinc deficiency, corticosteroids)" },
+    },
+  },
+
+  "Musculoskeletal, Skin & Subcutaneous Tissue": {
+    default: { section: "MSK & Dermatology — Overview", focus: "The arthritis comparison table and the skin cancer tables are the highest-yield starting points in this chapter" },
+    subTopics: {
+      "Autoimmune joint":        { section: "Musculoskeletal — Arthritis & Rheumatologic Disorders", focus: "Rheumatoid vs OA vs gout vs pseudogout comparison; SLE diagnostic criteria (mnemonic) and ANA patterns; Sjögren's vs scleroderma (CREST) distinction" },
+      "Skin pathology":          { section: "Dermatology — Skin Cancers & Inflammatory Disorders", focus: "Melanoma ABCDE criteria; BCC vs SCC vs melanoma comparison; blistering disease table (pemphigus vulgaris vs bullous pemphigoid — location of blister within epidermis vs at DEJ)" },
+      "Bone disorders":          { section: "Musculoskeletal — Metabolic Bone Disease", focus: "Osteoporosis vs osteomalacia vs Paget's disease lab comparison (Ca, PO4, ALP, PTH) — this table appears every year; Paget's ↑ALP with normal Ca/PO4 is a classic presentation" },
+      "Muscle diseases":         { section: "Neurology — Muscle & NMJ Disorders", focus: "Myasthenia gravis (anti-AChR, Lambert-Eaton anti-VGCC) comparison; Duchenne (frameshift) vs Becker (in-frame) dystrophin mutations; dermatomyositis vs polymyositis clinical distinction" },
+    },
+  },
+
+  "Gastrointestinal System": {
+    default: { section: "GI — Overview & GI Physiology", focus: "Review GI hormone table (gastrin, secretin, CCK, GIP, motilin) and the hepatitis serology table as anchors" },
+    subTopics: {
+      "Liver pathology":         { section: "GI — Hepatic Pathology & Hepatitis", focus: "The hepatitis serology table (HBsAg, HBsAb, HBeAg, IgM anti-HBc combinations for acute/chronic/carrier) is the most-tested table in GI; Wilson's vs hemochromatosis labs also very high yield" },
+      "Inflammatory bowel":      { section: "GI — Inflammatory Bowel Disease", focus: "Crohn's vs UC comparison table: location (mouth-to-anus vs colon only), gross findings (cobblestoning vs pseudopolyps), complications (fistulas/strictures vs toxic megacolon), extraintestinal manifestations" },
+      "GI cancers":              { section: "GI — GI Neoplasms", focus: "Colorectal cancer APC/KRAS/p53/DCC progression sequence; familial polyposis syndromes table (FAP, Gardner, Peutz-Jeghers, hereditary nonpolyposis); CEA as a monitoring marker (not screening)" },
+      "Pancreatic":              { section: "GI — Pancreatic Pathology", focus: "Acute pancreatitis causes (ETOH + gallstones = 80%) and Ranson criteria; chronic pancreatitis triad (epigastric pain, steatorrhea, calcifications); pancreatic adenocarcinoma head-of-pancreas presentation" },
+      "Bilirubin":               { section: "GI — Bilirubin Metabolism & Jaundice", focus: "The bilirubin metabolism pathway (unconjugated → conjugated → excreted); pre-hepatic vs hepatic vs post-hepatic jaundice: lab pattern for each (direct vs indirect bili, urine urobilinogen, stool color)" },
+      "Peptic ulcer":            { section: "GI — Peptic Ulcer Disease", focus: "H. pylori association; gastric vs duodenal ulcer comparison (worse with vs relieved by eating); treatment (triple therapy); Zollinger-Ellison gastrinoma presentation" },
+      "GI pharmacology":         { section: "Pharmacology — GI Drugs", focus: "PPI vs H2 blocker mechanism; misoprostol uses (ulcer protection, abortion, cervical ripening); ondansetron vs metoclopramide MOA; laxative classification" },
+      "Esophageal":              { section: "GI — Esophageal Disorders", focus: "Achalasia (absent peristalsis, bird-beak on barium) vs diffuse esophageal spasm vs GERD; Barrett's esophagus → adenocarcinoma progression; Boerhaave vs Mallory-Weiss distinction" },
+    },
+  },
+
+  "Reproductive & Endocrine Systems": {
+    default: { section: "Endocrinology & Reproductive — Overview", focus: "The hormone feedback loop diagrams and the MEN syndrome table are the highest-yield anchors in this chapter" },
+    subTopics: {
+      "Diabetes mellitus":       { section: "Endocrinology — Diabetes Mellitus", focus: "Type 1 vs Type 2 comparison (autoimmune vs insulin resistance, C-peptide present/absent); DKA vs HHS table (anion gap, serum osmolality, pH); oral hypoglycemic drug mechanisms and side effects (especially metformin lactic acidosis contraindication)" },
+      "Thyroid":                 { section: "Endocrinology — Thyroid Disorders", focus: "Hypothyroidism vs hyperthyroidism cause and lab table (TSH, free T4); Graves' disease clinical features (exophthalmos, pretibial myxedema); thyroid cancer types (papillary RET/BRAF, medullary calcitonin, follicular hematogenous spread)" },
+      "Adrenal":                 { section: "Endocrinology — Adrenal Disorders", focus: "Cushing's disease vs syndrome vs ectopic ACTH: ACTH level distinguishes them; Addison's vs secondary AI: electrolytes and skin pigmentation; steroid synthesis pathway (21-hydroxylase deficiency → virilization + salt wasting)" },
+      "Female reproductive":     { section: "Reproductive — Female Reproductive Pathology", focus: "PCOS diagnostic criteria (Rotterdam: 2 of 3); ovarian cancer types and markers (epithelial vs germ cell vs sex cord); endometriosis vs adenomyosis vs leiomyoma clinical distinction" },
+      "Pituitary":               { section: "Endocrinology — Pituitary & Hypothalamic Disorders", focus: "Anterior vs posterior pituitary hormones table; prolactinoma (↑prolactin, ↓GnRH → amenorrhea/galactorrhea) vs acromegaly (↑IGF-1) presentations; SIADH vs central DI vs nephrogenic DI comparison" },
+      "Parathyroid":             { section: "Endocrinology — Calcium & Phosphate Regulation", focus: "Primary vs secondary vs tertiary hyperparathyroidism: lab pattern (Ca, PO4, PTH, 1,25-D3); hypocalcemia causes (vitamin D deficiency, hypoparathyroidism, chronic kidney disease); MEN1 vs MEN2A vs MEN2B components" },
+    },
+  },
+
+  "Pathology": {
+    default: { section: "General Pathology — Cell Injury, Inflammation & Neoplasia", focus: "The cell injury and necrosis types chapter is the highest-yield page in general pathology — know each necrosis type with its clinical example" },
+    subTopics: {
+      "Inflammation":            { section: "General Pathology — Acute & Chronic Inflammation", focus: "Acute vs chronic inflammatory cell comparison; granuloma diseases table (TB, sarcoid, Crohn's, berylliosis, cat-scratch, fungal — which are caseating vs non-caseating)" },
+      "Neoplasia":               { section: "General Pathology — Neoplasia", focus: "Oncogenes (gain-of-function: Ras, c-Myc, HER2/neu) vs tumor suppressors (loss-of-function: p53, Rb, BRCA1/2, APC, VHL); tumor marker table is a guaranteed test question" },
+      "Cell injury":             { section: "General Pathology — Cell Injury & Death", focus: "Reversible vs irreversible markers; apoptosis vs necrosis distinction; necrosis type table — coagulative (ischemia), liquefactive (brain/abscess), caseous (TB/fungal), gangrenous, fat, fibrinoid" },
+      "Hemodynamics":            { section: "General Pathology — Hemodynamics & Thrombosis", focus: "Virchow's triad (hypercoagulability, stasis, endothelial injury); arterial vs venous thrombosis distinction; red vs white infarcts by organ; fat embolism vs air embolism vs amniotic fluid embolism presentation" },
+      "Lab findings":            { section: "Appendix — Laboratory Values & Formulas", focus: "Normal value ranges; CBC interpretation (neutrophilia vs eosinophilia vs lymphocytosis pattern); LFT interpretation (hepatocellular vs cholestatic vs mixed)" },
+    },
+  },
+
+  "Physiology": {
+    default: { section: "Physiology — Multi-system Review", focus: "Cross-reference the cardiovascular, renal, and pulmonary physiology chapters — these systems interact heavily on USMLE questions" },
+    subTopics: {
+      "Cardiac cycle":           { section: "Cardiovascular — Cardiac Physiology & Hemodynamics", focus: "Pressure-volume loop: effects of preload/afterload changes on loop shape; Starling forces at the capillary (oncotic vs hydrostatic); cardiac output determinants (HR × SV; Frank-Starling law)" },
+      "Renal physiology":        { section: "Renal — Renal Physiology & Tubular Transport", focus: "Nephron segment transport table (PCT reabsorbs 67% Na/water; Loop concentrates; DCT fine-tunes); GFR calculation (Cockcroft-Gault); free water clearance calculation for polyuria workup" },
+      "Pulmonary physiology":    { section: "Respiratory — Pulmonary Physiology", focus: "V/Q mismatch table (V/Q = 0 shunt, V/Q = ∞ dead space, normal = 0.8); A-a gradient calculation; oxygen-hemoglobin dissociation curve right-shift causes (HIGH: Heat, Increased H+, CO2, 2,3-BPG)" },
+      "Endocrine feedback":      { section: "Endocrinology — Hypothalamic-Pituitary Axes", focus: "Pituitary axis diagrams: HPT, HPA, HPG axes; primary vs secondary endocrine failure lab distinction (↑TSH = primary hypothyroid; ↓TSH = secondary/central); ACTH stimulation test logic" },
+      "Autonomic nervous system":{ section: "Neuroscience/Pharmacology — Autonomic Pharmacology", focus: "Sympathetic vs parasympathetic receptor effects on each organ; adrenergic receptor subtype table (α1 vasoconstriction, α2 feedback inhibition, β1 cardiac, β2 bronchodilation); fight-or-flight vs rest-and-digest mnemonic" },
+    },
+  },
+
+  "Microbiology & Immunology": {
+    default: { section: "Microbiology — Overview & Host Defenses", focus: "The encapsulated organism mnemonic and the innate vs adaptive immunity table are the starting anchors" },
+    subTopics: {
+      "Bacterial identification": { section: "Microbiology — Bacteriology (Gram Stain & Culture)", focus: "Gram-positive vs Gram-negative organism table; catalase-positive organisms; encapsulated bacteria (SHINE SKiS); culture/stain requirements (Thayer-Martin for GC, Bordet-Gengou for pertussis, etc.)" },
+      "Antimicrobial":           { section: "Pharmacology — Antimicrobials", focus: "Cell wall synthesis inhibitors (penicillins, cephalosporins, vancomycin); 30S inhibitors (aminoglycosides, tetracyclines) vs 50S inhibitors (macrolides, chloramphenicol, clindamycin); adverse effects column is heavily tested" },
+      "HIV":                     { section: "Microbiology — HIV/AIDS", focus: "HIV life cycle diagram (gp120 binds CD4, gp41 fusion); CD4 count threshold table for opportunistic infections (>500 normal, <200 PCP, <150 MAC, <100 toxo, <50 CMV retinitis) — this table is guaranteed" },
+      "Hepatitis":               { section: "Microbiology — Hepatitis Viruses", focus: "The hepatitis serology table: HBsAg positive = active; HBsAb positive = immune; IgM anti-HBc = acute window; HBeAg = high infectivity; practice interpreting all 6 scenarios" },
+      "Fungal infections":       { section: "Microbiology — Mycology", focus: "Dimorphic fungi table (geographic distribution: Histo = Ohio/Mississippi, Cocci = SW USA, Blasto = Great Lakes); mold at room temp, yeast at body temp; antifungal target (ergosterol)" },
+      "Bacterial toxins":        { section: "Microbiology — Bacterial Virulence Factors", focus: "Exotoxin mechanisms table (cholera cAMP ↑, pertussis cAMP ↑, anthrax EF, TSST-1 superantigen, C. diff glucosylation); A-B toxin structure" },
+      "STIs":                    { section: "Microbiology — Sexually Transmitted Infections", focus: "STI comparison table (syphilis painless ulcer/VDRL, chancroid painful ulcer/H. ducreyi, LGV/chlamydia, herpes recurrent/Tzanck, gonorrhea gram-negative diplococci); TORCH infections table" },
+      "TB":                      { section: "Microbiology — Mycobacteria", focus: "TB vs atypical mycobacteria; Ghon complex and Ranke complex in primary vs secondary TB; Mantoux test interpretation; treatment regimen (RIPE — Rifampin, Isoniazid, Pyrazinamide, Ethambutol)" },
+    },
+  },
+
+  "Gross Anatomy & Embryology": {
+    default: { section: "Anatomy & Embryology — Overview", focus: "The peripheral nerve injury patterns and the embryological derivative tables are the highest-yield starting points" },
+    subTopics: {
+      "Cardiovascular embryology":  { section: "Embryology — Cardiovascular Development", focus: "Fetal circulation diagram (ductus arteriosus, foramen ovale, ductus venosus and what closes at birth and why); congenital heart defect embryological basis" },
+      "Peripheral nerve":           { section: "Anatomy — Peripheral Nerve Injuries", focus: "Brachial plexus injury table (Erb's palsy C5-C6 vs Klumpke's C8-T1); specific nerve lesions (radial = wrist drop, median = ape hand, ulnar = claw hand, peroneal = foot drop); test for each nerve" },
+      "Abdominal anatomy":          { section: "Anatomy — Abdomen & Retroperitoneum", focus: "Retroperitoneal structures mnemonic (SAD PUCKER: Suprarenal, Aorta, Duodenum, Pancreas, Ureters, Colon, Kidneys, Esophagus, Rectum); inguinal vs femoral hernia distinction (above vs below inguinal ligament)" },
+      "Thorax anatomy":             { section: "Anatomy — Thorax & Mediastinum", focus: "Superior vs middle vs inferior mediastinal contents; lung lobe anatomy (RML vs lingula); pleural effusion radiograph interpretation; thoracic outlet syndrome structures" },
+      "Neural tube defects":        { section: "Embryology — CNS Development", focus: "Neural tube defect table (spina bifida occulta → meningocele → myelomeningocele); AFP + ACHE in amniotic fluid for open defects; posterior fossa malformations (Chiari, Dandy-Walker)" },
+      "Head & neck anatomy":        { section: "Anatomy — Head & Neck", focus: "Cranial nerve foramina table; parotid gland CN VII path; carotid triangle structures; pharyngeal arch derivatives (arch 1 = Meckel/muscles of mastication; arch 2 = stapes/facial expression)" },
+    },
+  },
+
+  "Pharmacology": {
+    default: { section: "Pharmacology — Pharmacokinetics & General Principles", focus: "Pharmacokinetics formulas (Vd = dose/plasma concentration; Cl = Vd × ke) and drug interaction mechanisms (CYP450 inducers/inhibitors) are always tested" },
+    subTopics: {
+      "Autonomic drugs":         { section: "Pharmacology — Autonomic Drugs", focus: "Adrenergic receptor effect table (α1, α2, β1, β2 — organ effects and prototypical agonist/antagonist); direct vs indirect sympathomimetics distinction; muscarinic vs nicotinic cholinergic effects" },
+      "Cardiac drugs":           { section: "Pharmacology — Cardiovascular Drugs", focus: "Antiarrhythmic Vaughan-Williams table (Class Ia/Ib/Ic, II, III, IV — prototype, MOA, side effects); ACE-I vs ARB side effects (cough and angioedema for ACE-I — bradykinin based)" },
+      "Antimicrobials":          { section: "Pharmacology — Antimicrobials", focus: "Cell wall synthesis table (β-lactams, glycopeptides); protein synthesis table (30S vs 50S inhibitors); adverse effects column is the most-tested aspect — aminoglycoside nephro/ototoxicity, tetracycline teeth/photosensitivity, chloramphenicol aplastic anemia" },
+      "Drug metabolism":         { section: "Pharmacology — Pharmacokinetics", focus: "CYP450 inducers (CRAP GPS: Carbamazepine, Rifampin, Alcohol chronic, Phenytoin, Griseofulvin, Phenobarbital, St. John's Wort) vs inhibitors (OAKS: Omeprazole, Amiodarone, Ketoconazole, Sulfonamides); half-life and steady-state concept" },
+      "CNS drugs":               { section: "Pharmacology — Psychiatry Drugs", focus: "Antidepressant comparison table (SSRI/SNRI, TCA, MAOI, atypicals); antipsychotic side effect profiles (typical = EPS + hyperprolactinemia; atypical = metabolic syndrome); lithium monitoring and toxicity signs" },
+      "Anti-inflammatory":       { section: "Pharmacology — Anti-inflammatory & Immunosuppressive Drugs", focus: "NSAID MOA (COX-1 vs COX-2 selectivity and GI/renal/CV implications); corticosteroid synthesis pathway and side effects; biologic DMARD targets (anti-TNF, anti-IL-6, anti-CD20)" },
+      "Anticoagulants":          { section: "Pharmacology — Anticoagulants & Antiplatelets", focus: "Heparin (activates antithrombin III, monitors PTT) vs warfarin (inhibits vitamin K epoxide reductase, monitors PT/INR) comparison; direct thrombin inhibitors (dabigatran) vs anti-Xa agents (rivaroxaban); reversal agents table" },
+      "Antiepileptic":           { section: "Pharmacology — Antiepileptic Drugs", focus: "Drug and mechanism table; phenytoin side effects (gingival hyperplasia, teratogen); valproate teratogenicity (neural tube defects); carbamazepine (↑CYP450, SIADH, agranulocytosis); ethosuximide for absence only" },
+    },
+  },
+
+  "Behavioral Sciences": {
+    default: { section: "Behavioral Sciences — Biostatistics & Epidemiology", focus: "The 2×2 table and study design hierarchy are the anchors — every biostat question follows from these two concepts" },
+    subTopics: {
+      "Biostatistics":           { section: "Behavioral Sciences — Biostatistics", focus: "The 2×2 table: practice calculating sensitivity, specificity, PPV, NPV, LR+, LR- from scratch; understand why PPV/NPV change with prevalence while sensitivity/specificity do not" },
+      "Study design":            { section: "Behavioral Sciences — Study Design", focus: "Study design hierarchy (RCT > cohort > case-control > cross-sectional > case report); bias types table (selection, information, confounding); intention-to-treat vs per-protocol analysis" },
+      "Ethics":                  { section: "Behavioral Sciences — Medical Ethics & Law", focus: "Informed consent components; capacity vs competence (doctors assess capacity, courts determine competence); when to override (immediate life threat vs chronic risk); confidentiality exceptions (imminent harm to others, mandatory reporting)" },
+      "Epidemiology":            { section: "Behavioral Sciences — Epidemiology", focus: "Incidence vs prevalence relationship (prevalence = incidence × duration); relative risk (RR) formula for cohort studies; odds ratio (OR) for case-control studies; absolute risk reduction (ARR) and NNT = 1/ARR" },
+      "Bias":                    { section: "Behavioral Sciences — Bias & Study Design Flaws", focus: "Selection bias types (Berkson's, Neyman/prevalence-incidence); recall bias (case-control studies); lead time bias (screening); observer bias; ways to reduce each bias type" },
+    },
+  },
+
+  "Biochemistry & Nutrition": {
+    default: { section: "Biochemistry — Metabolism Overview", focus: "The metabolic pathway flowchart (glycolysis → TCA → ETC) and the enzyme deficiency diseases tables are the two highest-yield sections in biochemistry" },
+    subTopics: {
+      "Metabolic pathways":      { section: "Biochemistry — Carbohydrate Metabolism", focus: "Glycolysis enzyme table (rate-limiting steps: PFK-1, pyruvate kinase, hexokinase); TCA cycle intermediates and their significance (succinyl-CoA for heme synthesis); ETC complex table with inhibitors (cyanide, rotenone, CO)" },
+      "Lysosomal storage":       { section: "Biochemistry — Lysosomal Storage Diseases", focus: "This table appears near-verbatim on Step 1 — memorize enzyme deficiency, accumulated substrate, and key clinical feature (Gaucher = glucocerebrosidase + bone crises; Tay-Sachs = Hex A + cherry-red spot; Fabry = α-galactosidase + X-linked + pain crises)" },
+      "Vitamins":                { section: "Biochemistry — Vitamins & Nutrition", focus: "Fat-soluble (ADEK) vs water-soluble deficiency table; toxicity findings for fat-soluble vitamins (A teratogenicity, D hypercalcemia); B1 (thiamine) deficiency presentations (Wernicke's, wet beriberi, dry beriberi) are heavily tested" },
+      "Amino acid":              { section: "Biochemistry — Amino Acid Metabolism Disorders", focus: "Phenylketonuria (phenylalanine hydroxylase deficiency → intellectual disability + musty odor); homocystinuria (cystathionine synthase → marfanoid + thrombosis + intellectual disability); maple syrup urine disease (BCAA → sweet urine + neurological)" },
+      "Lipid metabolism":        { section: "Biochemistry — Lipid Metabolism & Transport", focus: "Lipoprotein classes table (chylomicrons, VLDL, IDL, LDL, HDL — origin, composition, function); familial hypercholesterolemia (absent LDL receptor → premature MI + tendon xanthomas); statin MOA (HMG-CoA reductase inhibition)" },
+      "Glycogen storage":        { section: "Biochemistry — Glycogen Storage Diseases", focus: "The glycogen storage disease table — enzyme, organ involved, key clinical feature: von Gierke (glucose-6-phosphatase, liver, fasting hypoglycemia + lactic acidosis), Pompe (acid maltase, heart/muscle, cardiomegaly), McArdle (myophosphorylase, muscle, exercise intolerance + myoglobinuria)" },
+    },
+  },
+
+  "Histology & Cell Biology": {
+    default: { section: "Cell Biology — Organelles, Cell Cycle & Connective Tissue", focus: "The organelle pathology table and the collagen types table are the highest-yield starting points in cell biology" },
+    subTopics: {
+      "Connective tissue":       { section: "Biochemistry/MSK — Connective Tissue & Collagen Disorders", focus: "Collagen types table (Type I bone/tendon/skin, II cartilage, III vessels/uterus/fetal skin, IV basement membrane, VII anchoring fibrils at DEJ); Marfan (FBN1, fibrillin) vs Ehlers-Danlos (collagen synthesis) vs osteogenesis imperfecta (Type I collagen)" },
+      "Cell cycle":              { section: "Cell Biology — Cell Cycle & Cancer Biology", focus: "G1/S/G2/M phase checkpoints; CDK-cyclin pairs by phase; p53 → G1 arrest or apoptosis; Rb → E2F release; oncogenes (constitutively active RAS, amplified c-Myc, HER2) vs tumor suppressors (loss-of-function p53, Rb, BRCA, APC)" },
+      "Organelle functions":     { section: "Cell Biology — Organelles & Associated Pathologies", focus: "Organelle disease association table (Kartagener's dynein in cilia; I-cell disease — mannose-6-phosphate targeting failure → lysosomal enzyme secretion; Zellweger — peroxisome assembly disorder); rough ER for secreted proteins" },
+      "Signal transduction":     { section: "Cell Biology — Cell Signaling Pathways", focus: "Receptor type table: GPCR (cAMP via Gs/Gi, IP3/DAG via Gq), RTK (JAK-STAT, RAS-MAPK), nuclear receptors (steroid/thyroid hormones); second messenger diseases (cholera Gs, pertussis Gi, McCune-Albright Gs)" },
+    },
+  },
+
+  "Genetics": {
+    default: { section: "Genetics — Inheritance Patterns & Chromosomal Disorders", focus: "The inheritance pattern table and the chromosomal disorder comparison are the two highest-yield sections in genetics" },
+    subTopics: {
+      "Autosomal dominant":      { section: "Genetics — Autosomal Dominant Disorders", focus: "AD mechanism table (gain-of-function vs dominant negative); key disorders: Marfan (FBN1), ADPKD (PKD1/2), Huntington (CAG repeat, anticipation), NF1 (Ras GTPase), NF2 (merlin), FAP (APC), Li-Fraumeni (p53), BRCA1/2" },
+      "Autosomal recessive":     { section: "Genetics — Autosomal Recessive Disorders", focus: "AR enzyme deficiency table; cystic fibrosis (CFTR ΔF508 most common); sickle cell (HbS point mutation — glutamate → valine at position 6); thalassemia (α vs β gene deletion); lysosomal storage diseases (all AR except Fabry X-linked)" },
+      "Chromosomal disorders":   { section: "Genetics — Chromosomal Abnormalities", focus: "Trisomy comparison table (21 = Down; 18 = Edwards — PRINCE Edwards; 13 = Patau — holoprosencephaly); Turner (45,XO — short, webbed neck, aortic coarctation, streak ovaries); Klinefelter (47,XXY — testicular atrophy, gynecomastia, tall)" },
+      "X-linked":                { section: "Genetics — X-linked Disorders", focus: "X-linked recessive carrier mother table (50% sons affected); Duchenne (frameshift, complete absence dystrophin) vs Becker (in-frame, partially functional); hemophilia A (Factor VIII) vs B (Factor IX — Christmas disease); G6PD deficiency triggers" },
+    },
+  },
+};
+
+// ── First Aid section lookup ───────────────────────────────────────────────
+// Matches the top sub-topic against FIRST_AID_MAP keywords.
+// Falls back to category default if no sub-topic match.
+export function getFirstAidRef(category, subTopics = []) {
+  const map = FIRST_AID_MAP[category];
+  if (!map) return { section: category, focus: 'Read the relevant section and annotate anything new from today\'s video.' };
+
+  // Try to match top sub-topics against keyword map
+  for (const sub of subTopics.slice(0, 3)) {
+    const topicText = typeof sub === 'string' ? sub : (sub.topic || '');
+    const cleanTopic = topicText.split('(')[0].trim().toLowerCase();
+
+    for (const [keyword, ref] of Object.entries(map.subTopics || {})) {
+      if (cleanTopic.includes(keyword.toLowerCase()) || keyword.toLowerCase().includes(cleanTopic)) {
+        return ref;
+      }
+    }
+  }
+
+  return map.default;
+}
+
 // ── Validation gate ───────────────────────────────────────────────────────
 // Safety net: blocks any Sketchy or Pathoma recommendation outside their valid domains.
 // Sketchy: ONLY Pharmacology or Microbiology & Immunology.
@@ -712,13 +956,14 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     };
   }
 
-  // First Aid read step
+  // First Aid read step — section-specific reference
+  const faRef = getFirstAidRef(category, subTopics);
   const firstAidStep = hasFirstAid ? {
     type: 'read',
     emoji: '📕',
-    label: `First Aid — ${category}`,
+    label: `First Aid: ${faRef.section}`,
     timeLabel: '~20–30 min',
-    instruction: 'Read the relevant First Aid section. Annotate anything you learned from the video that isn\'t already in the book. Use the margins.',
+    instruction: `${faRef.focus} — Annotate anything from today's video that isn't already in the book. Use the margins for new associations.`,
     links: [],
   } : null;
 
