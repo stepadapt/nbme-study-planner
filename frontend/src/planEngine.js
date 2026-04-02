@@ -262,7 +262,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     if (test.type === 'nbme') usedForms.add(test.id);
   };
 
-  // Pick next unused NBME from a prioritised pool list
+  // Pick next unused NBME from a prioritized pool list
   const pickNbme = (...pools) => {
     for (const pool of pools) {
       const t = pool.find(t => !usedForms.has(t.id));
@@ -744,9 +744,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         const contentSeqB2 = contentSeqFull
           ? { gapType: contentSeqFull.gapType, sequence: (contentSeqFull.sequence || []).filter(s => s.type !== "practice" && s.type !== "annotate") }
           : null;
-        const b2Resource = isKG
-          ? (res1.learning.length > 0 ? rn(res1.learning[0]) : "Ninja Nerd + First Aid")
-          : "Dirty Medicine + First Aid";
+        const b2Resource = "Content review";
         const b2Activity = isKG
           ? `Content review: ${focusTopic.category} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. Time: ${formatDuration(b2Hrs)}.`
           : `Content review: ${focusTopic.category} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. Time: ~45 min.`;

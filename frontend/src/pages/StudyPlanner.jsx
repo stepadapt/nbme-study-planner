@@ -95,26 +95,33 @@ function SubTopicProgressPanel({ highYield, subTopicProgress = {}, onToggle, qba
   if (!highYield || highYield.length === 0) return null;
 
   const f = 'Georgia, "Times New Roman", serif';
+  const isReadOnly = !onToggle;
 
-  // Compute adaptive narrative
+  // Compute adaptive narrative (only shown in interactive / question-block mode)
   const improvingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'improving');
   const strugglingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'struggling');
   const activeTopics = highYield.filter(hy => subTopicProgress[hy.topic] !== 'improving');
 
   let narrativeText = null;
-  if (improvingTopics.length > 0 && activeTopics.length > 0) {
-    const improvingNames = improvingTopics.map(t => t.topic.split('(')[0].trim()).join(' + ');
-    const nextPriority = strugglingTopics[0] || activeTopics[0];
-    const nextName = nextPriority?.topic.split('(')[0].trim();
-    narrativeText = `↑ ${improvingNames} improving — shift focus to ${nextName}`;
-  } else if (improvingTopics.length > 0 && activeTopics.length === 0) {
-    narrativeText = '↑ All tracked sub-topics improving — run random blocks across systems to consolidate';
+  if (!isReadOnly) {
+    if (improvingTopics.length > 0 && activeTopics.length > 0) {
+      const improvingNames = improvingTopics.map(t => t.topic.split('(')[0].trim()).join(' + ');
+      const nextPriority = strugglingTopics[0] || activeTopics[0];
+      const nextName = nextPriority?.topic.split('(')[0].trim();
+      narrativeText = `↑ ${improvingNames} improving — shift focus to ${nextName}`;
+    } else if (improvingTopics.length > 0 && activeTopics.length === 0) {
+      narrativeText = '↑ All tracked sub-topics improving — run random blocks across systems to consolidate';
+    }
   }
 
   const chipStyle = (status) => {
-    if (status === 'improving') return { bg: '#1d9e7510', border: '#1d9e75', text: '#1d6e56', icon: '✓' };
-    if (status === 'struggling') return { bg: '#c0392b0d', border: '#c0392b', text: '#a93226', icon: '✗' };
-    return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: '○' };
+    if (!isReadOnly) {
+      if (status === 'improving') return { bg: '#1d9e7510', border: '#1d9e75', text: '#1d6e56', icon: '✓' };
+      if (status === 'struggling') return { bg: '#c0392b0d', border: '#c0392b', text: '#a93226', icon: '✗' };
+      return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: '○' };
+    }
+    // Read-only: neutral styling, no status icons
+    return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: null };
   };
 
   return (
@@ -123,30 +130,27 @@ function SubTopicProgressPanel({ highYield, subTopicProgress = {}, onToggle, qba
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: f }}>
           Prioritize within this system:
         </div>
-        <div style={{ fontSize: 10, color: '#b0a898', fontFamily: f }}>tap to track progress</div>
+        {!isReadOnly && <div style={{ fontSize: 10, color: '#b0a898', fontFamily: f }}>tap to track progress</div>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: narrativeText || qbankFilterTip ? 8 : 0 }}>
         {highYield.map((hy, hi) => {
-          const status = subTopicProgress[hy.topic] || null;
+          const status = isReadOnly ? null : (subTopicProgress[hy.topic] || null);
           const c = chipStyle(status);
           const shortName = hy.topic.split('(')[0].trim();
+          const chipProps = isReadOnly
+            ? { style: { fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4, background: c.bg, color: c.text, fontWeight: 600, border: `1px solid ${c.border}`, display: 'inline-flex', alignItems: 'center', gap: 4 } }
+            : {
+                onClick: () => onToggle(hy.topic),
+                title: `Click to mark as: ${status === null ? 'improving' : status === 'improving' ? 'struggling' : 'reset'}`,
+                style: { fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4, background: c.bg, color: c.text, fontWeight: 600, border: `1px solid ${c.border}`, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'all 0.15s' },
+              };
+          const Tag = isReadOnly ? 'span' : 'button';
           return (
-            <button
-              key={hi}
-              onClick={() => onToggle && onToggle(hy.topic)}
-              title={`Click to mark as: ${status === null ? 'improving' : status === 'improving' ? 'struggling' : 'reset'}`}
-              style={{
-                fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4,
-                background: c.bg, color: c.text, fontWeight: 600,
-                border: `1px solid ${c.border}`, cursor: onToggle ? 'pointer' : 'default',
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                transition: 'all 0.15s',
-              }}
-            >
-              <span style={{ fontSize: 10 }}>{c.icon}</span>
+            <Tag key={hi} {...chipProps}>
+              {!isReadOnly && c.icon && <span style={{ fontSize: 10 }}>{c.icon}</span>}
               {hy.yield >= 9 && <span style={{ fontSize: 9, color: '#b45309' }}>★</span>}
               {shortName}
-            </button>
+            </Tag>
           );
         })}
       </div>
@@ -666,7 +670,7 @@ export default function StudyPlanner({ onShowTerms }) {
             <div style={{ background: '#fffbeb', border: '1px solid #f6c90e60', borderRadius: 12, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 18 }}>🧭</span>
               <span style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#92600a', lineHeight: 1.4 }}>
-                <strong>Starter plan active.</strong> Take your diagnostic NBME (scheduled early this week), then add your scores to unlock a fully personalised plan.
+                <strong>Starter plan active.</strong> Take your diagnostic NBME (scheduled early this week), then add your scores to unlock a fully personalized plan.
               </span>
               <button style={{ ...S.btn, background: 'none', border: '1px solid #f6c90e80', color: '#92600a', padding: '6px 12px', fontSize: 12 }} onClick={() => navigate("scores")}>
                 Enter scores →
@@ -796,7 +800,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <SubTopicProgressPanel
                           highYield={block.highYield}
                           subTopicProgress={profile.subTopicProgress}
-                          onToggle={toggleSubTopicProgress}
+                          onToggle={block.type === 'content' || block.type === 'content-reactive' ? null : toggleSubTopicProgress}
                           qbankFilterTip={block.qbankFilterTip}
                           compact={true}
                         />
@@ -1338,7 +1342,7 @@ export default function StudyPlanner({ onShowTerms }) {
               {[
                 { icon: '1.', text: 'You get a starter plan broadly covering all systems — weighted toward your self-reported weak areas.' },
                 { icon: '2.', text: 'A diagnostic practice NBME is scheduled early in your first week (days 1–3). Take it under real test conditions.' },
-                { icon: '3.', text: 'Enter your NBME scores and the app switches to a fully data-driven, personalised plan.' },
+                { icon: '3.', text: 'Enter your NBME scores and the app switches to a fully data-driven, personalized plan.' },
               ].map((item, i) => (
                 <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#b45309', fontFamily: S.f, minWidth: 20, paddingTop: 1 }}>{item.icon}</span>
@@ -1847,7 +1851,7 @@ export default function StudyPlanner({ onShowTerms }) {
                           <SubTopicProgressPanel
                             highYield={block.highYield}
                             subTopicProgress={profile.subTopicProgress}
-                            onToggle={toggleSubTopicProgress}
+                            onToggle={block.type === 'content' || block.type === 'content-reactive' ? null : toggleSubTopicProgress}
                             qbankFilterTip={block.qbankFilterTip}
                           />
                         )}

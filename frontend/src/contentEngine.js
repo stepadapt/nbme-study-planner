@@ -654,7 +654,7 @@ const FIRST_AID_MAP = {
   "Behavioral Health & Nervous Systems/Special Senses": {
     default: { section: "Neuroscience — Overview & Neuroanatomy", focus: "Master the vascular territory table and neurotransmitter pathways before jumping to specific pathologies" },
     subTopics: {
-      "Stroke":                  { section: "Neurology — Cerebrovascular Disease", focus: "Vascular territory table (ACA, MCA, PCA, posterior circulation deficits) — know which specific deficits localise to each vessel; lacunar infarct locations (internal capsule, thalamus, pons)" },
+      "Stroke":                  { section: "Neurology — Cerebrovascular Disease", focus: "Vascular territory table (ACA, MCA, PCA, posterior circulation deficits) — know which specific deficits localize to each vessel; lacunar infarct locations (internal capsule, thalamus, pons)" },
       "Ethics":                  { section: "Behavioral Science — Medical Ethics", focus: "The 4 principles table (autonomy, beneficence, non-maleficence, justice); informed consent vs capacity vs competence distinction; when to override patient wishes" },
       "Neurotransmitters":       { section: "Neuroscience — Neurotransmitters & Receptors", focus: "Receptor type table (ionotropic vs metabotropic); pathology associations (↓DA in Parkinson's, ↓ACh in Alzheimer's, ↑DA in schizophrenia); drug mechanism MOA column" },
       "Mood disorders":          { section: "Psychiatry — Mood Disorders", focus: "MDD vs bipolar I vs II vs dysthymia diagnostic criteria; antidepressant mechanism table — SSRI vs TCA vs MAOI side effects; serotonin syndrome vs NMS comparison" },
@@ -898,6 +898,18 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
   const hasPhyseo   = resources.includes('physeo');
   const hasFirstAid = resources.includes('firstaid');
 
+  // Derive top sub-topic names for specificity in instructions
+  const topSubNames = (subTopics || [])
+    .slice(0, 3)
+    .map(s => (typeof s === 'string' ? s : (s.topic || '')).split('(')[0].trim())
+    .filter(Boolean);
+  const focusClause = topSubNames.length > 0
+    ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}.`
+    : '';
+  const skipClause = topSubNames.length > 0
+    ? ` Skip any sections unrelated to ${topSubNames.slice(0, 2).join(' or ')} — you have limited time.`
+    : '';
+
   // Build the primary video recommendation (Pathoma/Sketchy override first)
   let primaryVideoStep;
   if (hasPathoma) {
@@ -906,7 +918,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       emoji: '🔬',
       label: bucket.pathoma.label,
       timeLabel: '~30 min',
-      instruction: 'Watch this Pathoma chapter now — Hussain covers the high-yield concepts tested most frequently. Pause and annotate.',
+      instruction: `${focusClause} Watch the sections covering these specific concepts — Hussain is dense, so pause frequently and annotate.${skipClause}`,
       links: [{ channel: 'Pathoma', url: ytLink(bucket.pathoma.query), label: `Search: ${bucket.pathoma.query.slice(0, 50)}` }],
     };
   } else if (hasSketchy) {
@@ -923,7 +935,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       emoji: '🎨',
       label: sketchyLabel,
       timeLabel: '~30 min',
-      instruction: `Open your Sketchy subscription and watch the Sketchy ${sketchyType} scene for this topic. Build the memory palace as you watch — draw the scene from memory afterward to test encoding.`,
+      instruction: `Open Sketchy ${sketchyType}${topSubNames.length > 0 ? ` — scenes for: ${topSubNames.slice(0, 2).join(', ')}` : ''}. Build the memory palace as you watch. After finishing, close the video and draw the scene from memory to test encoding.${skipClause}`,
       links: [], // Paid platform — student accesses via their own subscription. No YouTube link.
     };
   } else {
@@ -946,8 +958,8 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       type: 'video',
       emoji: '▶️',
       label: `Video review: ${category}`,
-      timeLabel: '~30–40 min',
-      instruction: 'Watch 1–2 of these (not all three). Choose the channel whose style clicks best for you — then take notes, not screenshots.',
+      timeLabel: '~30 min',
+      instruction: `${focusClause} Watch 1 of these — pick the channel whose style clicks for you. Jump to the sections on your focus sub-topics; you don't need to watch the full video. Take notes, not screenshots.${skipClause}`,
       links: finalList.map(v => ({
         channel: v.channel,
         url: ytLink(v.query),
@@ -958,12 +970,15 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
 
   // First Aid read step — section-specific reference
   const faRef = getFirstAidRef(category, subTopics);
+  const subFocusNote = topSubNames.length > 0
+    ? ` Focus specifically on the content relating to ${topSubNames.slice(0, 2).join(' and ')}.`
+    : '';
   const firstAidStep = hasFirstAid ? {
     type: 'read',
     emoji: '📕',
     label: `First Aid: ${faRef.section}`,
-    timeLabel: '~20–30 min',
-    instruction: `${faRef.focus} — Annotate anything from today's video that isn't already in the book. Use the margins for new associations.`,
+    timeLabel: '~20–25 min',
+    instruction: `${faRef.focus}${subFocusNote} Annotate anything from today's video that isn't already in the book — margin notes and arrows connecting concepts are more useful than highlighting.`,
     links: [],
   } : null;
 
