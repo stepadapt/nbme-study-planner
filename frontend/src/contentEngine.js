@@ -1000,7 +1000,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     emoji: '✏️',
     label: 'Annotate & consolidate',
     timeLabel: '~20–25 min',
-    instruction: 'Go through every wrong answer from today\'s questions. For each one: find the concept in First Aid, annotate it, and add an Anki card if you don\'t have one already.',
+    instruction: 'Go through every wrong answer from today\'s questions. For each one: find the concept in First Aid and annotate it. If you use AnKing, search the deck browser by keyword and unsuspend the existing card — do NOT make your own cards.',
     links: [],
   };
 

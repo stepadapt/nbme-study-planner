@@ -348,7 +348,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {} });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none" });
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
@@ -1311,11 +1311,42 @@ export default function StudyPlanner({ onShowTerms }) {
           <h1 style={S.h1}>Set up your profile</h1><p style={S.sub}>Your situation shapes the plan.</p>
           <div style={S.card}>
             <label style={S.label}>Resources available</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: profile.resources.includes('anking') ? 16 : 24 }}>
               {RESOURCES.map(r => { const on = profile.resources.includes(r.id); return (
-                <div key={r.id} style={{ ...S.chip, ...(on ? S.chipOn : {}), fontSize: 13 }} onClick={() => setProfile(p => ({ ...p, resources: on ? p.resources.filter(x => x !== r.id) : [...p.resources, r.id] }))}><span>{r.icon}</span> {r.name}</div>
+                <div key={r.id} style={{ ...S.chip, ...(on ? S.chipOn : {}), fontSize: 13 }} onClick={() => setProfile(p => {
+                  const removing = on;
+                  return {
+                    ...p,
+                    resources: removing ? p.resources.filter(x => x !== r.id) : [...p.resources, r.id],
+                    ...(r.id === 'anking' && removing ? { anki_experience_level: 'none' } : {}),
+                  };
+                })}><span>{r.icon}</span> {r.name}</div>
               ); })}
             </div>
+            {profile.resources.includes('anking') && (
+              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+                <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 How long have you been using Anki with the AnKing deck?</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {[
+                    { value: 'none',         label: "I've never used Anki before" },
+                    { value: 'beginner',     label: "I just started (less than 1 month)" },
+                    { value: 'intermediate', label: "I've been using it for 1–6 months" },
+                    { value: 'veteran',      label: "I've been using it for 6+ months (mature deck)" },
+                  ].map(opt => {
+                    const selected = (profile.anki_experience_level || 'none') === opt.value;
+                    return (
+                      <div key={opt.value} onClick={() => setProfile(p => ({ ...p, anki_experience_level: opt.value }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                        </div>
+                        <span style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816' }}>{opt.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <hr style={S.hr} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div><label style={S.label}>Exam date</label><input type="date" style={S.input} value={profile.examDate} onChange={e => setProfile(p => ({ ...p, examDate: e.target.value }))} /></div>

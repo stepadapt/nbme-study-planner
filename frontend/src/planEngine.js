@@ -409,6 +409,58 @@ function getStudyDayParams(hrs, hasAnki) {
   return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5  };
 }
 
+// ── Morning retention block builder ───────────────────────────────────────
+// Returns the Block 1 "morning retention" block appropriate for the student's
+// Anki experience level. Called for every standard study day.
+// ankiLevel: "none" | "beginner" | "intermediate" | "veteran"
+// hasAnki: whether the student selected AnKing as a resource
+// hours: block duration in hours
+// isFirstStudyDay: true on calendarDay == 1 (triggers setup guide for new users)
+function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay) {
+  // No AnKing selected — use UWorld incorrects for spaced repetition
+  if (!hasAnki) {
+    return { type: 'anki', label: 'Morning retention', tasks: [
+      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning. Your annotated First Aid pages are your "deck" — flip through flagged pages quickly.', hours: 0.5 },
+    ]};
+  }
+
+  // AnKing selected, never used before (level "none" with hasAnki) — show setup guide on day 1
+  if (ankiLevel === 'none' || (ankiLevel === 'beginner' && isFirstStudyDay)) {
+    const setupGuide = ankiLevel === 'none' ? `ANKI SETUP (one-time — do this today before anything else):
+1. Download Anki — free on desktop (apps.ankiweb.net), free on Android, $25 on iOS
+2. Download the AnKing Step 1 deck — search "AnKingMed" on YouTube for the current install tutorial (the process changes periodically)
+3. Install the deck with ALL cards SUSPENDED — this is the default; do not unsuspend anything yet
+4. Watch "AnKing How to Use Anki for Step 1 Beginners" on YouTube (15 min) — essential before you start
+5. Set your daily new card limit to 20–30 cards in deck settings
+6. Only unsuspend cards for topics you have ALREADY studied — never unsuspend topics you haven't learned yet
+
+KEY RULE: Do NOT make your own Anki cards. The AnKing deck covers every testable concept on Step 1. Making your own cards during dedicated is a time trap that will cost you hours. If you missed a concept, search the AnKing deck browser by keyword — the card already exists. Unsuspend it.
+
+After setup: do your due reviews (there won't be many yet), then unsuspend 20–30 AnKing cards for today's focus system.` : null;
+
+    return { type: 'anki', label: ankiLevel === 'none' ? 'Morning retention — AnKing setup' : 'Morning retention', tasks: [
+      { resource: 'AnKing Deck', activity: setupGuide || 'Do ALL due reviews first (probably 50–150 cards at this stage). Then unsuspend and learn new cards ONLY for today\'s focus system — 20–30 new cards max. If reviews start exceeding 45 minutes, stop adding new cards until reviews come back down. Do NOT make your own cards — if you missed a concept, search the AnKing deck by keyword and unsuspend the existing card.', hours },
+    ]};
+  }
+
+  if (ankiLevel === 'beginner') {
+    return { type: 'anki', label: 'Morning retention', tasks: [
+      { resource: 'AnKing Deck', activity: 'Do ALL due reviews first (probably 50–150 cards at your stage). Then unsuspend and learn new cards ONLY for today\'s focus system — 20–30 new cards max. If reviews start exceeding 45 minutes, stop adding new cards until reviews come back down. Do NOT make your own cards — if you missed a concept, search the AnKing deck by keyword and unsuspend the existing card.', hours },
+    ]};
+  }
+
+  if (ankiLevel === 'intermediate') {
+    return { type: 'anki', label: 'Morning retention', tasks: [
+      { resource: 'AnKing Deck', activity: 'All due reviews — STRICT 1 hour timer. If you can\'t finish all reviews in 1 hour, that\'s fine — prioritise cards you\'ve been getting wrong recently. Then unsuspend 10–20 new cards for today\'s focus system only.\n\nIf daily reviews are consistently exceeding 400 cards: open the AnKing deck browser, sort by interval, and suspend cards with intervals over 60 days. Those cards are locked in long-term memory — you don\'t need daily exposure anymore. Do NOT make your own cards.', hours },
+    ]};
+  }
+
+  // veteran
+  return { type: 'anki', label: 'Morning retention', tasks: [
+    { resource: 'AnKing Deck', activity: 'Reviews only — 1 hour MAX, hard cap. You likely have 400–800+ due cards. You will not finish them all and that is fine.\n\nPriority order:\n1. Cards tagged to your weakest systems (use AnKing tags to filter — e.g. #AK_Step1_v12::Cardiovascular)\n2. Cards you\'ve been getting wrong recently (actively decaying)\n3. Everything else in order\n\nStop at 1 hour regardless. Questions are more valuable than clearing your Anki queue. Do NOT add new cards during dedicated study. If reviews are overwhelming (800+ daily): suspend cards with intervals over 90 days and reduce your daily max reviews in settings to 400–500.', hours },
+  ]};
+}
+
 // ── Day structure validator ────────────────────────────────────────────────
 // Confirms the 5-block sequence is correct: content before questions, targeted before random.
 // Logs a console error if ordering is wrong (acts as a sanity check, does not throw).
@@ -531,6 +583,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   };
   const rn = (id) => RESOURCES.find(r => r.id === id)?.name || id;
   const hasAnki = profile.resources.includes("anking");
+  // "none" = AnKing not selected (UWorld incorrects) OR selected but never used (→ setup guide on day 1)
+  const ankiLevel = hasAnki ? (profile.anki_experience_level || "none") : "none";
 
   const topPriorities = priorities.filter(p => p.flagged || p.score <= 50);
   const midPriorities = priorities.filter(p => !p.flagged && p.score > 50 && p.score <= 70);
@@ -567,7 +621,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         predictorNote: ai?.predictorNote,
         blocks: [{ type: "nbme", label: testName, tasks: [
           { resource: testName, activity: 'Full-length exam — timed, test-day conditions, no interruptions', hours: 4 },
-          { resource: 'Self-review', activity: 'Thorough review of every wrong answer — understand the concept, annotate patterns, make cards for missed topics', hours: reviewHrs },
+          { resource: 'Self-review', activity: `Thorough review of every wrong answer — understand the concept, annotate patterns in First Aid.${hasAnki ? ' Search the AnKing deck by keyword and unsuspend cards for any concept you missed — do NOT make your own cards.' : ' Star flagged First Aid pages for your morning review sessions.'}`, hours: reviewHrs },
         ]}],
       });
       continue;
@@ -584,7 +638,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         ]});
       }
       debriefBlocks.push({ type: "catchup", label: `${testName} — full debrief`, tasks: [
-        { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read explanations — understand the concept and why each distractor is wrong. Annotate First Aid. Make cards for any missed patterns.`, hours: 2.5 },
+        { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read explanations — understand the concept and why each distractor is wrong. Annotate First Aid for every missed pattern.${hasAnki ? ' For each missed concept, search the AnKing deck by keyword and unsuspend the existing card — do NOT make your own cards.' : ' Star flagged pages for tomorrow\'s morning review.'}`, hours: 2.5 },
       ]});
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "rest", triageFor: testName,
@@ -695,15 +749,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const primaryQBank = res1.practice.length > 0 ? rn(res1.practice[0]) : "Question bank";
 
     // ── BLOCK 1: Morning retention — always first, every day ──────────────
-    if (hasAnki) {
-      blocks.push({ type: "anki", label: "Morning retention", tasks: [
-        { resource: "AnKing Deck", activity: "All due reviews — do these first, every day, before anything else. Retrieval reps from yesterday's learning.", hours: ankiHrs },
-      ]});
-    } else {
-      blocks.push({ type: "anki", label: "Morning retention", tasks: [
-        { resource: "UWorld incorrect", activity: "Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning.", hours: 0.5 },
-      ]});
-    }
+    // Content and duration vary by Anki experience level (see buildMorningRetentionBlock).
+    const b1Hrs = hasAnki ? ankiHrs : 0.5;
+    blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1));
 
     if (isLight) {
       // ── LIGHT DAY: Block 1 + shortened targeted Qs + 1 random block ──────
@@ -795,8 +843,11 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       }
 
       // BLOCK 5 — End-of-day review: consolidate the day, triage misses, prep tomorrow's retention
+      const b5AnkiNote = hasAnki
+        ? 'For any concept you keep missing: search the AnKing deck by keyword and unsuspend the existing card — do NOT make your own cards.'
+        : 'Star or annotate flagged First Aid pages — these become tomorrow\'s morning review targets.';
       blocks.push({ type: "end-review", label: "End-of-day review", tasks: [
-        { resource: "Self-review", activity: "Review ALL wrong answers from today's random blocks. Quick First Aid lookup for each missed concept (2 min max). Make Anki cards for anything you're unsure of. Flag patterns for tomorrow's retention session.", hours: params.b5Hrs },
+        { resource: "Self-review", activity: `Review ALL wrong answers from today's random blocks. Quick First Aid lookup for each missed concept (2 min max). ${b5AnkiNote} Flag patterns for tomorrow's retention session.`, hours: params.b5Hrs },
       ]});
     }
 
