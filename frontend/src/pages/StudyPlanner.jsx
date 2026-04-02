@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, RESOURCES, HIGH_YIELD_WEIGHTS, PRACTICE_TESTS } from '../data.js';
-import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getQbankFilterTip, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress } from '../planEngine.js';
+import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getQbankFilterTip, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress, formatDuration, roundToQuarterHour } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import Chat from '../components/Chat.jsx';
@@ -1152,7 +1152,7 @@ export default function StudyPlanner({ onShowTerms }) {
               const [sh, sm] = (profile.studyStartTime || "07:00").split(':').map(Number);
               const [eh, em] = (profile.studyEndTime || "17:00").split(':').map(Number);
               const hrs = Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
-              return hrs > 0 ? <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>{hrs.toFixed(1)} hours available for study — blocks will be scheduled with automatic breaks.</p> : null;
+              return hrs > 0 ? <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>{formatDuration(roundToQuarterHour(hrs))} available for study — blocks will be scheduled with automatic breaks.</p> : null;
             })()}
           </div>
           {profile.examDate && (() => { const d = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)); const mode = d >= 42 ? "full dedicated" : d >= 21 ? "standard" : d >= 10 ? "compressed" : "triage"; return <p style={{ ...S.muted, textAlign: "center", marginTop: 8 }}><strong style={{ color: "#1a1816" }}>{d} days</strong> — <strong style={{ color: d < 14 ? "#c0392b" : "#1a1816" }}>{mode}</strong> plan{d < 14 ? ". Every hour counts." : "."}</p>; })()}
@@ -1833,7 +1833,7 @@ export default function StudyPlanner({ onShowTerms }) {
                           <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fefce8', borderRadius: 8, opacity: 0.85, borderLeft: '3px solid #d97706' }}>
                             <span style={{ fontSize: 13 }}>☕</span>
                             <span style={{ fontSize: 12, fontFamily: S.f, color: '#92400e', fontWeight: 600 }}>{block.label}</span>
-                            <span style={{ fontSize: 11, color: '#b45309', fontFamily: S.f, marginLeft: 'auto' }}>{block.tasks[0]?.hours}h</span>
+                            <span style={{ fontSize: 11, color: '#b45309', fontFamily: S.f, marginLeft: 'auto' }}>{formatDuration(block.tasks[0]?.hours || 0)}</span>
                           </div>
                         );
                       }
@@ -1856,7 +1856,7 @@ export default function StudyPlanner({ onShowTerms }) {
                             <div key={ti} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13, fontFamily: S.f, background: bc.bg, borderLeft: `3px solid ${bc.border}` }}>
                               <span style={{ fontWeight: 600, color: "#1a1816", minWidth: 85 }}>{task.resource}</span>
                               <span style={{ color: "#6b6560", flex: 1, lineHeight: 1.4 }}>{task.activity}</span>
-                              <span style={{ color: "#8a857e", fontWeight: 600, whiteSpace: "nowrap" }}>{task.hours}h</span>
+                              <span style={{ color: "#8a857e", fontWeight: 600, whiteSpace: "nowrap" }}>{formatDuration(task.hours)}</span>
                             </div>
                           ))}
                         </div>

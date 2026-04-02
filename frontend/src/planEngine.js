@@ -10,12 +10,28 @@ function parseMinutes(t) {
 }
 
 function fmt12(mins) {
-  // 570 → "9:30 AM"
-  const h24 = Math.floor(mins / 60) % 24;
-  const mm = mins % 60;
+  // Snap to nearest 15-min mark, then format as 12-hr time
+  const snapped = Math.round(mins / 15) * 15;
+  const h24 = Math.floor(snapped / 60) % 24;
+  const mm = snapped % 60;
   const ampm = h24 < 12 ? 'AM' : 'PM';
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${mm.toString().padStart(2, '0')} ${ampm}`;
+}
+
+// Round hours to nearest 15-minute increment (e.g. 1.1 → 1.0, 1.2 → 1.25)
+export function roundToQuarterHour(hours) {
+  return Math.round(hours * 4) / 4;
+}
+
+// Format a duration in hours as "X hr Y min", never as a decimal
+export function formatDuration(hours) {
+  hours = roundToQuarterHour(hours || 0);
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  if (h === 0) return m + ' min';
+  if (m === 0) return h + ' hr';
+  return h + ' hr ' + m + ' min';
 }
 
 export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00') {
@@ -59,7 +75,7 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
   for (const block of blocks) {
     // Explicit lunch block — fixed duration, not scaled, resets break counter
     if (block.type === 'lunch') {
-      const lunchMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0));
+      const lunchMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) / 15) * 15;
       result.push({ ...block, startTime: fmt12(cursor), endTime: fmt12(cursor + lunchMins), durationMinutes: lunchMins });
       cursor += lunchMins;
       studyAccum = 0;
@@ -67,7 +83,7 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
       continue;
     }
 
-    const blockMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) * scale);
+    const blockMins = Math.round(Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) * scale) / 15) * 15;
 
     // Auto-insert lunch at midpoint (only when no explicit lunch block present)
     if (needsAutoLunch && !lunchInserted && cursor + blockMins > midpoint) {
@@ -521,7 +537,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
   const qBlockSize = 40;
   // Anki block only if student has AnKing
-  const ankiHrs = hasAnki ? Math.min(1, Math.round(hrs * 0.12 * 10) / 10) : 0;
+  const ankiHrs = hasAnki ? Math.min(1, roundToQuarterHour(hrs * 0.12)) : 0;
 
   const FOCUS_BLOCK_HRS = 2.5;   // 1h questions + 1.5h review
   const RANDOM_BLOCK_HRS = 1.8;  // 1h questions + 0.8h review
@@ -600,11 +616,11 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const eveBlocks = [];
       if (hasAnki) {
         eveBlocks.push({ type: "anki", label: "Light retention", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — 20 min max. Calm and focused.", hours: 0.3 },
+          { resource: "AnKing Deck", activity: "Due reviews only — 20 min max. Calm and focused.", hours: 0.25 },
         ]});
       }
       eveBlocks.push({ type: "questions-random", label: "Warm-up: 20 random questions", tasks: [
-        { resource: examQBank, activity: "20 Qs — RANDOM, all systems, relaxed pace. Confidence run, not a drill.", hours: 0.4 },
+        { resource: examQBank, activity: "20 Qs — RANDOM, all systems, relaxed pace. Confidence run, not a drill.", hours: 0.5 },
         { resource: "Self-review", activity: "Skim wrong answers briefly — note patterns, don't start studying new concepts.", hours: 0.25 },
       ]});
       eveBlocks.push({ type: "content-reactive", label: "Personal high-yield notes review", tasks: [
@@ -634,10 +650,10 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         ]});
       }
       lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
-        { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.6 },
+        { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.5 },
       ]});
       // 2-3 random blocks based on available hours (targeting 80–120 Qs)
-      const lockdownHrsAvail = hrs - ankiHrs - 0.6 - 1.5; // minus anki, review, free-time buffer
+      const lockdownHrsAvail = hrs - ankiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
       const lockdownRandomBlocks = Math.max(2, Math.min(3, Math.round(lockdownHrsAvail / 1.5)));
       for (let rb = 0; rb < lockdownRandomBlocks; rb++) {
         lockdownBlocks.push({ type: "questions-random", label: `Random block ${rb + 1} — all systems`, tasks: [
@@ -732,7 +748,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           ? (res1.learning.length > 0 ? rn(res1.learning[0]) : "Ninja Nerd + First Aid")
           : "Dirty Medicine + First Aid";
         const b2Activity = isKG
-          ? `Content review: ${focusTopic.category} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. Time: ${Math.round(b2Hrs * 60)} min.`
+          ? `Content review: ${focusTopic.category} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. Time: ${formatDuration(b2Hrs)}.`
           : `Content review: ${focusTopic.category} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. Time: ~45 min.`;
         const b2Label = isRamp
           ? `Content foundation: ${focusTopic.category}`
