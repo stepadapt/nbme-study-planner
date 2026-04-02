@@ -425,12 +425,21 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   for (let d = 0; d < totalCalendarDays; d++) {
     const calendarDay = d + 1;
     const isLastDay = d === totalCalendarDays - 1;
+    // Exam-week lockdown: applies only for plans ≥ 14 days, covers the 7 days before exam-eve + eve itself
+    const isInLockdown = totalCalendarDays >= 14 && calendarDay >= totalCalendarDays - 8 && !isLastDay;
+    const isExamEve = isInLockdown && calendarDay === totalCalendarDays - 1;
+    const isExamWeekDay = isInLockdown && !isExamEve;
     if (isLastDay) {
       daySchedule.push({ calendarDay, type: "rest" });
     } else if (assessmentDayMap.has(calendarDay)) {
+      // NBME days always take priority — Free120 is often inside the exam-week window
       daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
     } else if (restDebriefMap.has(calendarDay)) {
       daySchedule.push({ calendarDay, type: "rest-debrief", prevAssessItem: restDebriefMap.get(calendarDay) });
+    } else if (isExamEve) {
+      daySchedule.push({ calendarDay, type: "exam-eve" });
+    } else if (isExamWeekDay) {
+      daySchedule.push({ calendarDay, type: "exam-week" });
     } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
       daySchedule.push({ calendarDay, type: "light" });
     } else {
@@ -509,7 +518,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       continue;
     }
 
-    // ── Rest day (last day / exam eve) ────────────────────────────────
+    // ── Rest day (exam day — final rest) ─────────────────────────────
     if (sched.type === "rest") {
       const restBlocks = [];
       if (hasAnki) {
@@ -521,6 +530,70 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         { resource: "Self", activity: "Rest. No new content. Light review of your own notes if needed. Early bedtime.", hours: 1 },
       ]});
       currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", blocks: restBlocks });
+      continue;
+    }
+
+    // ── Exam-eve day (night before exam) ─────────────────────────────
+    if (sched.type === "exam-eve") {
+      const firstPri = priorities[0];
+      const firstRes = firstPri ? getRes(firstPri.category) : { practice: [] };
+      const examQBank = firstRes.practice.length > 0 ? rn(firstRes.practice[0]) : "Question bank";
+      const eveBlocks = [];
+      if (hasAnki) {
+        eveBlocks.push({ type: "anki", label: "Light retention", tasks: [
+          { resource: "AnKing Deck", activity: "Due reviews only — 20 min max. Calm and focused.", hours: 0.3 },
+        ]});
+      }
+      eveBlocks.push({ type: "questions-random", label: "Warm-up: 20 random questions", tasks: [
+        { resource: examQBank, activity: "20 Qs — RANDOM, all systems, relaxed pace. Confidence run, not a drill.", hours: 0.4 },
+        { resource: "Self-review", activity: "Skim wrong answers briefly — note patterns, don't start studying new concepts.", hours: 0.25 },
+      ]});
+      eveBlocks.push({ type: "content-reactive", label: "Personal high-yield notes review", tasks: [
+        { resource: "Your notes + First Aid", activity: "Flip through your personal high-yield notes and flagged cards from past NBMEs. 30 min max — nothing new, only familiar material.", hours: 0.5 },
+      ]});
+      eveBlocks.push({ type: "rest", label: "Exam-eve protocol", tasks: [
+        { resource: "Logistics", activity: "Pack your ID, confirmation email, water, and snacks. Know the route and travel time. Set two alarms.", hours: 0.25 },
+        { resource: "Evening", activity: "Light dinner. No alcohol, no cramming, no new content. Wind down by 9 PM. In bed by 10 PM — sleep is worth more than any last-minute review.", hours: 0.25 },
+      ]});
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay, dayType: "exam-eve",
+        blocks: eveBlocks, totalQuestions: 20,
+      });
+      continue;
+    }
+
+    // ── Exam-week day (lockdown mode — no new content) ────────────────
+    if (sched.type === "exam-week") {
+      studyDayNum++;
+      const firstPri = priorities[0];
+      const firstRes = firstPri ? getRes(firstPri.category) : { practice: [] };
+      const examQBank = firstRes.practice.length > 0 ? rn(firstRes.practice[0]) : "Question bank";
+      const lockdownBlocks = [];
+      if (hasAnki) {
+        lockdownBlocks.push({ type: "anki", label: "Morning retention", tasks: [
+          { resource: "AnKing Deck", activity: "Due reviews only — quick streak maintenance.", hours: ankiHrs },
+        ]});
+      }
+      lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
+        { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.6 },
+      ]});
+      // 2-3 random blocks based on available hours (targeting 80–120 Qs)
+      const lockdownHrsAvail = hrs - ankiHrs - 0.6 - 1.5; // minus anki, review, free-time buffer
+      const lockdownRandomBlocks = Math.max(2, Math.min(3, Math.round(lockdownHrsAvail / 1.5)));
+      for (let rb = 0; rb < lockdownRandomBlocks; rb++) {
+        lockdownBlocks.push({ type: "questions-random", label: `Random block ${rb + 1} — all systems`, tasks: [
+          { resource: examQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Simulate exam-day pacing.`, hours: 1.0 },
+          { resource: "Self-review", activity: "Wrong answers only — 2 min max per concept, then move on. Maintenance mode: no deep dives.", hours: 0.5 },
+        ]});
+      }
+      lockdownBlocks.push({ type: "rest", label: "Finish by 3 PM — rest the remainder", tasks: [
+        { resource: "Self", activity: "Done for the day. Finish all study by 3 PM. Rest, exercise, socialise — protect your sleep schedule and mental energy for exam day.", hours: 1 },
+      ]});
+      const lockdownTotalQs = lockdownRandomBlocks * qBlockSize;
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay, dayType: "exam-week",
+        blocks: lockdownBlocks, totalQuestions: lockdownTotalQs,
+      });
       continue;
     }
 
@@ -640,6 +713,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
   const totalWeeks = weeks.length;
   weeks.forEach((w, i) => {
+    const hasLockdown = w.days.some(d => d.dayType === 'exam-week' || d.dayType === 'exam-eve');
+    if (hasLockdown) {
+      w.phase = "Exam week — maintenance and confidence mode";
+      w.isLockdown = true;
+      return;
+    }
     if (i === 0 && contentRampDays > 0) w.phase = "Foundation — build framework, ramp into questions";
     else if (i < Math.ceil(totalWeeks * 0.55)) w.phase = "Build — question-heavy, attack weak + high-yield";
     else if (i < Math.ceil(totalWeeks * 0.8)) w.phase = "Strengthen — broad coverage, refine weak spots";

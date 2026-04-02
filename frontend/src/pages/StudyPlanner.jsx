@@ -682,6 +682,22 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 8 }}>
+                {/* Exam-week / exam-eve lockdown banner */}
+                {(todayData.day.dayType === 'exam-week' || todayData.day.dayType === 'exam-eve') && (
+                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
+                    <span style={{ fontSize: 18, flexShrink: 0 }}>{todayData.day.dayType === 'exam-eve' ? '🌙' : '🔒'}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 2 }}>
+                        {todayData.day.dayType === 'exam-eve' ? 'Exam eve — light review and early rest' : 'Exam week — maintenance and confidence mode'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f }}>
+                        {todayData.day.dayType === 'exam-eve'
+                          ? 'Pack your bag. Light dinner. No new content. In bed by 10 PM.'
+                          : 'No new content. Random blocks only. Finish all study by 3 PM.'}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {todayBlocksWithTimes.map((block, i) => {
                   if (block.type === 'break') {
                     return (
@@ -1516,18 +1532,30 @@ export default function StudyPlanner({ onShowTerms }) {
         </div>
 
         {plan.weeks.map((week, wi) => (
-          <div key={wi} style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 12 }}>
-            <div style={{ padding: "16px 24px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: expandedWeek === wi ? "#faf8f5" : "#fff" }} onClick={() => setExpandedWeek(expandedWeek === wi ? -1 : wi)}>
+          <div key={wi} style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 12, ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
+            <div style={{ padding: "16px 24px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: expandedWeek === wi ? (week.isLockdown ? '#f5f3ff' : "#faf8f5") : (week.isLockdown ? '#fdfcff' : "#fff") }} onClick={() => setExpandedWeek(expandedWeek === wi ? -1 : wi)}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: "#1a1816" }}>Week {week.week}</span>
-                  {week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: "#b4530915", color: "#b45309", fontSize: 10 }}>{ft}</span>)}
+                  {week.isLockdown
+                    ? <span style={{ ...S.tag, background: "#7c3aed18", color: "#7c3aed", fontSize: 10 }}>🔒 Exam week</span>
+                    : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: "#b4530915", color: "#b45309", fontSize: 10 }}>{ft}</span>)
+                  }
                 </div>
-                <div style={{ fontSize: 13, color: "#8a857e", fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
+                <div style={{ fontSize: 13, color: week.isLockdown ? "#7c3aed" : "#8a857e", fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
               </div>
               <span style={{ fontSize: 18, color: "#8a857e", transform: expandedWeek === wi ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}>▾</span>
             </div>
             {expandedWeek === wi && <div style={{ padding: "0 24px 20px" }}>
+              {week.isLockdown && (
+                <div style={{ margin: '16px 0 4px', padding: '12px 16px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                  <span style={{ fontSize: 20, flexShrink: 0 }}>🔒</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 3 }}>Exam week — maintenance and confidence mode</div>
+                    <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>No new content. Random blocks only — simulate exam pacing daily. Finish all study by 3 PM. Trust the work you've done.</div>
+                  </div>
+                </div>
+              )}
               {week.days.map((day, di) => {
                 const special = day.dayType === "nbme" || day.dayType === "rest";
                 return (<div key={di} style={{ padding: "14px 0", borderTop: di > 0 ? "1px solid #f0ece6" : "none" }}>
@@ -1536,7 +1564,9 @@ export default function StudyPlanner({ onShowTerms }) {
                     {day.dayType === "nbme" && <span style={{ ...S.tag, background: "#c0392b18", color: "#c0392b" }}>📋 NBME</span>}
                     {day.dayType === "rest" && <span style={{ ...S.tag, background: "#27ae6018", color: "#27ae60" }}>😴 Rest</span>}
                     {day.dayType === "light" && <span style={{ ...S.tag, background: "#2980b918", color: "#2980b9" }}>Light</span>}
-                    {!special && day.focusTopic && (() => { const rc = day.blocks.filter(b => b.type === "questions-random").length; return <span style={{ fontSize: 13, color: "#8a857e", fontFamily: S.f }}>Focus: <strong style={{ color: "#1a1816" }}>{day.focusTopic}</strong>{rc > 0 && ` · ${rc} random block${rc > 1 ? "s" : ""}`}</span>; })()}
+                    {day.dayType === "exam-week" && <span style={{ ...S.tag, background: "#7c3aed18", color: "#7c3aed" }}>⚡ Exam week</span>}
+                    {day.dayType === "exam-eve" && <span style={{ ...S.tag, background: "#1D9E7518", color: "#1D9E75" }}>🌙 Exam eve</span>}
+                    {!special && day.dayType !== "exam-week" && day.dayType !== "exam-eve" && day.focusTopic && (() => { const rc = day.blocks.filter(b => b.type === "questions-random").length; return <span style={{ fontSize: 13, color: "#8a857e", fontFamily: S.f }}>Focus: <strong style={{ color: "#1a1816" }}>{day.focusTopic}</strong>{rc > 0 && ` · ${rc} random block${rc > 1 ? "s" : ""}`}</span>; })()}
                     {day.totalQuestions > 0 && <span style={{ ...S.tag, background: "#1a181610", color: "#1a1816", marginLeft: "auto" }}>{day.totalQuestions} Qs</span>}
                   </div>
                   <div style={{ display: "grid", gap: 10 }}>
