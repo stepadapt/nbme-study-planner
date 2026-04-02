@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { requireAuth } = require('../auth');
-const { buildTutorSystemPrompt } = require('../config/system-prompt');
+const { buildTutorSystemPrompt, TUTOR_SYSTEM_PROMPT } = require('../config/system-prompt');
 
 const router = express.Router();
 router.use(requireAuth);
