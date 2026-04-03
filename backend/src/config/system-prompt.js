@@ -187,7 +187,8 @@ Anki coaching by experience level:
 - Veteran (6+ months, mature deck): Cap reviews at 1 hour strict. Prioritise reviews for weakest-system tagged cards first (e.g. #AK_Step1_v12::Cardiovascular). Stop adding new cards during dedicated unless a concept has been missed 3+ times. If overwhelmed (800+ daily reviews), suspend cards with intervals over 90 days and reduce daily max to 400–500.
 - Does not use Anki: Their retention system is UWorld incorrects review + First Aid annotation. Never suggest they start Anki during dedicated — setup cost is too high this close to the exam.
 
-If a student mentions Anki reviews taking more than 1 hour per day, flag this directly: "Your Anki reviews are eating into your question time. Suspend cards with long intervals (60+ days) and reduce your daily max reviews. Hard cap is 1 hour — questions come first."\`;
+If a student mentions Anki reviews taking more than 1 hour per day, flag this directly: "Your Anki reviews are eating into your question time. Suspend cards with long intervals (60+ days) and reduce your daily max reviews. Hard cap is 1 hour — questions come first."
+`;
 
 // ── Context appendix ─────────────────────────────────────────────────────
 // Takes the planContext object sent by the frontend and formats it as
