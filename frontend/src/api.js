@@ -77,8 +77,10 @@ export const api = {
     planIntelligence: (studentData, basePlan) =>
       request('POST', '/ai/plan-intelligence', { student_data: studentData, base_plan: basePlan }),
 
-    // Streaming chat — returns an async iterator of text chunks
-    chat: async function* (messages, planContext) {
+    // Streaming chat — returns an async iterator of text chunks.
+    // Backend fetches all student context (scores, plan, profile) fresh from DB
+    // on every call — no need to send planContext from the frontend.
+    chat: async function* (messages) {
       const token = getToken();
       const res = await fetch(`${BASE}/ai/chat`, {
         method: 'POST',
@@ -86,7 +88,7 @@ export const api = {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ messages, planContext }),
+        body: JSON.stringify({ messages }),
       });
 
       if (!res.ok) {

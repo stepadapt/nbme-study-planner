@@ -2,7 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { requireAuth } = require('../auth');
-const { buildTutorSystemPrompt, TUTOR_SYSTEM_PROMPT } = require('../config/system-prompt');
+const db = require('../db');
+const { buildTutorSystemPrompt, TUTOR_SYSTEM_PROMPT, buildCoachContextFromDB } = require('../config/system-prompt');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -132,14 +133,41 @@ Rules:
 });
 
 // ── POST /api/ai/chat ────────────────────────────────────────────────
-// Streaming coaching chat. Accepts conversation history + plan context.
+// Streaming coaching chat. Fetches fresh student data from DB on every
+// message — never relies on frontend-sent planContext for the system prompt.
 router.post('/chat', async (req, res) => {
-  const { messages, planContext } = req.body;
+  const { messages } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array required' });
   }
 
-  const systemPrompt = buildTutorSystemPrompt(planContext);
+  // ── 1. Fetch fresh student data from DB ──────────────────────────
+  const userId = req.user.userId;
+
+  const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(userId);
+  const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId);
+  const assessmentRows = db.prepare(`
+    SELECT id, form_name, scores, sticking_points, gap_types, created_at
+    FROM assessments
+    WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL)
+    ORDER BY created_at ASC
+  `).all(userId);
+  const latestPlan = db.prepare(`
+    SELECT id, plan_data, profile_snapshot, created_at
+    FROM study_plans
+    WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL)
+    ORDER BY created_at DESC LIMIT 1
+  `).get(userId);
+
+  // ── 2. Build fresh context summary ──────────────────────────────
+  const coachContext = buildCoachContextFromDB({
+    user,
+    profile,
+    assessments: assessmentRows,
+    latestPlan,
+  });
+
+  const systemPrompt = TUTOR_SYSTEM_PROMPT + coachContext;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -153,11 +181,23 @@ router.post('/chat', async (req, res) => {
   }
 
   try {
+    // Filter out system-role placeholder messages (intro message from frontend)
+    // and strip any internal _streaming flags before sending to Anthropic
+    const cleanMessages = messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .filter(m => m.content && m.content.trim().length > 0)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    if (cleanMessages.length === 0) {
+      res.write(`data: ${JSON.stringify({ error: 'No valid messages to send.' })}\n\n`);
+      return res.end();
+    }
+
     const stream = anthropic.messages.stream({
       model: 'claude-haiku-4-5',
-      max_tokens: 4096,
+      max_tokens: 1024,
       system: systemPrompt,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: cleanMessages,
     });
 
     for await (const event of stream) {

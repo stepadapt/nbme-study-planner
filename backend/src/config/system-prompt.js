@@ -188,71 +188,318 @@ Anki coaching by experience level:
 - Does not use Anki: Their retention system is UWorld incorrects review + First Aid annotation. Never suggest they start Anki during dedicated — setup cost is too high this close to the exam.
 
 If a student mentions Anki reviews taking more than 1 hour per day, flag this directly: "Your Anki reviews are eating into your question time. Suspend cards with long intervals (60+ days) and reduce your daily max reviews. Hard cap is 1 hour — questions come first."
+
+## COACHING CHAT RULES
+
+You are the student's personal Step 1 tutor. You have their complete data in front of you
+(provided in the STUDENT CONTEXT block appended to this prompt). Use it in EVERY response.
+
+1. NEVER give generic advice. Every response must reference the student's actual data —
+   their actual scores, their actual weak systems, their actual plan. "Study your weak areas"
+   is never acceptable. "Your **Cardiovascular** is at **58%** — focus today's block on Heart
+   Failure and Valvular Disease" is the standard. Use **bold** for all score numbers and
+   key system names so the student can see you're reading their actual data.
+
+2. ALWAYS know what day of the plan the student is on and what they should be doing right now.
+   If they ask "what should I do?" say exactly: "It's Day N. Today's focus is [System].
+   Right now you should be [specific block from today's schedule]."
+
+3. When the student expresses frustration or burnout, respond with empathy FIRST, then data.
+   Show them their actual score trajectory with specific numbers. Acknowledge that dedicated
+   is hard. Give them permission to rest if they need it — but also be honest if they're
+   behind and need to push through.
+
+4. When the student asks about a specific topic, give a BRIEF high-yield summary focused
+   on what's most tested on Step 1 — not a textbook review. End with a specific resource
+   recommendation and a UWorld filter suggestion for that topic.
+
+5. NEVER recommend that the student make their own Anki cards. Always recommend unsuspending
+   existing AnKing cards by keyword search. Never make cards.
+
+6. NEVER recommend Sketchy for anything other than Pharmacology or Microbiology.
+
+7. NEVER recommend Pathoma for anything other than Pathology content.
+
+8. If the student asks whether they should postpone their exam, be honest based on their data.
+   Below 70% estimated pass probability with <2 weeks remaining: gently suggest discussing
+   postponement with their advisor. Above 85%: reassure them. 70-85%: acknowledge the risk
+   but support them if they want to proceed.
+
+9. Keep responses concise. 3-5 sentences for simple questions, up to 2 short paragraphs for
+   complex ones. Use bullet points for action items.
+
+10. End action-oriented responses with a clear next step prefixed exactly as:
+    "**Here's what to do right now:** [specific action]."
+
+11. If you have no assessment data for this student, say: "I don't have any NBME scores for
+    you yet, so my advice will be more general. Once you add your first practice exam, I can
+    give you much more targeted guidance." Then give general high-quality advice.
+
+12. When a student asks to change something about their plan (rest day, topic swap, etc.),
+    evaluate whether it's a good idea based on their data, give your reasoning, then say:
+    "I can't modify the plan directly yet — go to New Plan to regenerate with updated
+    priorities. When you do, make sure to flag [specific systems] as sticking points."
 `;
 
-// ── Context appendix ─────────────────────────────────────────────────────
-// Takes the planContext object sent by the frontend and formats it as
-// structured JSON matching the system prompt's expected INPUT FORMAT.
-// Appended to the system prompt — keeps student data out of the chat history.
+// ── Coach context builder (DB-sourced) ───────────────────────────────────────
+// Called server-side in the /api/ai/chat handler.
+// Takes raw DB rows and formats a readable context summary that gets appended to
+// the system prompt. Context is built FRESH on every chat message — never cached.
+function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
+  const COHORT_THRESHOLD = 70;
+  const lines = [];
+
+  // ── Basic profile ──────────────────────────────────────────────────────────
+  const name = user?.name || 'Student';
+  // Prefer profile-level exam date; fall back to plan snapshot
+  const planSnapshot = latestPlan ? JSON.parse(latestPlan.profile_snapshot || '{}') : {};
+  const examDateStr = profile?.exam_date || planSnapshot.examDate || null;
+  const daysRemaining = examDateStr
+    ? Math.max(0, Math.round((new Date(examDateStr) - new Date()) / 86400000))
+    : null;
+  const hoursPerDay = profile?.hours_per_day || planSnapshot.hoursPerDay || 8;
+  const resources = JSON.parse(profile?.resources || '[]');
+  const ankiLevel = planSnapshot.anki_experience_level || 'none';
+  const takenForms = JSON.parse(profile?.taken_assessments || '[]');
+
+  lines.push('STUDENT CONTEXT:');
+  lines.push(`- Student: ${name}`);
+  lines.push(`- Exam date: ${examDateStr ? `${examDateStr} (${daysRemaining} days remaining)` : 'not set'}`);
+  lines.push(`- Study hours/day: ${hoursPerDay}`);
+  lines.push(`- Resources: ${resources.length ? resources.join(', ') : 'not specified'}`);
+  lines.push(`- Anki experience level: ${ankiLevel}`);
+  lines.push(`- Practice forms already taken: ${takenForms.length ? takenForms.join(', ') : 'none recorded'}`);
+
+  if (!assessments || assessments.length === 0) {
+    lines.push('');
+    lines.push('ASSESSMENTS: None entered yet. Give general advice and encourage the student to add their first NBME score.');
+    if (latestPlan) lines.push('PLAN: A plan exists but has no assessment data backing it.');
+    return '\n\n' + lines.join('\n');
+  }
+
+  // ── Parse assessments ──────────────────────────────────────────────────────
+  const parsed = assessments.map(a => {
+    const scores = JSON.parse(a.scores || '{}');
+    const numericVals = Object.values(scores).filter(v => typeof v === 'number' && v > 0);
+    const avg = numericVals.length
+      ? Math.round(numericVals.reduce((s, v) => s + v, 0) / numericVals.length)
+      : null;
+    return {
+      formName: a.form_name || 'Unknown form',
+      dateLabel: new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      createdAt: a.created_at,
+      scores,
+      stickingPoints: JSON.parse(a.sticking_points || '[]'),
+      gapTypes: JSON.parse(a.gap_types || '{}'),
+      avg,
+    };
+  });
+
+  const latest = parsed[parsed.length - 1];
+
+  // ── Score history & trajectory ─────────────────────────────────────────────
+  const historyStr = parsed.map(a => `${a.formName} (${a.dateLabel}: ${a.avg ?? '?'}%)`).join(' → ');
+  lines.push('');
+  lines.push(`SCORE HISTORY: ${historyStr}`);
+
+  let trajectory = 'insufficient data';
+  let velocityStr = '';
+  if (parsed.length >= 2) {
+    const first = parsed[0];
+    const last = latest;
+    const weeksElapsed = Math.max(0.5,
+      (new Date(last.createdAt) - new Date(first.createdAt)) / (7 * 86400000));
+    const velocityPts = ((last.avg || 0) - (first.avg || 0)) / weeksElapsed;
+    velocityStr = ` (${velocityPts >= 0 ? '+' : ''}${velocityPts.toFixed(1)} pts/week)`;
+
+    const recentDelta = (last.avg || 0) - (parsed[parsed.length - 2].avg || 0);
+    if (parsed.length >= 3) {
+      const deltas = parsed.slice(1).map((a, i) => (a.avg || 0) - (parsed[i].avg || 0));
+      const variance = Math.max(...deltas) - Math.min(...deltas);
+      if (variance >= 12) trajectory = 'volatile (large swings between exams)';
+      else if (recentDelta >= 4) trajectory = 'improving';
+      else if (recentDelta <= -4) trajectory = 'declining';
+      else trajectory = 'plateaued';
+    } else {
+      if (recentDelta >= 4) trajectory = 'improving';
+      else if (recentDelta <= -4) trajectory = 'declining';
+      else trajectory = 'plateaued';
+    }
+  }
+  lines.push(`TRAJECTORY: ${trajectory}${velocityStr}`);
+
+  // ── Pass probability estimate ──────────────────────────────────────────────
+  let passProbStr = 'unknown (no score data)';
+  if (latest.avg !== null) {
+    if (latest.avg >= 72) passProbStr = 'High (>90%)';
+    else if (latest.avg >= 67) passProbStr = 'Moderate (75–90%)';
+    else if (latest.avg >= 62) passProbStr = 'Borderline (55–75%)';
+    else passProbStr = 'Below threshold (<55%) — risk of failure';
+  }
+  lines.push(`ESTIMATED PASS PROBABILITY: ${passProbStr}`);
+
+  // ── Most recent assessment breakdown ──────────────────────────────────────
+  lines.push('');
+  lines.push(`MOST RECENT ASSESSMENT: ${latest.formName} (${latest.dateLabel}, overall avg ${latest.avg ?? '?'}%)`);
+
+  const sortedSystems = Object.entries(latest.scores)
+    .filter(([, v]) => typeof v === 'number')
+    .sort((a, b) => a[1] - b[1]);
+
+  const weakSystems = sortedSystems.filter(([, v]) => v < COHORT_THRESHOLD);
+  const strongSystems = [...sortedSystems].reverse().filter(([, v]) => v >= COHORT_THRESHOLD);
+
+  if (weakSystems.length) {
+    lines.push(`- Weak systems (below ${COHORT_THRESHOLD}%): ${weakSystems.map(([k, v]) => `${k} (${v}%)`).join(', ')}`);
+  } else {
+    lines.push(`- No systems below cohort threshold — solid performance`);
+  }
+  if (strongSystems.length) {
+    lines.push(`- Strong systems: ${strongSystems.slice(0, 4).map(([k, v]) => `${k} (${v}%)`).join(', ')}`);
+  }
+  if (latest.stickingPoints?.length) {
+    lines.push(`- Student-flagged sticking points: ${latest.stickingPoints.join(', ')}`);
+  }
+  if (Object.keys(latest.gapTypes).length) {
+    lines.push(`- Gap types: ${Object.entries(latest.gapTypes).map(([k, v]) => `${k} = ${v} gap`).join(', ')}`);
+  }
+
+  // ── Sticky weaknesses (weak in 2+ assessments) ────────────────────────────
+  if (parsed.length >= 2) {
+    const weakCount = {};
+    for (const a of parsed) {
+      for (const [sys, score] of Object.entries(a.scores)) {
+        if (typeof score === 'number' && score < COHORT_THRESHOLD) {
+          weakCount[sys] = (weakCount[sys] || 0) + 1;
+        }
+      }
+    }
+    const sticky = Object.entries(weakCount)
+      .filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .map(([sys, n]) => `${sys} (weak in ${n}/${parsed.length} assessments)`);
+    if (sticky.length) {
+      lines.push('');
+      lines.push(`STICKY WEAKNESSES — require resource change, not more of the same:`);
+      sticky.forEach(s => lines.push(`- ${s}`));
+    }
+  }
+
+  // ── Current plan status ────────────────────────────────────────────────────
+  if (latestPlan) {
+    const planData = JSON.parse(latestPlan.plan_data || '{}');
+    const createdAt = latestPlan.created_at;
+
+    // Compute today's calendarDay offset (same logic as findTodayInPlan in planEngine)
+    const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+    const createdMidnight = new Date(createdAt); createdMidnight.setHours(0, 0, 0, 0);
+    const todayCalendarDay = Math.floor((todayMidnight - createdMidnight) / 86400000) + 1;
+
+    const allDays = (planData.weeks || []).flatMap(w => w.days || []);
+    const totalDays = planData.totalCalendarDays || allDays.length;
+    const daysCompleted = Math.max(0, Math.min(todayCalendarDay - 1, totalDays));
+    const percentDone = totalDays > 0 ? Math.round((daysCompleted / totalDays) * 100) : 0;
+
+    const todayDay = allDays.find(d => d.calendarDay === todayCalendarDay);
+
+    // Next scheduled NBME
+    const nextNbme = allDays.find(d => d.calendarDay > todayCalendarDay && d.dayType === 'nbme');
+    const daysToNbme = nextNbme
+      ? nextNbme.calendarDay - todayCalendarDay
+      : null;
+
+    // Plan priorities (gap types from plan engine)
+    const gapTypes = {};
+    for (const p of (planData.priorities || [])) {
+      if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
+    }
+
+    lines.push('');
+    lines.push(`CURRENT PLAN (generated ${new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}):`);
+    lines.push(`- Progress: Day ${Math.max(1, todayCalendarDay)} of ${totalDays} (${percentDone}% complete)`);
+
+    if (todayDay) {
+      const dayTypeLabel = {
+        nbme: 'Practice Exam Day',
+        rest: 'Rest Day',
+        'rest-debrief': 'Post-Exam Debrief Day',
+        'exam-eve': 'Exam Eve',
+        'exam-week': 'Exam Week (lockdown)',
+        light: 'Light Study Day',
+        study: `Focus — ${todayDay.focusTopic || 'Mixed'}`,
+      }[todayDay.dayType] || todayDay.dayType;
+      lines.push(`- Today (Day ${todayCalendarDay}): ${dayTypeLabel}`);
+      if (todayDay.focusTopic) {
+        lines.push(`- Today's focus system: ${todayDay.focusTopic}${todayDay.focusGapType ? ` (${todayDay.focusGapType} gap)` : ''}`);
+      }
+      if (todayDay.totalQuestions > 0) {
+        lines.push(`- Questions target today: ${todayDay.totalQuestions}`);
+      }
+      const blockSummary = (todayDay.blocks || [])
+        .map(b => b.title || b.type)
+        .filter(Boolean)
+        .join(' → ');
+      if (blockSummary) lines.push(`- Today's block sequence: ${blockSummary}`);
+    } else if (todayCalendarDay < 1) {
+      lines.push(`- Plan hasn't started yet`);
+    } else if (todayCalendarDay > totalDays) {
+      lines.push(`- Plan has ended (exam has passed or plan expired)`);
+    } else {
+      lines.push(`- Today is not a standard study day in the plan`);
+    }
+
+    if (nextNbme) {
+      lines.push(`- Next scheduled practice exam: ${nextNbme.assessmentLabel || nextNbme.assessmentTest || 'Practice exam'} in ${daysToNbme} day${daysToNbme === 1 ? '' : 's'}`);
+    }
+
+    if (Object.keys(gapTypes).length) {
+      lines.push(`- Plan gap-type priorities: ${Object.entries(gapTypes).map(([k, v]) => `${k} (${v})`).join(', ')}`);
+    }
+  } else {
+    lines.push('');
+    lines.push('CURRENT PLAN: No active plan. Encourage the student to generate one from the dashboard.');
+  }
+
+  return '\n\n' + lines.join('\n');
+}
+
+// ── Legacy context appendix (used by plan-intelligence endpoint) ──────────────
+// Takes the planContext object sent by the frontend and formats it as JSON.
+// Kept for the /api/ai/plan-intelligence endpoint which still uses frontend data.
 function buildContextAppendix(ctx) {
   if (!ctx) return '';
-
   const { profile, assessments, plan } = ctx;
   const examDate = profile?.examDate || null;
   const daysRemaining = examDate
     ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000))
     : null;
-
-  // Map each saved assessment into the format the system prompt expects
   const nbmeScores = (assessments || []).map(a => ({
     form: a.formName || 'Unknown',
     date: a.date || null,
-    total_epc: a.totalScore || null,
-    pass_probability: null,
     systems: a.scores || {},
-    disciplines: {},
   }));
-
-  // Derive weak/strong from the latest assessment (cohort average threshold: ~70%)
   const COHORT_THRESHOLD = 70;
   const latest = assessments?.length > 0 ? assessments[assessments.length - 1] : null;
   const latestScores = latest?.scores || {};
   const weakSystems = Object.entries(latestScores)
-    .filter(([, s]) => s < COHORT_THRESHOLD)
-    .sort((a, b) => a[1] - b[1])
-    .map(([sys]) => sys);
+    .filter(([, s]) => s < COHORT_THRESHOLD).sort((a, b) => a[1] - b[1]).map(([sys]) => sys);
   const strongSystems = Object.entries(latestScores)
-    .filter(([, s]) => s >= COHORT_THRESHOLD)
-    .sort((a, b) => b[1] - a[1])
-    .map(([sys]) => sys);
-
-  // Pull gap types from the plan's priority analysis (computed by planEngine.js)
+    .filter(([, s]) => s >= COHORT_THRESHOLD).sort((a, b) => b[1] - a[1]).map(([sys]) => sys);
   const gapTypes = {};
   for (const p of plan?.priorities || []) {
     if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
   }
-
-  const contextData = {
-    exam_date: examDate,
-    days_remaining: daysRemaining,
-    nbme_scores: nbmeScores,
-    weak_systems: weakSystems,
-    strong_systems: strongSystems,
-    sticking_points: latest?.stickingPoints || [],
-    gap_types: gapTypes,
-    study_hours_per_day: profile?.hoursPerDay || 8,
-    resources_available: profile?.resources || [],
-    class_schedule: profile?.schedule || [],
-    question_log: [],        // future feature — not yet tracked in DB
-    missed_concepts: [],     // future feature — not yet tracked in DB
-  };
-
-  return `\n\nCURRENT STUDENT CONTEXT:\n${JSON.stringify(contextData, null, 2)}`;
+  return `\n\nCURRENT STUDENT CONTEXT:\n${JSON.stringify({
+    exam_date: examDate, days_remaining: daysRemaining,
+    nbme_scores: nbmeScores, weak_systems: weakSystems, strong_systems: strongSystems,
+    sticking_points: latest?.stickingPoints || [], gap_types: gapTypes,
+    study_hours_per_day: profile?.hoursPerDay || 8, resources_available: profile?.resources || [],
+  }, null, 2)}`;
 }
 
-// Returns the full system prompt with student context appended
+// Returns the full system prompt with student context appended (legacy, used by plan-intelligence)
 function buildTutorSystemPrompt(ctx) {
   return TUTOR_SYSTEM_PROMPT + buildContextAppendix(ctx);
 }
 
-module.exports = { TUTOR_SYSTEM_PROMPT, buildContextAppendix, buildTutorSystemPrompt };
+module.exports = { TUTOR_SYSTEM_PROMPT, buildContextAppendix, buildTutorSystemPrompt, buildCoachContextFromDB };

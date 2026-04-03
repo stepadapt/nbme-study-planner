@@ -656,19 +656,7 @@ export default function StudyPlanner({ onShowTerms }) {
     }
   };
 
-  // ── Plan context for chat ─────────────────────────────────────────
-  const planContext = plan ? {
-    profile,
-    assessments,
-    plan: {
-      totalCalendarDays: plan.totalCalendarDays,
-      totalWeeks: plan.totalWeeks,
-      totalQEstimate: plan.totalQEstimate,
-      nbmeDays: plan.nbmeDays,
-      timelineMode: plan.timelineMode,
-      priorities: plan.priorities?.slice(0, 8),
-    }
-  } : { profile, assessments };
+  // Chat context is now fetched server-side on every message — no planContext needed here.
 
   // ── Brand colors ──────────────────────────────────────────────────
   const BRAND = { green: '#1D9E75', darkGreen: '#0F6E56', orange: '#D85A30' };
@@ -2210,7 +2198,7 @@ export default function StudyPlanner({ onShowTerms }) {
         </button>
       )}
 
-      {showChat && <Chat planContext={planContext} onClose={() => setShowChat(false)} />}
+      {showChat && <Chat onClose={() => setShowChat(false)} />}
       <Footer />
     </div>
   );
