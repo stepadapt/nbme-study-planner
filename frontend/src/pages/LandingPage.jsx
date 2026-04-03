@@ -251,6 +251,10 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               <a key={l} href={`#${l.toLowerCase().replace(/ /g, '-')}`} style={{ fontSize: 14, fontWeight: 500, color: MID, textDecoration: 'none', transition: 'color 0.2s' }}
                 onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = MID}>{l}</a>
             ))}
+            <a href="/anki" style={{ fontSize: 14, fontWeight: 500, color: MID, textDecoration: 'none', transition: 'color 0.2s', display: 'flex', alignItems: 'center', gap: 5 }}
+              onMouseEnter={e => e.currentTarget.style.color = G} onMouseLeave={e => e.currentTarget.style.color = MID}>
+              <span style={{ fontSize: 13 }}>🃏</span> Anki Guide
+            </a>
           </div>
 
           {/* CTA buttons */}

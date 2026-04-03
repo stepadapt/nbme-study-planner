@@ -6,10 +6,14 @@ import AdminPage from './pages/AdminPage.jsx';
 import StudyPlanner from './pages/StudyPlanner.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import TermsModal from './pages/TermsPage.jsx';
+import AnkiGuidePage from './pages/AnkiGuidePage.jsx';
 import { api } from './api.js';
 
 // Admin portal — accessible via ?admin in the URL, completely separate from normal app flow
 const IS_ADMIN_ROUTE = new URLSearchParams(window.location.search).has('admin');
+
+// Static guide pages — served without auth
+const IS_ANKI_ROUTE = window.location.pathname === '/anki';
 
 // Parse ?action=xxx&token=xxx from URL
 function getUrlParams() {
@@ -64,8 +68,11 @@ function AppContent() {
   const [urlToken, setUrlToken] = useState(() => getUrlParams().token);
   const [termsPage, setTermsPage] = useState(null); // null | 'terms' | 'privacy'
   const [showVerifyBanner, setShowVerifyBanner] = useState(false);
-  const [showAuth, setShowAuth] = useState(false); // landing → auth transition
-  const [authMode, setAuthMode] = useState('signup'); // 'signup' | 'login'
+  // Check if we arrived from the Anki guide page CTA
+  const arrivedMode = new URLSearchParams(window.location.search).has('signin') ? 'login' : 'signup';
+  const arrivedFromGuide = new URLSearchParams(window.location.search).has('signup') || new URLSearchParams(window.location.search).has('signin');
+  const [showAuth, setShowAuth] = useState(arrivedFromGuide); // landing → auth transition
+  const [authMode, setAuthMode] = useState(arrivedMode); // 'signup' | 'login'
 
   // Handle email verification URL
   useEffect(() => {
@@ -134,6 +141,12 @@ function AppContent() {
 
 export default function App() {
   if (IS_ADMIN_ROUTE) return <AdminPage />;
+  if (IS_ANKI_ROUTE) return (
+    <AnkiGuidePage
+      onGetStarted={() => { window.location.href = '/?signup=1'; }}
+      onSignIn={() => { window.location.href = '/?signin=1'; }}
+    />
+  );
   return (
     <AuthProvider>
       <AppContent />
