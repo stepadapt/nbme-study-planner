@@ -59,7 +59,7 @@ function DashboardPreview() {
         {[
           { label: 'Days to Exam', value: '47', color: O },
           { label: 'Avg Score', value: '76%', color: G },
-          { label: 'Score Delta', value: '+14pts', color: '#2563eb' },
+          { label: 'Score Delta', value: '—', color: '#2563eb' },
         ].map(c => (
           <div key={c.label} style={{ background: BG, borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: c.color }}>{c.value}</div>
@@ -215,27 +215,6 @@ function PricingCard({ tier, price, period, features, cta, highlight, onCTA }) {
   );
 }
 
-// ── Testimonial ───────────────────────────────────────────────────────────
-function Testimonial({ quote, name, school, score, visible, delay = 0 }) {
-  return (
-    <div style={{
-      background: WHITE, borderRadius: 16, padding: '28px 26px', border: '1px solid rgba(0,0,0,0.07)',
-      boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
-      transition: `opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms`,
-      opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(24px)',
-    }}>
-      <div style={{ fontSize: 28, color: G, fontFamily: '"Source Serif 4", serif', marginBottom: 8, lineHeight: 1 }}>"</div>
-      <div style={{ fontSize: 14, color: MID, lineHeight: 1.7, fontFamily: '"DM Sans", sans-serif', marginBottom: 20 }}>{quote}</div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: DARK, fontFamily: '"DM Sans", sans-serif' }}>{name}</div>
-          <div style={{ fontSize: 12, color: LIGHT, fontFamily: '"DM Sans", sans-serif' }}>{school}</div>
-        </div>
-        <div style={{ background: G + '18', borderRadius: 8, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: G, fontFamily: '"DM Sans", sans-serif' }}>{score}</div>
-      </div>
-    </div>
-  );
-}
 
 // ── Main Landing Page ─────────────────────────────────────────────────────
 export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
@@ -244,7 +223,6 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
 
   const [featRef, featVis] = useFadeIn();
   const [howRef, howVis] = useFadeIn();
-  const [testRef, testVis] = useFadeIn();
   const [priceRef, priceVis] = useFadeIn();
   const [ctaRef, ctaVis] = useFadeIn();
   const [heroRef, heroVis] = useFadeIn(0.01);
@@ -332,12 +310,11 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               </button>
             </div>
 
-            {/* Social proof strip */}
+            {/* Product facts strip */}
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
               {[
-                { n: '500+', label: 'students' },
-                { n: '+14pts', label: 'avg score lift' },
                 { n: 'Step 1', label: 'focused' },
+                { n: 'Free', label: 'to start' },
               ].map(s => (
                 <div key={s.label}>
                   <div style={{ fontSize: 20, fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif' }}>{s.n}</div>
@@ -443,31 +420,6 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
         </div>
       </section>
 
-      {/* ── Testimonials ───────────────────────────────────────────── */}
-      <section style={{ padding: '96px 24px', background: BG }}>
-        <div ref={testRef} style={{ maxWidth: 1120, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: G, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Student Results</div>
-            <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 38px)', fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif', margin: 0, letterSpacing: '-0.02em' }}>
-              Real students. Real results.
-            </h2>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-            <Testimonial
-              quote="I went from a 220 on my first NBME to a 251 on the actual Step 1. The time-blocked schedule was game-changing — I never had to wonder what to do next."
-              name="Jordan M." school="Third-year, Midwest COM" score="251 on Step 1"
-              visible={testVis} delay={0} />
-            <Testimonial
-              quote="The category heatmap showed me I was losing tons of points in Neuro. I didn't even realize it. Two weeks of focused review and my Neuro score jumped 18 points."
-              name="Priya S." school="MS2, Northeast Medical School" score="+23pt improvement"
-              visible={testVis} delay={100} />
-            <Testimonial
-              quote="I was drowning in resources and had no idea what to prioritize. StepAdapt basically built me a blueprint. The AI coach answered questions at 2am when I was panicking."
-              name="Marcus T." school="Fourth-year, Southeast University" score="Step 1: 262"
-              visible={testVis} delay={200} />
-          </div>
-        </div>
-      </section>
 
       {/* ── Pricing ────────────────────────────────────────────────── */}
       <section id="pricing" style={{ padding: '96px 24px', background: `linear-gradient(160deg, ${G}08 0%, transparent 70%)` }}>
@@ -559,7 +511,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
             Your exam date won't wait.<br />Neither should you.
           </h2>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.8)', margin: '0 0 36px', lineHeight: 1.65, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto' }}>
-            Join hundreds of medical students who stopped winging it and started studying with a purpose. Create your free account in 60 seconds.
+            Stop guessing what to study. Build a plan from your actual NBME scores and study with a clear purpose every day. Create your free account in 60 seconds.
           </p>
           <button onClick={onGetStarted} style={{
             padding: '16px 40px', borderRadius: 12, border: 'none',
