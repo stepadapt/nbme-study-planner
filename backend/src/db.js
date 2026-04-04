@@ -87,6 +87,7 @@ addCol('ALTER TABLE user_profiles ADD COLUMN study_end_time TEXT DEFAULT "17:00"
 addCol('ALTER TABLE user_profiles ADD COLUMN taken_assessments TEXT DEFAULT "[]"');
 addCol('ALTER TABLE user_profiles ADD COLUMN sub_topic_progress TEXT DEFAULT "{}"');
 addCol('ALTER TABLE assessments ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
+addCol('ALTER TABLE assessments ADD COLUMN taken_at TEXT'); // actual exam date (may differ from created_at for historical imports)
 addCol('ALTER TABLE study_plans ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
 
 module.exports = db;

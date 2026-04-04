@@ -278,27 +278,36 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
   }
 
   // ── Parse assessments ──────────────────────────────────────────────────────
+  // DB returns rows ordered by COALESCE(taken_at, created_at) ASC
   const parsed = assessments.map(a => {
     const scores = JSON.parse(a.scores || '{}');
-    const numericVals = Object.values(scores).filter(v => typeof v === 'number' && v > 0);
-    const avg = numericVals.length
-      ? Math.round(numericVals.reduce((s, v) => s + v, 0) / numericVals.length)
-      : null;
+    // __total__ sentinel: student only has total score, no system breakdown
+    const isTotalOnly = '__total__' in scores && Object.keys(scores).length === 1;
+    const avg = isTotalOnly
+      ? scores.__total__
+      : (() => {
+          const vals = Object.values(scores).filter(v => typeof v === 'number' && v > 0);
+          return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+        })();
+    const effectiveDate = a.taken_at || a.created_at;
     return {
       formName: a.form_name || 'Unknown form',
-      dateLabel: new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      createdAt: a.created_at,
-      scores,
+      dateLabel: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      createdAt: effectiveDate,
+      scores: isTotalOnly ? {} : scores,
       stickingPoints: JSON.parse(a.sticking_points || '[]'),
       gapTypes: JSON.parse(a.gap_types || '{}'),
       avg,
+      isTotalOnly,
     };
   });
 
   const latest = parsed[parsed.length - 1];
 
   // ── Score history & trajectory ─────────────────────────────────────────────
-  const historyStr = parsed.map(a => `${a.formName} (${a.dateLabel}: ${a.avg ?? '?'}%)`).join(' → ');
+  const historyStr = parsed.map(a =>
+    `${a.formName} (${a.dateLabel}: ${a.avg ?? '?'}%${a.isTotalOnly ? ', total only' : ''})`
+  ).join(' → ');
   lines.push('');
   lines.push(`SCORE HISTORY: ${historyStr}`);
 

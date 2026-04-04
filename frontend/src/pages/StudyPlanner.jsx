@@ -341,6 +341,8 @@ function AIEnrichmentPanel({ dayN, enrichment, loading, compact = false }) {
   );
 }
 
+const defaultHistDraft = () => ({ formName: '', takenAt: '', totalScore: '', hasBreakdown: false, scores: {} });
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -360,6 +362,13 @@ export default function StudyPlanner({ onShowTerms }) {
   const [animIn, setAnimIn] = useState(true);
   const [assessments, setAssessments] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  // ── Historical import state ────────────────────────────────────────
+  const [histDraft, setHistDraft] = useState(defaultHistDraft);
+  const [histList, setHistList] = useState([]); // accumulated exams in import flow
+  const [histSaving, setHistSaving] = useState(false);
+  const [histError, setHistError] = useState('');
+  const [histUploadingScreenshot, setHistUploadingScreenshot] = useState(false);
 
   // ── Reset / fresh-start state ─────────────────────────────────────
   const [resetType, setResetType] = useState(null);       // 'full' | 'keep-scores' | 'archive'
@@ -653,6 +662,45 @@ export default function StudyPlanner({ onShowTerms }) {
       setScreenshotError(err.message || 'Could not parse screenshot. Enter scores manually.');
     } finally {
       setUploadingScreenshot(false);
+    }
+  };
+
+  // ── Historical import screenshot handler ──────────────────────────
+  const handleHistScreenshotUpload = async (file) => {
+    if (!file) return;
+    setHistUploadingScreenshot(true);
+    setHistError('');
+    try {
+      const result = await api.ai.parseScreenshot(file, 'step1');
+      setHistDraft(prev => {
+        const updated = { ...prev };
+        if (result.formName) updated.formName = result.formName;
+        if (result.scores && typeof result.scores === 'object' && Object.keys(result.scores).length > 0) {
+          const allCats = [...STEP1_SYSTEM_CATEGORIES, ...STEP1_DISCIPLINE_CATEGORIES];
+          const matched = {};
+          for (const [parsedCat, parsedScore] of Object.entries(result.scores)) {
+            const exact = allCats.find(c => c.toLowerCase() === parsedCat.toLowerCase());
+            if (exact) { matched[exact] = Math.round(parsedScore); continue; }
+            const partial = allCats.find(c =>
+              c.toLowerCase().includes(parsedCat.toLowerCase()) ||
+              parsedCat.toLowerCase().includes(c.toLowerCase().split(' ')[0])
+            );
+            if (partial) matched[partial] = Math.round(parsedScore);
+          }
+          if (Object.keys(matched).length > 0) {
+            updated.scores = { ...prev.scores, ...matched };
+            updated.hasBreakdown = true;
+          }
+        }
+        if (result.totalScore !== null && result.totalScore !== undefined) {
+          updated.totalScore = String(result.totalScore);
+        }
+        return updated;
+      });
+    } catch (err) {
+      setHistError(err.message || 'Could not parse screenshot. Enter scores manually.');
+    } finally {
+      setHistUploadingScreenshot(false);
     }
   };
 
@@ -1057,6 +1105,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
                   { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
                   { icon: '💬', label: 'AI Coach', action: () => setShowChat(true) },
+                  { icon: '🕰️', label: 'Past Exam', action: () => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); } },
                   { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
                 ].map((item, i) => (
                   <button key={i} disabled={item.disabled} style={{ ...S.btn, ...S.sec, flexDirection: 'column', padding: '14px 10px', gap: 6, fontSize: 12, textAlign: 'center', justifyContent: 'center', opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }} onClick={item.action}>
@@ -1472,7 +1521,364 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate(assessments.length === 0 ? "self-assessment" : "scores")}>Continue →</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate(assessments.length === 0 ? "history-check" : "scores")}>Continue →</button></div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── HISTORY CHECK ─────────────────────────────────────────────────
+  if (screen === "history-check") {
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
+        <div style={S.wrap}>
+          <h1 style={S.h1}>Before we build your plan</h1>
+          <p style={S.sub}>Have you already taken any NBME practice exams? Import your history so the plan uses real data from day one — not a blank slate.</p>
+          <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
+            <button
+              style={{ ...S.card, marginBottom: 0, border: '2px solid #1D9E7530', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
+              onClick={() => { setHistList([]); setHistDraft(defaultHistDraft()); setHistError(''); navigate("history-import"); }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <span style={{ fontSize: 32, flexShrink: 0 }}>📋</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>Yes — import my past NBMEs</div>
+                  <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>You've taken exams before today. Add them so your plan knows your trajectory, sticky weaknesses, and current baseline.</div>
+                </div>
+                <span style={{ fontSize: 20, color: '#1D9E75', flexShrink: 0 }}>→</span>
+              </div>
+            </button>
+            <button
+              style={{ ...S.card, marginBottom: 0, cursor: 'pointer', textAlign: 'left', width: '100%' }}
+              onClick={() => navigate("self-assessment")}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <span style={{ fontSize: 32, flexShrink: 0 }}>🆕</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>No — I'm starting fresh</div>
+                  <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>You haven't taken an NBME yet. We'll build a diagnostic-first plan to get you real data fast.</div>
+                </div>
+                <span style={{ fontSize: 20, color: '#8a857e', flexShrink: 0 }}>→</span>
+              </div>
+            </button>
+          </div>
+          <p style={{ ...S.muted, fontSize: 12, textAlign: 'center' }}>You can always add past exams later from the dashboard.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── HISTORY IMPORT ─────────────────────────────────────────────────
+  if (screen === "history-import") {
+    const canAddExam = histDraft.formName.trim().length > 0 && histDraft.takenAt.trim().length > 0;
+
+    const addExamToList = () => {
+      if (!canAddExam) return;
+      setHistList(prev => [...prev, { ...histDraft }]);
+      setHistDraft(defaultHistDraft());
+      setHistError('');
+    };
+
+    const removeFromList = (idx) => setHistList(prev => prev.filter((_, i) => i !== idx));
+
+    const saveAllAndContinue = async () => {
+      if (histList.length === 0) { navigate("self-assessment"); return; }
+      setHistSaving(true);
+      setHistError('');
+      try {
+        const saved = [];
+        for (const exam of histList) {
+          const examScores = exam.hasBreakdown && Object.keys(exam.scores).filter(k => exam.scores[k] !== undefined).length > 0
+            ? Object.fromEntries(Object.entries(exam.scores).filter(([, v]) => v !== undefined))
+            : exam.totalScore ? { '__total__': Number(exam.totalScore) } : {};
+          if (Object.keys(examScores).length === 0) continue;
+          const { assessment } = await api.assessments.save({ formName: exam.formName, scores: examScores, stickingPoints: [], takenAt: exam.takenAt });
+          saved.push(assessment);
+        }
+        if (saved.length > 0) {
+          setAssessments(prev => {
+            const combined = [...prev, ...saved];
+            combined.sort((a, b) => new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt));
+            return combined;
+          });
+        }
+        // If most recent imported exam has a breakdown, pre-fill scores → go to sticking-points
+        const lastExam = histList[histList.length - 1];
+        const lastScores = lastExam.hasBreakdown ? Object.fromEntries(Object.entries(lastExam.scores).filter(([, v]) => v !== undefined)) : {};
+        if (Object.keys(lastScores).length > 0) {
+          setScores(lastScores);
+          setNbmeForm(lastExam.formName || '');
+          skipAssessmentSaveRef.current = true;
+          navigate("sticking-points");
+        } else {
+          navigate("scores");
+        }
+      } catch (err) {
+        setHistError(err.message || 'Failed to save assessments. Please try again.');
+      } finally {
+        setHistSaving(false);
+      }
+    };
+
+    const ScoreBreakdownForm = () => (
+      <div>
+        {[{ label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES }, { label: "Performance by Discipline", cats: STEP1_DISCIPLINE_CATEGORIES }].map(group => (
+          <div key={group.label} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{group.label}</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {group.cats.map(cat => (
+                <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816' }}>{cat}</span>
+                  <input
+                    type="number" min={0} max={100}
+                    style={{ ...S.input, width: 72, padding: '7px 8px', textAlign: 'center', fontSize: 13 }}
+                    placeholder="—"
+                    value={histDraft.scores[cat] ?? ''}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setHistDraft(d => ({ ...d, scores: { ...d.scores, [cat]: v === '' ? undefined : Math.min(100, Math.max(0, Number(v))) } }));
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("history-check")}>← Back</button>{dots(1)}<UserBar /></div>
+        <div style={S.wrap}>
+          <h1 style={S.h1}>Import past NBME scores</h1>
+          <p style={S.sub}>Add each exam you've taken — oldest first. We'll use your full trajectory to build a smarter plan.</p>
+
+          {histList.length > 0 && (
+            <div style={S.card}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1D9E75', fontFamily: S.f, marginBottom: 10 }}>
+                {histList.length} exam{histList.length > 1 ? 's' : ''} added
+              </div>
+              {histList.map((exam, idx) => {
+                const validScores = exam.hasBreakdown ? Object.values(exam.scores).filter(v => v !== undefined) : [];
+                const displayScore = validScores.length > 0
+                  ? Math.round(validScores.reduce((s, v) => s + v, 0) / validScores.length)
+                  : exam.totalScore ? Number(exam.totalScore) : null;
+                return (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, marginBottom: 6, borderLeft: '3px solid #1D9E75' }}>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{exam.formName}</span>
+                    <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{exam.takenAt}</span>
+                    {displayScore !== null && <span style={{ fontSize: 13, fontWeight: 700, color: '#1D9E75', fontFamily: S.f }}>{displayScore}%</span>}
+                    {exam.hasBreakdown && <span style={{ ...S.tag, background: '#1D9E7515', color: '#1D9E75' }}>Breakdown</span>}
+                    <button onClick={() => removeFromList(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 16, padding: '0 4px', lineHeight: 1 }}>✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={S.card}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1816', fontFamily: S.f, marginBottom: 14 }}>
+              {histList.length === 0 ? 'Add your oldest exam first' : 'Add another exam'}
+            </div>
+
+            {/* Screenshot upload */}
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: '#f8fcfa', borderRadius: 10, border: '1.5px dashed #1D9E7540' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} id="hist-screenshot-input"
+                  onChange={e => { const file = e.target.files?.[0]; if (file) handleHistScreenshotUpload(file); e.target.value = ''; }} />
+                <label htmlFor="hist-screenshot-input" style={{ ...S.btn, ...S.sec, padding: '9px 14px', fontSize: 13, cursor: histUploadingScreenshot ? 'not-allowed' : 'pointer', opacity: histUploadingScreenshot ? 0.5 : 1 }}>
+                  {histUploadingScreenshot ? '⏳ Parsing…' : '📷 Upload score report'}
+                </label>
+                <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>or fill in manually</span>
+              </div>
+              {histError && <div style={{ marginTop: 8, fontSize: 12, color: '#c0392b', fontFamily: S.f }}>{histError}</div>}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={S.label}>Form name</label>
+                <select style={S.input} value={histDraft.formName} onChange={e => setHistDraft(d => ({ ...d, formName: e.target.value }))}>
+                  <option value="">— Select —</option>
+                  <optgroup label="NBME CBSSA Forms">{PRACTICE_TESTS.filter(t => t.type === 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                  <optgroup label="UW Self-Assessments & Other">{PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={S.label}>Date taken</label>
+                <input type="date" style={S.input} value={histDraft.takenAt} max={new Date().toISOString().split('T')[0]} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Total score % <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+              <input type="number" min={0} max={100} style={{ ...S.input, maxWidth: 130 }} placeholder="e.g. 64" value={histDraft.totalScore} onChange={e => setHistDraft(d => ({ ...d, totalScore: e.target.value }))} />
+            </div>
+
+            <div style={{ marginBottom: histDraft.hasBreakdown ? 14 : 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#1D9E75' }} />
+                <span style={{ fontSize: 14, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>I have system/discipline breakdown scores</span>
+              </label>
+              <p style={{ ...S.muted, fontSize: 12, marginTop: 5, marginLeft: 26 }}>Breakdown gives the plan much more precision. If you have your score report, check this.</p>
+            </div>
+
+            {histDraft.hasBreakdown && <ScoreBreakdownForm />}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button disabled={!canAddExam || histUploadingScreenshot} style={{ ...S.btn, ...S.pri, opacity: (!canAddExam || histUploadingScreenshot) ? 0.4 : 1 }} onClick={addExamToList}>
+                ＋ Add to list
+              </button>
+            </div>
+          </div>
+
+          {histError && !histUploadingScreenshot && histSaving && (
+            <div style={{ padding: '10px 14px', background: '#c0392b08', borderRadius: 8, borderLeft: '3px solid #c0392b', fontSize: 13, color: '#c0392b', fontFamily: S.f, marginBottom: 12 }}>
+              {histError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 12 }}>
+            <p style={{ ...S.muted, fontSize: 13, flex: 1 }}>
+              {histList.length === 0 ? 'Add at least one exam, then tap Done.' : `${histList.length} exam${histList.length > 1 ? 's' : ''} ready. Tap Done to import and continue.`}
+            </p>
+            <button
+              disabled={histList.length === 0 || histSaving}
+              style={{ ...S.btn, ...S.pri, opacity: (histList.length === 0 || histSaving) ? 0.4 : 1, flexShrink: 0 }}
+              onClick={saveAllAndContinue}
+            >
+              {histSaving ? 'Saving…' : `Done →`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── PAST EXAM (standalone post-onboarding) ─────────────────────────
+  if (screen === "past-exam") {
+    const canSavePastExam = histDraft.formName.trim().length > 0 && histDraft.takenAt.trim().length > 0;
+
+    const savePastExam = async () => {
+      if (!canSavePastExam) return;
+      setHistSaving(true);
+      setHistError('');
+      try {
+        const examScores = histDraft.hasBreakdown && Object.keys(histDraft.scores).filter(k => histDraft.scores[k] !== undefined).length > 0
+          ? Object.fromEntries(Object.entries(histDraft.scores).filter(([, v]) => v !== undefined))
+          : histDraft.totalScore ? { '__total__': Number(histDraft.totalScore) } : null;
+
+        if (!examScores || Object.keys(examScores).length === 0) {
+          setHistError('Please enter at least a total score or at least one breakdown score.');
+          setHistSaving(false);
+          return;
+        }
+        const { assessment } = await api.assessments.save({ formName: histDraft.formName, scores: examScores, stickingPoints: [], takenAt: histDraft.takenAt });
+        setAssessments(prev => {
+          const combined = [...prev, assessment];
+          combined.sort((a, b) => new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt));
+          return combined;
+        });
+        setHistDraft(defaultHistDraft());
+        setHistError('');
+        navigate("dashboard");
+      } catch (err) {
+        setHistError(err.message || 'Failed to save. Please try again.');
+      } finally {
+        setHistSaving(false);
+      }
+    };
+
+    return (
+      <div style={S.app}>
+        <VerifyBanner />
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("dashboard"); }}>← Back</button><UserBar /></div>
+        <div style={S.wrap}>
+          <h1 style={S.h1}>Add a past exam</h1>
+          <p style={S.sub}>Import a historical NBME score. It'll show up in your score history and help your AI coach see your full trajectory.</p>
+
+          <div style={{ ...S.card, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} id="past-screenshot-input"
+                onChange={e => { const file = e.target.files?.[0]; if (file) handleHistScreenshotUpload(file); e.target.value = ''; }} />
+              <label htmlFor="past-screenshot-input" style={{ ...S.btn, ...S.sec, padding: '9px 14px', fontSize: 13, cursor: histUploadingScreenshot ? 'not-allowed' : 'pointer', opacity: histUploadingScreenshot ? 0.5 : 1 }}>
+                {histUploadingScreenshot ? '⏳ Parsing…' : '📷 Upload score report'}
+              </label>
+              <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>or fill in manually</span>
+            </div>
+            {histError && !histSaving && <div style={{ marginTop: 8, fontSize: 12, color: '#c0392b', fontFamily: S.f }}>{histError}</div>}
+          </div>
+
+          <div style={S.card}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={S.label}>Form name</label>
+                <select style={S.input} value={histDraft.formName} onChange={e => setHistDraft(d => ({ ...d, formName: e.target.value }))}>
+                  <option value="">— Select —</option>
+                  <optgroup label="NBME CBSSA Forms">{PRACTICE_TESTS.filter(t => t.type === 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                  <optgroup label="UW Self-Assessments & Other">{PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={S.label}>Date taken</label>
+                <input type="date" style={S.input} value={histDraft.takenAt} max={new Date().toISOString().split('T')[0]} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Total score % <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></label>
+              <input type="number" min={0} max={100} style={{ ...S.input, maxWidth: 130 }} placeholder="e.g. 64" value={histDraft.totalScore} onChange={e => setHistDraft(d => ({ ...d, totalScore: e.target.value }))} />
+            </div>
+
+            <div style={{ marginBottom: histDraft.hasBreakdown ? 14 : 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#1D9E75' }} />
+                <span style={{ fontSize: 14, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>I have system/discipline breakdown scores</span>
+              </label>
+            </div>
+
+            {histDraft.hasBreakdown && (
+              <div>
+                {[{ label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES }, { label: "Performance by Discipline", cats: STEP1_DISCIPLINE_CATEGORIES }].map(group => (
+                  <div key={group.label} style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{group.label}</div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {group.cats.map(cat => (
+                        <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816' }}>{cat}</span>
+                          <input
+                            type="number" min={0} max={100}
+                            style={{ ...S.input, width: 72, padding: '7px 8px', textAlign: 'center', fontSize: 13 }}
+                            placeholder="—"
+                            value={histDraft.scores[cat] ?? ''}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setHistDraft(d => ({ ...d, scores: { ...d.scores, [cat]: v === '' ? undefined : Math.min(100, Math.max(0, Number(v))) } }));
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {histError && histSaving && <div style={{ marginTop: 10, padding: '10px 14px', background: '#c0392b08', borderRadius: 8, borderLeft: '3px solid #c0392b', fontSize: 13, color: '#c0392b', fontFamily: S.f }}>{histError}</div>}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button disabled={!canSavePastExam || histSaving} style={{ ...S.btn, ...S.pri, opacity: (!canSavePastExam || histSaving) ? 0.4 : 1 }} onClick={savePastExam}>
+                {histSaving ? 'Saving…' : 'Save past exam →'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
