@@ -363,6 +363,11 @@ export default function StudyPlanner({ onShowTerms }) {
   const [assessments, setAssessments] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  // ── Plan view state ────────────────────────────────────────────────
+  const [planViewMode, setPlanViewMode] = useState('day'); // 'day' | 'week' | 'full'
+  const [planViewDay, setPlanViewDay] = useState(1);
+  const [expandedBlocks, setExpandedBlocks] = useState(new Set());
+
   // ── Historical import state ────────────────────────────────────────
   const [histDraft, setHistDraft] = useState(defaultHistDraft);
   const [histList, setHistList] = useState([]); // accumulated exams in import flow
@@ -489,6 +494,12 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Sub-topic progress tracking ──────────────────────────────────
   // Cycles: null → 'improving' → 'struggling' → null
+  const toggleBlock = (key) => setExpandedBlocks(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
   const toggleSubTopicProgress = (topicKey) => {
     setProfile(p => {
       const current = (p.subTopicProgress || {})[topicKey];
@@ -2422,100 +2433,307 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
         </div>
 
-        {plan.weeks.map((week, wi) => (
-          <div key={wi} style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 12, ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
-            <div style={{ padding: "16px 24px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: expandedWeek === wi ? (week.isLockdown ? '#f5f3ff' : "#faf8f5") : (week.isLockdown ? '#fdfcff' : "#fff") }} onClick={() => setExpandedWeek(expandedWeek === wi ? -1 : wi)}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: "#1a1816" }}>Week {week.week}</span>
-                  {week.isLockdown
-                    ? <span style={{ ...S.tag, background: "#7c3aed18", color: "#7c3aed", fontSize: 10 }}>🔒 Exam week</span>
-                    : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: "#b4530915", color: "#b45309", fontSize: 10 }}>{ft}</span>)
-                  }
+        {/* ── View toggle + Day / Week / Full rendering ── */}
+        {(() => {
+          const allDays = plan.weeks.flatMap(w => w.days).sort((a, b) => a.calendarDay - b.calendarDay);
+
+          /* Render a single block row — collapsed by default, expand on click */
+          const renderBlockRow = (block, bi, day) => {
+            const key = `${day.calendarDay}-${bi}`;
+            const isOpen = expandedBlocks.has(key);
+
+            // Lunch / break → thin muted divider line
+            if (block.type === 'lunch') {
+              return (
+                <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0', color: '#b45309', fontSize: 12, fontFamily: S.f }}>
+                  <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
+                  <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>☕ {block.label || 'Lunch break'} · {formatDuration(block.tasks?.[0]?.hours || 0)}</span>
+                  <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
                 </div>
-                <div style={{ fontSize: 13, color: week.isLockdown ? "#7c3aed" : "#8a857e", fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
+              );
+            }
+
+            const bc = blockColors[block.type] || blockColors.questions;
+            const totalHours = block.tasks?.reduce((s, t) => s + (t.hours || 0), 0) || 0;
+            const qMatch = block.tasks?.map(t => t.activity || '').join(' ').match(/(\d+)\s*(Qs|questions)/i);
+            const qCount = qMatch ? qMatch[1] : null;
+
+            // Anki block → always one-liner, no collapse needed
+            if (block.type === 'anki') {
+              return (
+                <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: bc.bg, borderLeft: `3px solid ${bc.border}` }}>
+                  <span style={{ fontSize: 13 }}>🧠</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#166534', flex: 1 }}>Morning Anki — due cards + yesterday's misses</span>
+                  <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                  <button onClick={() => navigate('anki')} style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, padding: '2px 8px', borderRadius: 10, background: '#27ae6015', border: '1px solid #27ae6030', cursor: 'pointer', whiteSpace: 'nowrap' }}>Setup guide →</button>
+                </div>
+              );
+            }
+
+            const header = (
+              <div onClick={() => toggleBlock(key)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: isOpen ? bc.bg : '#faf8f5', borderLeft: `3px solid ${bc.border}`, borderRadius: isOpen ? '8px 8px 0 0' : 8, border: `1px solid ${isOpen ? bc.border + '30' : '#ece8e2'}` }}>
+                <span style={{ fontSize: 13 }}>{bc.icon}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: bc.border, fontFamily: S.f, flex: 1 }}>{block.label}</span>
+                {qCount && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{qCount} Qs ·&nbsp;</span>}
+                <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>{isOpen ? '▲' : '▶'}</span>
               </div>
-              <span style={{ fontSize: 18, color: "#8a857e", transform: expandedWeek === wi ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}>▾</span>
-            </div>
-            {expandedWeek === wi && <div style={{ padding: "0 24px 20px" }}>
-              {week.isLockdown && (
-                <div style={{ margin: '16px 0 4px', padding: '12px 16px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                  <span style={{ fontSize: 20, flexShrink: 0 }}>🔒</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 3 }}>Exam week — maintenance and confidence mode</div>
-                    <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>No new content. Random blocks only — simulate exam pacing daily. Finish all study by 3 PM. Trust the work you've done.</div>
+            );
+
+            if (!isOpen) return <div key={bi}>{header}</div>;
+
+            return (
+              <div key={bi} style={{ borderRadius: 8, overflow: 'hidden' }}>
+                {header}
+                <div style={{ background: bc.bg, borderLeft: `3px solid ${bc.border}`, border: `1px solid ${bc.border}30`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
+                  <div style={{ display: 'grid', gap: 2 }}>
+                    {block.tasks.map((task, ti) => (
+                      <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 13, fontFamily: S.f, borderBottom: ti < block.tasks.length - 1 ? '1px solid #00000008' : 'none' }}>
+                        <span style={{ fontWeight: 600, color: '#1a1816', minWidth: 85, flexShrink: 0 }}>{task.resource}</span>
+                        <span style={{ color: '#6b6560', flex: 1, lineHeight: 1.4 }}>{task.activity}</span>
+                        <span style={{ color: '#8a857e', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatDuration(task.hours)}</span>
+                      </div>
+                    ))}
                   </div>
+                  {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} />}
+                  {(block.type === 'content' || block.type === 'content-reactive') && (
+                    <AIEnrichmentPanel dayN={day.calendarDay} enrichment={planEnrichment} loading={enrichmentLoading} />
+                  )}
+                  {block.type === 'questions-focus' && planEnrichment?.enrichments?.[`day_${day.calendarDay}`]?.targeted_questions && (() => {
+                    const tq = planEnrichment.enrichments[`day_${day.calendarDay}`].targeted_questions;
+                    return (
+                      <div style={{ marginTop: 6, padding: '7px 10px', background: '#2563eb08', borderRadius: 7, borderLeft: '3px solid #2563eb50' }}>
+                        {tq.filter_suggestion && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: tq.what_to_watch_for ? 4 : 0 }}><span style={{ fontWeight: 700 }}>🔍 Filter:</span> {tq.filter_suggestion}</div>}
+                        {tq.what_to_watch_for && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif' }}><span style={{ fontWeight: 700 }}>⚠ Watch for:</span> {tq.what_to_watch_for}</div>}
+                      </div>
+                    );
+                  })()}
                 </div>
-              )}
-              {week.days.map((day, di) => {
-                const special = day.dayType === "nbme" || day.dayType === "rest";
-                return (<div key={di} style={{ padding: "14px 0", borderTop: di > 0 ? "1px solid #f0ece6" : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                    <span style={{ ...S.tag, background: "#1a181610", color: "#1a1816" }}>Day {day.calendarDay}</span>
-                    {day.dayType === "nbme" && <span style={{ ...S.tag, background: "#c0392b18", color: "#c0392b" }}>📋 NBME</span>}
-                    {day.dayType === "rest" && <span style={{ ...S.tag, background: "#27ae6018", color: "#27ae60" }}>😴 Rest</span>}
-                    {day.dayType === "light" && <span style={{ ...S.tag, background: "#2980b918", color: "#2980b9" }}>Light</span>}
-                    {day.dayType === "exam-week" && <span style={{ ...S.tag, background: "#7c3aed18", color: "#7c3aed" }}>⚡ Exam week</span>}
-                    {day.dayType === "exam-eve" && <span style={{ ...S.tag, background: "#1D9E7518", color: "#1D9E75" }}>🌙 Exam eve</span>}
-                    {!special && day.dayType !== "exam-week" && day.dayType !== "exam-eve" && day.focusTopic && (() => { const rc = day.blocks.filter(b => b.type === "questions-random").length; return <span style={{ fontSize: 13, color: "#8a857e", fontFamily: S.f }}>Focus: <strong style={{ color: "#1a1816" }}>{day.focusTopic}</strong>{rc > 0 && ` · ${rc} random block${rc > 1 ? "s" : ""}`}</span>; })()}
-                    {day.totalQuestions > 0 && <span style={{ ...S.tag, background: "#1a181610", color: "#1a1816", marginLeft: "auto" }}>{day.totalQuestions} Qs</span>}
+              </div>
+            );
+          };
+
+          /* Render a full day's content (shared across day + full views) */
+          const renderDayContent = (day) => {
+            const special = day.dayType === 'nbme' || day.dayType === 'rest';
+
+            // Deduplicate sub-topics across all blocks → show once at top of day
+            const seenTopics = new Set();
+            const allHighYield = (day.blocks || []).flatMap(b =>
+              (b.highYield || []).filter(hy => { if (seenTopics.has(hy.topic)) return false; seenTopics.add(hy.topic); return true; })
+            );
+            const dayQbankTip = day.blocks?.find(b => b.qbankFilterTip)?.qbankFilterTip;
+
+            // Group consecutive questions-random blocks into a single collapsible card
+            const processedBlocks = [];
+            let pi = 0;
+            while (pi < (day.blocks || []).length) {
+              const b = day.blocks[pi];
+              if (b.type === 'questions-random') {
+                const grp = [b];
+                while (pi + 1 < day.blocks.length && day.blocks[pi + 1].type === 'questions-random') { pi++; grp.push(day.blocks[pi]); }
+                processedBlocks.push({ _isRandomGroup: true, blocks: grp, _pi: pi });
+              } else {
+                processedBlocks.push(b);
+              }
+              pi++;
+            }
+
+            return (
+              <>
+                {/* Day header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {day.calendarDay}</span>
+                  {day.dayType === 'nbme' && <span style={{ ...S.tag, background: '#c0392b18', color: '#c0392b' }}>📋 NBME</span>}
+                  {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
+                  {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
+                  {day.dayType === 'exam-week' && <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed' }}>⚡ Exam week</span>}
+                  {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75' }}>🌙 Exam eve</span>}
+                  {!special && day.dayType !== 'exam-week' && day.dayType !== 'exam-eve' && day.focusTopic && (
+                    <span style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f }}>Focus: <strong style={{ color: '#1a1816' }}>{day.focusTopic}</strong></span>
+                  )}
+                  {day.totalQuestions > 0 && <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816', marginLeft: 'auto' }}>{day.totalQuestions} Qs</span>}
+                </div>
+
+                {/* Sub-topic priority list — shown ONCE at top of day */}
+                {allHighYield.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <SubTopicProgressPanel
+                      highYield={allHighYield}
+                      subTopicProgress={profile.subTopicProgress}
+                      onToggle={toggleSubTopicProgress}
+                      qbankFilterTip={dayQbankTip}
+                    />
                   </div>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {day.blocks.map((block, bi) => {
-                      // Lunch blocks render as a simple break row
-                      if (block.type === 'lunch') {
+                )}
+
+                {/* Blocks (collapsed by default) */}
+                <div style={{ display: 'grid', gap: 5 }}>
+                  {processedBlocks.map((item, bi) => {
+                    // Grouped random blocks
+                    if (item._isRandomGroup) {
+                      const grp = item.blocks;
+                      const gKey = `${day.calendarDay}-rg-${bi}`;
+                      const isOpen = expandedBlocks.has(gKey);
+                      const bc = blockColors['questions-random'];
+                      const totalHours = grp.reduce((s, b) => s + b.tasks.reduce((ss, t) => ss + (t.hours || 0), 0), 0);
+                      const totalQs = grp.reduce((s, b) => {
+                        const m = b.tasks.map(t => t.activity || '').join(' ').match(/(\d+)\s*(Qs|questions)/i);
+                        return s + (m ? parseInt(m[1]) : 0);
+                      }, 0);
+                      return (
+                        <div key={bi} style={{ borderRadius: 8, overflow: 'hidden' }}>
+                          <div onClick={() => toggleBlock(gKey)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', background: isOpen ? bc.bg : '#faf8f5', borderLeft: `3px solid ${bc.border}`, borderRadius: isOpen ? '8px 8px 0 0' : 8, border: `1px solid ${isOpen ? bc.border + '30' : '#ece8e2'}` }}>
+                            <span style={{ fontSize: 13 }}>🎲</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: bc.border, fontFamily: S.f, flex: 1 }}>
+                              Random Questions{grp.length > 1 ? ` · ${grp.length} blocks` : ''}
+                            </span>
+                            {totalQs > 0 && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{totalQs} Qs ·&nbsp;</span>}
+                            <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                            <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>{isOpen ? '▲' : '▶'}</span>
+                          </div>
+                          {isOpen && (
+                            <div style={{ background: bc.bg, borderLeft: `3px solid ${bc.border}`, border: `1px solid ${bc.border}30`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
+                              {grp.map((b, gi) => (
+                                <div key={gi} style={{ marginBottom: gi < grp.length - 1 ? 10 : 0 }}>
+                                  {grp.length > 1 && <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: bc.border, fontFamily: S.f, marginBottom: 4 }}>Block {gi + 1}</div>}
+                                  {b.tasks.map((task, ti) => (
+                                    <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', fontSize: 13, fontFamily: S.f }}>
+                                      <span style={{ fontWeight: 600, color: '#1a1816', minWidth: 85, flexShrink: 0 }}>{task.resource}</span>
+                                      <span style={{ color: '#6b6560', flex: 1 }}>{task.activity}</span>
+                                      <span style={{ color: '#8a857e', fontWeight: 600 }}>{formatDuration(task.hours)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return renderBlockRow(item, bi, day);
+                  })}
+                </div>
+              </>
+            );
+          };
+
+          return (
+            <>
+              {/* ── View mode toggle ── */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f5f2ed', borderRadius: 10, padding: 4 }}>
+                {[['day', '📅 Day'], ['week', '📆 Week'], ['full', '📋 Full']].map(([mode, lbl]) => (
+                  <button key={mode} onClick={() => setPlanViewMode(mode)}
+                    style={{ flex: 1, padding: '8px 0', fontSize: 13, fontFamily: S.f, border: planViewMode === mode ? '1px solid #e8dcc8' : '1px solid transparent', borderRadius: 8, cursor: 'pointer', background: planViewMode === mode ? '#fff' : 'transparent', color: planViewMode === mode ? '#1a1816' : '#8a857e', fontWeight: planViewMode === mode ? 700 : 400, boxShadow: planViewMode === mode ? '0 1px 3px #0000000d' : 'none' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── DAY VIEW: one day at a time with ← → nav ── */}
+              {planViewMode === 'day' && (() => {
+                const dayIdx = allDays.findIndex(d => d.calendarDay === planViewDay);
+                const idx = dayIdx >= 0 ? dayIdx : 0;
+                const day = allDays[idx];
+                const prevDay = allDays[idx - 1];
+                const nextDay = allDays[idx + 1];
+                const week = plan.weeks.find(w => w.days.some(d => d.calendarDay === day?.calendarDay));
+                if (!day) return null;
+                return (
+                  <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '12px 20px', background: week?.isLockdown ? '#f5f3ff' : '#faf8f5', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #ece8e2' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, fontFamily: S.f, color: week?.isLockdown ? '#7c3aed' : '#8a857e' }}>
+                        {week?.isLockdown ? '🔒 ' : ''}Week {week?.week} · {week?.phase}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={() => prevDay && setPlanViewDay(prevDay.calendarDay)} disabled={!prevDay}
+                          style={{ ...S.btn, ...S.ghost, padding: '4px 10px', fontSize: 12, opacity: prevDay ? 1 : 0.3 }}>← Prev</button>
+                        <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, minWidth: 70, textAlign: 'center' }}>Day {day.calendarDay} / {allDays.length}</span>
+                        <button onClick={() => nextDay && setPlanViewDay(nextDay.calendarDay)} disabled={!nextDay}
+                          style={{ ...S.btn, ...S.ghost, padding: '4px 10px', fontSize: 12, opacity: nextDay ? 1 : 0.3 }}>Next →</button>
+                      </div>
+                    </div>
+                    <div style={{ padding: '16px 20px' }}>{renderDayContent(day)}</div>
+                  </div>
+                );
+              })()}
+
+              {/* ── WEEK VIEW: compact 7-day summaries, click to jump to day ── */}
+              {planViewMode === 'week' && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {plan.weeks.map((week, wi) => (
+                    <div key={wi} style={{ ...S.card, padding: 0, overflow: 'hidden', ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
+                      <div style={{ padding: '12px 18px', background: week.isLockdown ? '#f5f3ff' : '#faf8f5', borderBottom: '1px solid #ece8e2' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.week}</span>
+                          {week.isLockdown
+                            ? <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed', fontSize: 10 }}>🔒 Exam week</span>
+                            : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: '#b4530915', color: '#b45309', fontSize: 10 }}>{ft}</span>)}
+                        </div>
+                        <div style={{ fontSize: 12, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
+                      </div>
+                      {week.days.map((day, di) => {
+                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : day.dayType === 'rest' ? '#27ae60' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
                         return (
-                          <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fefce8', borderRadius: 8, opacity: 0.85, borderLeft: '3px solid #d97706' }}>
-                            <span style={{ fontSize: 13 }}>☕</span>
-                            <span style={{ fontSize: 12, fontFamily: S.f, color: '#92400e', fontWeight: 600 }}>{block.label}</span>
-                            <span style={{ fontSize: 11, color: '#b45309', fontFamily: S.f, marginLeft: 'auto' }}>{formatDuration(block.tasks[0]?.hours || 0)}</span>
+                          <div key={di}
+                            onClick={() => { setPlanViewDay(day.calendarDay); setPlanViewMode('day'); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: di > 0 ? '1px solid #f0ece6' : 'none', cursor: 'pointer', background: '#fff' }}>
+                            <span style={{ ...S.tag, background: '#1a181608', color: '#6b6560', minWidth: 50, textAlign: 'center', flexShrink: 0 }}>Day {day.calendarDay}</span>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
+                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                              </div>
+                              {day.totalQuestions > 0 && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
+                            </div>
+                            <span style={{ fontSize: 14, color: '#d0ccc6' }}>›</span>
                           </div>
                         );
-                      }
-                      const bc = blockColors[block.type] || blockColors.questions; return (
-                      <div key={bi}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                          <span style={{ fontSize: 13 }}>{bc.icon}</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: bc.border, fontFamily: S.f }}>{block.label}</span>
-                        </div>
-                        {block.highYield && block.highYield.length > 0 && (
-                          <SubTopicProgressPanel
-                            highYield={block.highYield}
-                            subTopicProgress={profile.subTopicProgress}
-                            onToggle={block.type === 'content' || block.type === 'content-reactive' ? null : toggleSubTopicProgress}
-                            qbankFilterTip={block.qbankFilterTip}
-                          />
-                        )}
-                        <div style={{ display: "grid", gap: 3 }}>
-                          {block.tasks.map((task, ti) => (
-                            <div key={ti} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, fontSize: 13, fontFamily: S.f, background: bc.bg, borderLeft: `3px solid ${bc.border}` }}>
-                              <span style={{ fontWeight: 600, color: "#1a1816", minWidth: 85 }}>{task.resource}</span>
-                              <span style={{ color: "#6b6560", flex: 1, lineHeight: 1.4 }}>{task.activity}</span>
-                              <span style={{ color: "#8a857e", fontWeight: 600, whiteSpace: "nowrap" }}>{formatDuration(task.hours)}</span>
-                            </div>
-                          ))}
-                        </div>
-                        {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} />}
-                        {(block.type === 'content' || block.type === 'content-reactive') && (
-                          <AIEnrichmentPanel dayN={day.calendarDay} enrichment={planEnrichment} loading={enrichmentLoading} />
-                        )}
-                        {block.type === 'questions-focus' && planEnrichment?.enrichments?.[`day_${day.calendarDay}`]?.targeted_questions && (() => {
-                          const tq = planEnrichment.enrichments[`day_${day.calendarDay}`].targeted_questions;
-                          return (
-                            <div style={{ marginTop: 6, padding: '7px 10px', background: '#2563eb08', borderRadius: 7, borderLeft: '3px solid #2563eb50' }}>
-                              {tq.filter_suggestion && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: tq.what_to_watch_for ? 4 : 0 }}><span style={{ fontWeight: 700 }}>🔍 Filter:</span> {tq.filter_suggestion}</div>}
-                              {tq.what_to_watch_for && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif' }}><span style={{ fontWeight: 700 }}>⚠ Watch for:</span> {tq.what_to_watch_for}</div>}
-                            </div>
-                          );
-                        })()}
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── FULL VIEW: all weeks expanded with collapsible blocks ── */}
+              {planViewMode === 'full' && plan.weeks.map((week, wi) => (
+                <div key={wi} style={{ ...S.card, padding: 0, overflow: 'hidden', marginBottom: 12, ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
+                  <div style={{ padding: '16px 24px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: expandedWeek === wi ? (week.isLockdown ? '#f5f3ff' : '#faf8f5') : (week.isLockdown ? '#fdfcff' : '#fff') }} onClick={() => setExpandedWeek(expandedWeek === wi ? -1 : wi)}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.week}</span>
+                        {week.isLockdown
+                          ? <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed', fontSize: 10 }}>🔒 Exam week</span>
+                          : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: '#b4530915', color: '#b45309', fontSize: 10 }}>{ft}</span>)}
                       </div>
-                    ); })}
+                      <div style={{ fontSize: 13, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
+                    </div>
+                    <span style={{ fontSize: 18, color: '#8a857e', transform: expandedWeek === wi ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▾</span>
                   </div>
-                </div>);
-              })}
-            </div>}
-          </div>
-        ))}
+                  {expandedWeek === wi && (
+                    <div style={{ padding: '0 24px 20px' }}>
+                      {week.isLockdown && (
+                        <div style={{ margin: '16px 0 4px', padding: '12px 16px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                          <span style={{ fontSize: 20, flexShrink: 0 }}>🔒</span>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 3 }}>Exam week — maintenance and confidence mode</div>
+                            <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>No new content. Random blocks only — simulate exam pacing daily. Finish all study by 3 PM. Trust the work you've done.</div>
+                          </div>
+                        </div>
+                      )}
+                      {week.days.map((day, di) => (
+                        <div key={di} style={{ padding: '14px 0', borderTop: di > 0 ? '1px solid #f0ece6' : 'none' }}>
+                          {renderDayContent(day)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          );
+        })()}
 
         {/* ── Strategic insight card ── */}
         {planEnrichment?.strategic_insight && (
