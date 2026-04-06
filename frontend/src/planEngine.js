@@ -192,6 +192,12 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 // Builds the optimal assessment sequence based on dedicated period length.
 // takenAssessments = [{ id, takenDate? }] — tests done in this study period
 // hasExistingScores = true if the student already has NBME data in the app
+//
+// SCHEDULING RULES:
+// 1. Exhaust ALL 8 NBME forms (26-33) before recommending UWSA1, UWSA2, or AMBOSS.
+// 2. Free 120 (2024) is MANDATORY exactly 2 days before exam — locked, non-moveable.
+// 3. Final NBME = highest numbered untaken form. Earlier slots = ascending order.
+// 4. Buffer: no other assessment within 3 days of Free 120 (→ last NBME ≤ T-5).
 
 export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false) {
   const takenList = profile.takenAssessments || [];
@@ -205,53 +211,62 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
       .map(t => t.id)
   );
   const everTaken = new Set(takenList.map(t => t.id));
-
-  // canUse: not taken within 6 weeks (may reuse older forms if taken >6 weeks ago)
+  // canUse: not taken within 6 weeks (older forms may be reused)
   const canUse = (id) => !recentlyTaken.has(id);
 
-  const BLACKOUT = 2; // last N days: no full-length exams
-  const lastDay = totalCalendarDays - BLACKOUT;
-  if (lastDay < 3) return [];
+  // ── Fixed timeline anchors ──────────────────────────────────────────
+  const FREE120_DAY = totalCalendarDays - 2;       // ALWAYS exactly 2 days before exam
+  const LAST_ASSESSMENT_DAY = totalCalendarDays - 5; // 3-day buffer before Free 120
+  if (FREE120_DAY < 1) return []; // exam in ≤2 days — nothing can fit
 
-  // ── NBME form pools by role ─────────────────────────────────────────
-  // Baseline: prefer older forms (26-28) — diagnostic, score doesn't need to be high
-  // Midpoint: mid-range (29-31) — more predictive at this stage
-  // Late/final: newest forms (32-33) — closest to current exam difficulty
-  const nbmeByTier = {
-    baseline: PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number <= 28 && canUse(t.id)).sort((a, b) => a.number - b.number),
-    mid:      PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number >= 29 && t.number <= 31 && canUse(t.id)).sort((a, b) => a.number - b.number),
-    late:     PRACTICE_TESTS.filter(t => t.type === 'nbme' && t.number >= 32 && canUse(t.id)).sort((a, b) => b.number - a.number),
-    any:      PRACTICE_TESTS.filter(t => t.type === 'nbme' && canUse(t.id)).sort((a, b) => a.number - b.number),
-  };
+  // ── NBME priority gate ─────────────────────────────────────────────
+  // ALL 8 NBME forms must be exhausted before UWSA/AMBOSS are offered.
+  const ALL_NBME_IDS = ['nbme26','nbme27','nbme28','nbme29','nbme30','nbme31','nbme32','nbme33'];
+  const allNBMEsDone = ALL_NBME_IDS.every(id => everTaken.has(id));
 
-  const uwsa1 = canUse('uwsa1') ? PRACTICE_TESTS.find(t => t.id === 'uwsa1') : null;
-  const uwsa2 = canUse('uwsa2') ? PRACTICE_TESTS.find(t => t.id === 'uwsa2') : null;
-  // Prefer 2024 Free 120 over old; fall back if needed
-  const free120 = (canUse('free120new') ? PRACTICE_TESTS.find(t => t.id === 'free120new') : null)
-                || (canUse('free120old') ? PRACTICE_TESTS.find(t => t.id === 'free120old') : null);
-  const amboss  = canUse('amboss') ? PRACTICE_TESTS.find(t => t.id === 'amboss') : null;
+  // Untaken NBMEs available for scheduling (ascending order = lowest first)
+  const untakenNBMEs = ALL_NBME_IDS
+    .filter(id => canUse(id))
+    .map(id => PRACTICE_TESTS.find(t => t.id === id))
+    .filter(Boolean); // already in ascending order — ALL_NBME_IDS is sorted 26→33
+
+  // UWSA/AMBOSS: only unlocked once every NBME 26-33 has been taken (ever)
+  const uwsa1 = (allNBMEsDone && canUse('uwsa1')) ? PRACTICE_TESTS.find(t => t.id === 'uwsa1') : null;
+  const uwsa2 = (allNBMEsDone && canUse('uwsa2')) ? PRACTICE_TESTS.find(t => t.id === 'uwsa2') : null;
+  const amboss = (allNBMEsDone && canUse('amboss')) ? PRACTICE_TESTS.find(t => t.id === 'amboss') : null;
+
+  // Free 120: always placed regardless of prior history; prefer 2024 version
+  const free120 = PRACTICE_TESTS.find(t => t.id === 'free120new')
+               || PRACTICE_TESTS.find(t => t.id === 'free120old');
+  const free120IsRetake = everTaken.has('free120new') || everTaken.has('free120old');
 
   const hasBaseline = hasExistingScores || everTaken.size > 0;
 
-  // ── Slot management ──────────────────────────────────────────────────
+  // ── Slot management ────────────────────────────────────────────────
   const result = [];
-  const claimed = new Set(); // exam day + triage day+1
+  const claimed = new Set();
   const usedForms = new Set();
+
+  // Pre-claim fixed positions. Buffer around Free 120 is enforced by the buf
+  // parameter in isFree() — no need to pre-claim interior days (would break short plans).
+  claimed.add(totalCalendarDays);     // exam day
+  claimed.add(totalCalendarDays - 1); // pre-exam rest
 
   const claimDay = (day) => { claimed.add(day); claimed.add(day + 1); };
 
+  // isFree: available for a non-Free-120 assessment (must be ≤ LAST_ASSESSMENT_DAY)
   const isFree = (day, buf = 2) => {
-    if (day < 1 || day > lastDay) return false;
+    if (day < 1 || day > LAST_ASSESSMENT_DAY) return false;
     for (let d = day - buf; d <= day + buf; d++) if (claimed.has(d)) return false;
     return true;
   };
 
   const findFree = (preferred, buf = 2) => {
-    const p = Math.max(1, Math.min(preferred, lastDay));
+    const p = Math.max(1, Math.min(preferred, LAST_ASSESSMENT_DAY));
     if (isFree(p, buf)) return p;
-    for (let delta = 1; delta <= 8; delta++) {
-      if (p + delta <= lastDay && isFree(p + delta, buf)) return p + delta;
-      if (p - delta >= 1    && isFree(p - delta, buf)) return p - delta;
+    for (let delta = 1; delta <= 10; delta++) {
+      if (p + delta <= LAST_ASSESSMENT_DAY && isFree(p + delta, buf)) return p + delta;
+      if (p - delta >= 1 && isFree(p - delta, buf)) return p - delta;
     }
     return null;
   };
@@ -259,69 +274,74 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   const place = (day, test, label, reason, reviewHours, flags = {}) => {
     result.push({ day, test, label, reason, reviewHours, ...flags });
     claimDay(day);
-    if (test.type === 'nbme') usedForms.add(test.id);
+    if (test?.type === 'nbme') usedForms.add(test.id);
   };
 
-  // Pick next unused NBME from a prioritized pool list
-  const pickNbme = (...pools) => {
-    for (const pool of pools) {
-      const t = pool.find(t => !usedForms.has(t.id));
-      if (t) return t;
-    }
-    return null;
-  };
+  // Pick lowest-numbered unused NBME (for baseline + early progress checks)
+  const pickLowestNbme = () => untakenNBMEs.find(t => !usedForms.has(t.id)) || null;
+  // Pick highest-numbered unused NBME (for final pre-exam slot — most representative)
+  const pickHighestNbme = () => [...untakenNBMEs].reverse().find(t => !usedForms.has(t.id)) || null;
 
-  // ── Tier-based scheduling ─────────────────────────────────────────────
+  // ── Tier for spacing decisions ─────────────────────────────────────
   const tier = totalCalendarDays >= 56 ? '8w'
     : totalCalendarDays >= 35 ? '5w'
     : totalCalendarDays >= 21 ? '3w'
     : '2w';
 
-  // ── Special fixed-position tests (placed first to anchor the timeline) ──
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 1 — Lock in Free 120 (2024) at EXACTLY T-2
+  // This is mandatory regardless of all other scheduling decisions.
+  // ════════════════════════════════════════════════════════════════════
+  if (free120 && FREE120_DAY >= 1) {
+    result.push({
+      day: FREE120_DAY,
+      test: free120,
+      label: 'MANDATORY — Style calibrator',
+      reason: free120IsRetake
+        ? `You've taken the Free 120 before. We still place it exactly 2 days out — the score isn't the point. It's about locking in exam-day rhythm and confirming comfort with real USMLE question style. Take it timed, under exam conditions.`
+        : `The ${free120.name} is free official USMLE content — the closest format match to the real exam. This is your final calibration before exam day. Take it timed, under exam conditions. Review every wrong answer; do not start new content.`,
+      reviewHours: 1.5,
+      mandatory: true,
+      moveable: false,
+    });
+    claimed.add(FREE120_DAY);
+    claimed.add(FREE120_DAY + 1);
+  }
 
-  // UWSA2: 7-10 days before exam (not for 2-week tier)
-  let uwsa2Day = null;
-  if (uwsa2 && tier !== '2w' && lastDay >= 8) {
-    const target = tier === '3w'
-      ? totalCalendarDays - 8   // tighter window for 3-4 weeks
-      : totalCalendarDays - 8;  // 7-10 days: target 8
-    uwsa2Day = findFree(Math.max(1, target), 2);
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 2 — UWSA2 (only when ALL 8 NBMEs done) at 7-9 days before exam
+  // ════════════════════════════════════════════════════════════════════
+  if (uwsa2 && LAST_ASSESSMENT_DAY >= 3 && tier !== '2w') {
+    const target = Math.min(LAST_ASSESSMENT_DAY, totalCalendarDays - 9);
+    const uwsa2Day = findFree(Math.max(1, target), 2);
     if (uwsa2Day) {
       place(uwsa2Day, uwsa2, 'Score predictor',
-        'UWSA 2 is the strongest single predictor of your actual Step 1 score. Students typically land within 3–5 points of this number. Take it under full exam conditions — 280 questions, timed, no interruptions. The score you see here is approximately where you\'ll score on exam day.',
+        `UWSA 2 is the strongest single predictor of your actual Step 1 score. Students typically land within 3–5 points of this number. Take it under full exam conditions — 280 questions, timed, no interruptions. The score you see here is approximately where you'll score on exam day.`,
         2.5, { predictorNote: true });
     }
   }
 
-  // Free 120: 3-5 days before exam
-  let free120Day = null;
-  if (free120 && lastDay >= 3) {
-    const target = tier === '2w' ? totalCalendarDays - 4 : totalCalendarDays - 4;
-    free120Day = findFree(Math.max(1, target), 1);
-    if (free120Day) {
-      place(free120Day, free120, 'Style calibrator',
-        `The ${free120.name} is free official USMLE content — the closest format match to the real exam. This close to exam day, focus on timing and composure rather than score. Review every wrong answer to catch any final blind spots, but don\'t cram new content.`,
-        1.5);
-    }
-  }
-
-  // UWSA1: midpoint (skip for 3-week and 2-week tiers)
-  let uwsa1Day = null;
-  if (uwsa1 && (tier === '8w' || tier === '5w')) {
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 3 — UWSA1 (only when ALL 8 NBMEs done, 8w+5w tiers) near midpoint
+  // ════════════════════════════════════════════════════════════════════
+  if (uwsa1 && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
     const target = Math.floor(totalCalendarDays / 2);
-    uwsa1Day = findFree(target, 3);
+    const uwsa1Day = findFree(Math.min(target, LAST_ASSESSMENT_DAY - 5), 3);
     if (uwsa1Day) {
       place(uwsa1Day, uwsa1, 'Midpoint learning tool',
-        'UWSA 1 at the halfway point shows how far you\'ve come — and where you still need work. Critical caveat: UWSA 1 consistently overpredicts by 10–25 points. A score of 245 here often translates to 220–235 on exam day. Don\'t get complacent if the number looks high. Use this to identify which systems are still dragging your score down.',
-        2.0, { overpredictWarning: 'This exam typically overpredicts by 10–25 points. Use it for learning, not as your score prediction.' });
+        `UWSA 1 at the halfway point shows how far you've come — and where you still need work. Critical caveat: UWSA 1 consistently overpredicts by 10–25 points. A score of 245 here often translates to 220–235 on exam day. Don't get complacent if the number looks high. Use it to identify which systems are still dragging your score down.`,
+        2.0, { overpredictWarning: 'This exam typically overpredicts by 10–25 points. Use it for learning direction, not score prediction.' });
     }
   }
 
-  // ── Baseline check (day 1-3) ────────────────────────────────────────
-  if (!hasBaseline) {
-    const baseNbme = pickNbme(nbmeByTier.baseline, nbmeByTier.any);
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 4 — Baseline NBME (only if student has no existing scores yet)
+  // Use LOWEST numbered untaken NBME — older forms are fine for baseline.
+  // ════════════════════════════════════════════════════════════════════
+  if (!hasBaseline && untakenNBMEs.length > 0 && LAST_ASSESSMENT_DAY >= 1) {
+    const baseNbme = pickLowestNbme();
     if (baseNbme) {
-      const baseDay = findFree(tier === '3w' ? Math.min(2, lastDay - 10) : 2, 1);
+      const baseDay = findFree(Math.min(2, LAST_ASSESSMENT_DAY), 1);
       if (baseDay) {
         place(baseDay, baseNbme, 'Baseline diagnostic',
           `Your first NBME before dedicated study truly kicks in. Most students feel underprepared at this stage — that's expected and irrelevant. The score right now doesn't define where you'll land. What matters is which systems are dragging you down. That breakdown becomes the blueprint for everything that follows.`,
@@ -330,61 +350,97 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     }
   }
 
-  // ── AMBOSS substitute: midpoint for 2-week tier or when UWSA1 unavailable ──
-  if (!uwsa1 && amboss && tier !== '3w' && tier !== '2w') {
-    const target = Math.floor(totalCalendarDays / 2);
-    const ambossDay = findFree(target, 3);
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 5 — AMBOSS substitute (only when ALL 8 NBMEs done, no UWSA1)
+  // ════════════════════════════════════════════════════════════════════
+  if (!uwsa1 && amboss && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
+    const target = Math.min(Math.floor(totalCalendarDays / 2), LAST_ASSESSMENT_DAY - 5);
+    const ambossDay = findFree(Math.max(1, target), 3);
     if (ambossDay) {
       place(ambossDay, amboss, 'Midpoint check (AMBOSS)',
-        'AMBOSS SA runs harder than the real exam intentionally — students typically score 5–15 points lower than their actual Step 1 result. Use it as a high-fidelity stress test to find remaining gaps. If you can answer AMBOSS questions cleanly, you\'re in excellent shape.',
+        `AMBOSS SA runs harder than the real exam intentionally — students typically score 5–15 points lower than their actual Step 1 result. Use it as a high-fidelity stress test to find remaining gaps. If you can answer AMBOSS questions cleanly, you're in excellent shape.`,
         2.0);
     }
   }
 
-  if (tier === '2w' && !free120 && amboss) {
-    const ambossDay = findFree(Math.floor(totalCalendarDays / 2), 2);
-    if (ambossDay) {
-      place(ambossDay, amboss, 'Midpoint check (AMBOSS)',
-        'With limited time, AMBOSS SA serves as your midpoint stress-test. It runs harder than the real exam — use it to find gaps, not predict your score.',
-        2.0);
-    }
-  }
-
-  // ── Progress checks: fill intervals with NBME forms ──────────────────
+  // ════════════════════════════════════════════════════════════════════
+  // STEP 6 — Progress checks
+  // Priority: untaken NBMEs 26-33 (ascending, highest saved for final slot)
+  // Only if allNBMEsDone: then UWSA/AMBOSS, then NBME retakes
+  // ════════════════════════════════════════════════════════════════════
   const interval = tier === '8w' ? 12   // 10-14 days
-    : tier === '5w' ? 11                 // 10-12 days
-    : tier === '3w' ? 11                 // ~11 days (just 1 midpoint check)
-    : 0;                                 // 2-week: no interval fills
+    : tier === '5w' ? 11                // 10-12 days
+    : tier === '3w' ? 11               // ~11 days
+    : 0;                               // 2-week: no interval progress checks
 
-  if (interval > 0) {
+  if (interval > 0 && LAST_ASSESSMENT_DAY >= interval) {
     const baseItem = result.find(r => r.label === 'Baseline diagnostic');
     let cursor = baseItem ? baseItem.day + interval : interval;
 
-    // Pool order: mid-range forms for early progress, late forms for final stretch
-    const progressPool = [
-      ...nbmeByTier.mid.filter(t => !usedForms.has(t.id)),
-      ...nbmeByTier.baseline.filter(t => !usedForms.has(t.id)),
-      ...nbmeByTier.late.filter(t => !usedForms.has(t.id)),
-    ];
-
-    // Target count: 8w → up to 5-6 total, 5w → 4 total, 3w → just 1 midpoint
-    const maxProgress = tier === '8w' ? 4 : tier === '5w' ? 2 : 1;
+    const maxProgress = tier === '8w' ? 5 : tier === '5w' ? 3 : 1;
     let progressCount = 0;
 
-    for (const nbme of progressPool) {
-      if (progressCount >= maxProgress) break;
-      if (cursor > lastDay - 8) break;
-
+    while (progressCount < maxProgress) {
+      if (cursor > LAST_ASSESSMENT_DAY) break;
       const slot = findFree(cursor, 3);
-      if (!slot || slot > lastDay - 8) break;
+      if (!slot || slot > LAST_ASSESSMENT_DAY) break;
 
-      const isNewest = nbme.number >= 32;
-      place(slot, nbme, `Progress check #${progressCount + 1}`,
-        isNewest
-          ? `NBME ${nbme.number} is one of the newest forms — it mirrors current exam difficulty most closely. Your score here is a reliable performance signal in the final stretch.`
-          : `NBME ${nbme.number} — check whether your weak areas are actually improving. The total score matters less than whether the systems that were dragging you down are now moving up.`,
-        2.0);
+      // Determine if this is the final slot (no room for another after this)
+      const nextCursor = slot + interval;
+      const isLastSlot = progressCount === maxProgress - 1 || nextCursor > LAST_ASSESSMENT_DAY;
 
+      const availableNBMEs = untakenNBMEs.filter(t => !usedForms.has(t.id));
+      let testToPlace = null;
+      let label = `Progress check #${progressCount + 1}`;
+      let reason = '';
+      const flags = {};
+
+      if (availableNBMEs.length > 0) {
+        // ── Untaken NBMEs available — always schedule them first ──
+        // Final slot → highest numbered form (most representative of current Step 1)
+        // Earlier slots → lowest numbered form (ascending order)
+        const nbme = isLastSlot ? pickHighestNbme() : pickLowestNbme();
+        testToPlace = nbme;
+        const isNewest = nbme.number >= 32;
+        reason = isNewest
+          ? `NBME ${nbme.number} is one of the newest forms — most representative of current Step 1 content. You haven't taken this form yet. Your score here is a strong prediction signal for your actual exam.`
+          : `NBME ${nbme.number} — you haven't taken this form yet. Check whether your weak areas are actually improving. The total score matters less than the system breakdown movement.`;
+      } else if (allNBMEsDone) {
+        // ── All 8 NBMEs taken — now consider UWSA/AMBOSS/retakes ──
+        const uwsa2Placed = result.some(r => r.test?.id === 'uwsa2');
+        const uwsa1Placed = result.some(r => r.test?.id === 'uwsa1');
+        const ambossPlaced = result.some(r => r.test?.id === 'amboss');
+
+        if (canUse('uwsa2') && !uwsa2Placed) {
+          testToPlace = PRACTICE_TESTS.find(t => t.id === 'uwsa2');
+          label = 'Score predictor';
+          reason = `UWSA 2 is the strongest single predictor of your Step 1 score. Take it under full exam conditions — timed, 280 questions, no interruptions.`;
+          flags.predictorNote = true;
+        } else if (canUse('uwsa1') && !uwsa1Placed) {
+          testToPlace = PRACTICE_TESTS.find(t => t.id === 'uwsa1');
+          label = 'Midpoint learning tool';
+          reason = `UWSA 1 consistently overpredicts by 10–25 points — don't rely on it for score prediction. Use it to identify which systems still need work.`;
+          flags.overpredictWarning = 'This exam typically overpredicts by 10–25 points. Use it for learning direction, not score prediction.';
+        } else if (canUse('amboss') && !ambossPlaced) {
+          testToPlace = PRACTICE_TESTS.find(t => t.id === 'amboss');
+          label = 'Midpoint check (AMBOSS)';
+          reason = `AMBOSS SA runs harder than the real exam — use it as a stress test, not a score predictor. Students typically score 5–15 points lower here than on the real thing.`;
+        } else {
+          // All assessments taken — retake oldest NBME (if taken >6 weeks ago)
+          const retake = ALL_NBME_IDS
+            .filter(id => everTaken.has(id) && canUse(id))
+            .map(id => PRACTICE_TESTS.find(t => t.id === id))
+            .filter(Boolean)[0];
+          if (retake) {
+            testToPlace = retake;
+            label = 'Retake — Progress check';
+            reason = `You've taken all 8 NBMEs and all supplemental assessments. Revisiting ${retake.name} — taken over 6 weeks ago, so the questions won't be fresh.`;
+          }
+        }
+      }
+
+      if (!testToPlace) break;
+      place(slot, testToPlace, label, reason, 2.0, flags);
       cursor = slot + interval;
       progressCount++;
     }

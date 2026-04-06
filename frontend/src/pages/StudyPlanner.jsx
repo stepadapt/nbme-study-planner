@@ -2363,13 +2363,20 @@ export default function StudyPlanner({ onShowTerms }) {
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {a.day}{approxDate ? ` · ${approxDate}` : ''}</span>
-                          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>{a.test?.name || a.testId}</span>
-                          {a.label && <span style={{ ...S.tag, background: ls.bg, color: ls.color }}>{a.label}</span>}
+                          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: a.mandatory ? '#c0392b' : '#1a1816' }}>{a.test?.name || a.testId}</span>
+                          {a.mandatory && <span style={{ ...S.tag, background: '#c0392b15', color: '#c0392b', fontSize: 10 }}>🔒 LOCKED</span>}
+                          {a.label && !a.mandatory && <span style={{ ...S.tag, background: ls.bg, color: ls.color }}>{a.label}</span>}
+                          {a.mandatory && <span style={{ ...S.tag, background: '#c0392b10', color: '#c0392b' }}>Style calibrator</span>}
                         </div>
                         {a.reviewHours > 0 && (
                           <span style={{ ...S.muted, fontSize: 11, whiteSpace: 'nowrap' }}>+{a.reviewHours}h review</span>
                         )}
                       </div>
+                      {a.mandatory && (
+                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#c0392b08', border: '1px solid #c0392b25', fontSize: 12, color: '#c0392b', fontFamily: S.f, lineHeight: 1.4, marginBottom: 6 }}>
+                          🔒 <strong>Mandatory — cannot be moved.</strong> The Free 120 is the closest match to real Step 1 question style. It must be taken 2 days before your exam under full test conditions.
+                        </div>
+                      )}
                       {a.reason && (
                         <p style={{ ...S.muted, fontSize: 12, margin: '0 0 6px', lineHeight: 1.5, fontStyle: 'italic' }}>💡 {a.reason}</p>
                       )}
