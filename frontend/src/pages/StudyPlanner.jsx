@@ -1541,7 +1541,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 { icon: "🔄", title: "Maintenance blocks simulate test day", desc: "Random mixed questions across all systems — trains context-switching and prevents decay" },
                 { icon: "📚", title: "Content review is reactive, not passive", desc: "You don't re-read chapters — you look up what you got wrong in questions" },
                 { icon: "📈", title: "NBMEs every ~2 weeks recalibrate the plan", desc: "New scores restart the cycle with smarter targeting" },
-                { icon: "🤖", title: "AI coaching + screenshot score parsing", desc: "Upload your NBME screenshot to auto-import scores, then ask your AI coach anything" },
+                { icon: "💬", title: "Coaching chat + automatic score import", desc: "Upload your NBME score report to auto-import scores — then ask your coaching chat anything, and it can see your full history" },
               ].map((item, i) => (
                 <div key={i} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                   <div style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{item.icon}</div>
@@ -1917,6 +1917,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>or fill in manually</span>
               </div>
               {histError && <div style={{ marginTop: 8, fontSize: 12, color: '#c0392b', fontFamily: S.f }}>{histError}</div>}
+              <div style={{ marginTop: 8, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>🔒 Your data stays private. Score reports are processed securely and never sold or shared. <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => onShowTerms?.('privacy')}>See our privacy policy.</span></div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -2020,7 +2021,7 @@ export default function StudyPlanner({ onShowTerms }) {
         <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("dashboard"); }}>← Back</button><UserBar /></div>
         <div style={S.wrap}>
           <h1 style={S.h1}>Add a past exam</h1>
-          <p style={S.sub}>Import a historical NBME score. It'll show up in your score history and help your AI coach see your full trajectory.</p>
+          <p style={S.sub}>Import a historical NBME score. It'll show up in your score history and help your coaching chat see your full score trajectory.</p>
 
           <div style={{ ...S.card, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
@@ -2033,6 +2034,7 @@ export default function StudyPlanner({ onShowTerms }) {
               <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>or fill in manually</span>
             </div>
             {histError && !histSaving && <div style={{ marginTop: 8, fontSize: 12, color: '#c0392b', fontFamily: S.f }}>{histError}</div>}
+            <div style={{ marginTop: 8, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>🔒 Your data stays private. Score reports are processed securely and never sold or shared. <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => onShowTerms?.('privacy')}>See our privacy policy.</span></div>
           </div>
 
           <div style={S.card}>
@@ -2229,7 +2231,7 @@ export default function StudyPlanner({ onShowTerms }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1816", fontFamily: S.f, marginBottom: 2 }}>📸 Auto-import from screenshot or PDF</div>
-                <div style={{ fontSize: 12, color: "#6b6560", fontFamily: S.f }}>Upload your NBME score report (image or PDF) and AI will fill in the scores</div>
+                <div style={{ fontSize: 12, color: "#6b6560", fontFamily: S.f }}>Upload your score report — scores are extracted automatically. You confirm everything before it's saved.</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {uploadingScreenshot && <span style={{ ...S.muted, fontSize: 12 }}>Parsing…</span>}
@@ -2246,6 +2248,7 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
             </div>
             {screenshotError && <div style={{ marginTop: 8, fontSize: 12, color: "#c0392b", fontFamily: S.f }}>{screenshotError}</div>}
+            <div style={{ marginTop: 10, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>🔒 Your data stays private. Score reports are processed securely and never sold or shared. <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => onShowTerms?.('privacy')}>See our privacy policy.</span></div>
           </div>
 
           {isRetake && (

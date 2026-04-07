@@ -280,7 +280,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               padding: '5px 14px', marginBottom: 24, border: `1px solid ${G}30`,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: G, display: 'inline-block' }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: G, letterSpacing: '0.05em', textTransform: 'uppercase' }}>AI-Powered USMLE Prep</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: G, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Built by a USMLE Tutor</span>
             </div>
 
             <h1 style={{
@@ -293,7 +293,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
             </h1>
 
             <p style={{ fontSize: 18, color: MID, lineHeight: 1.7, margin: '0 0 36px', maxWidth: 480 }}>
-              StepAdapt builds a personalized study plan directly from your NBME scores — with AI-powered insights, time-blocked daily schedules, and adaptive coaching to maximize every hour you study.
+              StepAdapt analyzes your NBME score breakdown system-by-system to find the high-yield gaps that will gain you the most points — then builds a day-by-day schedule of targeted questions and content around those specific weaknesses.
             </p>
 
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 36 }}>
@@ -342,7 +342,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       {/* ── Trust band ─────────────────────────────────────────────── */}
       <div style={{ background: DARK, padding: '18px 24px' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', justifyContent: 'center', gap: 48, flexWrap: 'wrap' }}>
-          {['Built for USMLE Step 1', 'AI-powered score analysis', 'Personalized day-by-day schedule', 'No credit card to start'].map(t => (
+          {['Built for USMLE Step 1', 'Score-breakdown prioritization', 'Personalized day-by-day schedule', 'No credit card to start'].map(t => (
             <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: '"DM Sans", sans-serif' }}>
               <span style={{ color: G, fontWeight: 700 }}>✓</span> {t}
             </div>
@@ -362,10 +362,10 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
-            <FeatureCard icon="📸" title="AI Score Parsing" desc="Upload a screenshot or PDF of your NBME score report. Our AI instantly extracts every category score — no manual entry, no mistakes." delay={0} visible={featVis} />
+            <FeatureCard icon="📸" title="Automatic Score Import" desc="Upload a photo of your NBME score report — every category score is extracted automatically. You confirm everything before it's saved, no manual entry required." delay={0} visible={featVis} />
             <FeatureCard icon="🧠" title="Adaptive Study Plans" desc="Your plan is built around your weaknesses. High-yield categories get more time; categories you've mastered get less. It recalibrates every time." delay={100} visible={featVis} />
             <FeatureCard icon="⏰" title="Time-Blocked Schedules" desc="Set your preferred study window — 7am to 5pm, 11am to 7pm, whatever fits your life. Every block gets an exact clock time with automatic breaks." delay={200} visible={featVis} />
-            <FeatureCard icon="💬" title="AI Study Coach" desc="Ask anything. Confused about a concept? Not sure which resource to use? Your AI coach has context on your scores and your plan." delay={300} visible={featVis} />
+            <FeatureCard icon="💬" title="Coaching Chat" desc="Ask anything. Your coaching chat can see your actual scores, your plan, and your daily progress — so every answer is specific to your situation, not generic advice." delay={300} visible={featVis} />
             <FeatureCard icon="📊" title="Category Heatmap" desc="See every subject — Cardio, Neuro, GI, Renal — color-coded by your performance. Red means it needs work. Green means you're dialed in." delay={400} visible={featVis} />
             <FeatureCard icon="📈" title="Score Trend Charts" desc="Track your improvement across every NBME you've taken. Watch your score climb as your study plan adapts to your progress." delay={500} visible={featVis} />
           </div>
@@ -382,7 +382,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               From your scores to<br />a plan in minutes
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-              <Step n={1} title="Upload your NBME score" desc="Screenshot or PDF — our AI reads your complete score report and extracts every subject score automatically." visible={howVis} delay={0} />
+              <Step n={1} title="Upload your NBME score" desc="Screenshot or PDF — every subject score is extracted automatically from your report. You confirm before anything is saved." visible={howVis} delay={0} />
               <Step n={2} title="Review your weak spots" desc="StepAdapt shows you exactly where you lost points with color-coded categories and personalized insights." visible={howVis} delay={100} />
               <Step n={3} title="Get your time-blocked plan" desc="A day-by-day, hour-by-hour study schedule built around your exam date and daily availability — with real clock times." visible={howVis} delay={200} />
               <Step n={4} title="Track, adapt, and improve" desc="Log new assessments to watch your trend. Your plan updates as you improve, so you're always working on what matters most." visible={howVis} delay={300} />
@@ -425,6 +425,32 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       </section>
 
 
+      {/* ── Founder / Trust ────────────────────────────────────────── */}
+      <section style={{ padding: '72px 24px 0' }}>
+        <div style={{ maxWidth: 760, margin: '0 auto' }}>
+          <div style={{
+            borderLeft: `4px solid ${G}`,
+            background: WHITE,
+            borderRadius: '0 16px 16px 0',
+            padding: '32px 36px',
+            boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+            border: '1px solid rgba(0,0,0,0.07)',
+            borderLeftColor: G,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: G, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14 }}>Built by a tutor, not a tech company</div>
+            <p style={{ fontSize: 17, color: DARK, lineHeight: 1.75, margin: '0 0 14px', fontFamily: '"Source Serif 4", serif', fontWeight: 400 }}>
+              StepAdapt was built by a USMLE tutor who got tired of making the same custom study spreadsheets for every student.
+            </p>
+            <p style={{ fontSize: 15, color: MID, lineHeight: 1.7, margin: '0 0 14px', fontFamily: '"DM Sans", sans-serif' }}>
+              The methodology behind the plan — question-driven days, high-yield sub-topic targeting, random blocks for maintenance — comes from years of helping students go from failing NBMEs to passing Step 1.
+            </p>
+            <p style={{ fontSize: 15, color: MID, lineHeight: 1.7, margin: 0, fontFamily: '"DM Sans", sans-serif' }}>
+              This isn't a generic tool that guesses what you should study. It's the exact framework a tutor uses with their own students, automated so it adapts to your scores, your timeline, and your resources.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── Pricing ────────────────────────────────────────────────── */}
       <section id="pricing" style={{ padding: '96px 24px', background: `linear-gradient(160deg, ${G}08 0%, transparent 70%)` }}>
         <div ref={priceRef} style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -465,11 +491,11 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
               period="/ month"
               features={[
                 'Unlimited NBME assessments',
-                'AI score parsing (screenshot & PDF)',
+                'Automatic score import (screenshot & PDF)',
                 'Unlimited study plans',
                 'Time-blocked daily schedules',
                 'Category heatmap & score trends',
-                'AI coaching chat — unlimited',
+                'Coaching chat with full context on your plan — unlimited',
                 'Export plans to PDF/calendar',
                 'Priority support',
               ]}

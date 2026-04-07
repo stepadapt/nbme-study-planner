@@ -23,7 +23,7 @@ const TERMS_HTML = `
 <p>By creating an account and using NBME Study Planner ("the Service"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
 
 <h3>2. Description of Service</h3>
-<p>NBME Study Planner is an educational tool that helps medical students organize and track their board exam preparation. The Service includes study plan generation, progress tracking, AI-powered coaching, and export features.</p>
+<p>NBME Study Planner is an educational tool that helps medical students organize and track their board exam preparation. The Service includes study plan generation, progress tracking, a coaching chat powered by Anthropic's Claude API, and export features.</p>
 
 <h3>3. User Accounts</h3>
 <p>You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. You agree to provide accurate information when creating your account.</p>
@@ -93,7 +93,7 @@ const PRIVACY_HTML = `
 <p>We have not sold or shared personal information to third parties for commercial purposes in the past 12 months, and we do not intend to do so in the future.</p>
 
 <h3 style="margin-top:1.5rem">5. Artificial Intelligence Features</h3>
-<p>StepAdapt offers AI-powered features including score parsing from screenshots and an AI study coach. These features are powered by <strong>Anthropic's Claude API</strong>. Your inputs (messages, uploaded screenshots) are processed by Anthropic subject to their <a href="https://www.anthropic.com/privacy" style="color:#1D9E75" target="_blank">Privacy Policy</a>. You must not use AI features in any way that violates Anthropic's usage policies.</p>
+<p>StepAdapt offers automated features including automatic score extraction from uploaded screenshots and a coaching chat. These features are powered by <strong>Anthropic's Claude API</strong>. Your inputs (messages, uploaded screenshots) are processed by Anthropic subject to their <a href="https://www.anthropic.com/privacy" style="color:#1D9E75" target="_blank">Privacy Policy</a>. You must not use AI features in any way that violates Anthropic's usage policies.</p>
 <p>AI responses are for educational and study planning purposes only and <strong>do not constitute medical advice</strong>.</p>
 
 <h3 style="margin-top:1.5rem">6. How Long Do We Keep Your Information?</h3>

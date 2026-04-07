@@ -140,6 +140,12 @@ export default function AuthPage({ onShowTerms, initialMode = 'login', onBackToL
             {loading ? 'Please wait…' : mode === 'login' ? 'Sign in →' : mode === 'signup' ? 'Create account →' : 'Send reset link →'}
           </button>
 
+          {mode === 'signup' && (
+            <div style={{ marginTop: 10, textAlign: 'center', fontSize: 12, color: '#8a857e', fontFamily: '"DM Sans", sans-serif' }}>
+              🔒 We never sell your data or send spam.
+            </div>
+          )}
+
           {mode === 'forgot' && (
             <button type="button" style={S.btnSecondary} onClick={() => switchMode('login')}>
               ← Back to sign in

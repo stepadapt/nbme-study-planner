@@ -198,7 +198,7 @@ export default function Chat({ onClose }) {
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: DARK, fontFamily: F, lineHeight: 1.2 }}>Your Step 1 Coach</div>
               <div style={{ fontSize: 11, color: LIGHT, fontFamily: F, marginTop: 1 }}>
-                Sees your scores, plan &amp; progress · AI-powered
+                Sees your scores, plan &amp; progress — answers specific to you
               </div>
             </div>
           </div>
