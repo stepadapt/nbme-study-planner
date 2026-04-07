@@ -375,6 +375,33 @@ export default function StudyPlanner({ onShowTerms }) {
   const [histError, setHistError] = useState('');
   const [histUploadingScreenshot, setHistUploadingScreenshot] = useState(false);
 
+  // ── Feedback state ────────────────────────────────────────────────
+  // Widget A – daily rating
+  const [dailyRatingValue,      setDailyRatingValue]      = useState(null); // 1-4
+  const [dailyRatingComment,    setDailyRatingComment]    = useState('');
+  const [dailyRatingShowInput,  setDailyRatingShowInput]  = useState(false);
+  const [dailyRatingThanks,     setDailyRatingThanks]     = useState(false);
+  const [dailyRatingDone,       setDailyRatingDone]       = useState(false);
+  // Widget B – general feedback modal
+  const [showFeedbackModal,     setShowFeedbackModal]     = useState(false);
+  const [genFbk,                setGenFbk]                = useState({ working_well: '', needs_improvement: '', other: '', nps: null });
+  const [genFbkDone,            setGenFbkDone]            = useState(false);
+  // Widget C – post-NBME
+  const [postNbmeRating,        setPostNbmeRating]        = useState(null);
+  const [postNbmeComment,       setPostNbmeComment]       = useState('');
+  const [postNbmeDone,          setPostNbmeDone]          = useState(false);
+  // Widget D – week 1 check-in
+  const [weekCheckinVisible,    setWeekCheckinVisible]    = useState(false);
+  const [weekCheckinAnswers,    setWeekCheckinAnswers]    = useState({});
+  const [weekCheckinDone,       setWeekCheckinDone]       = useState(false);
+  // Widget E – return check-in
+  const [returnCheckinVisible,  setReturnCheckinVisible]  = useState(false);
+  const [returnCheckinDone,     setReturnCheckinDone]     = useState(false);
+  // Widget F – post-exam follow-up
+  const [postExamFbkVisible,    setPostExamFbkVisible]    = useState(false);
+  const [postExamAnswers,       setPostExamAnswers]       = useState({});
+  const [postExamFbkDone,       setPostExamFbkDone]       = useState(false);
+
   // ── Reset / fresh-start state ─────────────────────────────────────
   const [resetType, setResetType] = useState(null);       // 'full' | 'keep-scores' | 'archive'
   const [resetConfirmText, setResetConfirmText] = useState('');
@@ -438,6 +465,47 @@ export default function StudyPlanner({ onShowTerms }) {
       api.profile.save(profile).catch(() => {});
     }, 1500);
   }, [profile, dataLoaded]);
+
+  // ── Feedback initialisation (runs once per session after data load) ──
+  useEffect(() => {
+    if (!dataLoaded || !user) return;
+    const uid  = user.id;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Widget A — has user already rated today?
+    if (localStorage.getItem(`sa_daily_rated_${uid}_${today}`)) setDailyRatingDone(true);
+
+    // Widget D — week 1 check-in (show once on day 7)
+    if (plan && latestPlanMeta && !localStorage.getItem(`sa_week_checkin_${uid}`)) {
+      const daysSinceStart = Math.floor(
+        (new Date() - new Date(latestPlanMeta.createdAt)) / 86400000
+      ) + 1;
+      if (daysSinceStart === 7) setWeekCheckinVisible(true);
+    }
+
+    // Widget E — return check-in (3+ days absence)
+    const lastLoginKey = `sa_last_login_${uid}`;
+    const lastLogin    = localStorage.getItem(lastLoginKey);
+    if (lastLogin && lastLogin !== today) {
+      const daysSince = Math.floor((new Date(today) - new Date(lastLogin)) / 86400000);
+      if (daysSince >= 3) setReturnCheckinVisible(true);
+    }
+    localStorage.setItem(lastLoginKey, today);
+
+    // Widget F — post-exam follow-up (2+ days after exam date)
+    if (profile.examDate && !localStorage.getItem(`sa_post_exam_${uid}`)) {
+      const examDate = new Date(profile.examDate);
+      examDate.setHours(0, 0, 0, 0);
+      const now = new Date(); now.setHours(0, 0, 0, 0);
+      const daysAfter = Math.floor((now - examDate) / 86400000);
+      if (daysAfter >= 2) setPostExamFbkVisible(true);
+    }
+  }, [dataLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Feedback submit helper ─────────────────────────────────────────
+  const submitFeedback = (data) => {
+    api.feedback.submit(data).catch(() => {}); // fire-and-forget; never block the UI
+  };
 
   // ── Schedule helpers ──────────────────────────────────────────────
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -798,6 +866,8 @@ export default function StudyPlanner({ onShowTerms }) {
       <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onShowTerms?.('terms')}>Terms of Service</span>
       {' · '}
       <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onShowTerms?.('privacy')}>Privacy Policy</span>
+      {' · '}
+      <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { setGenFbkDone(false); setGenFbk({ working_well: '', needs_improvement: '', other: '', nps: null }); setShowFeedbackModal(true); }}>Feedback</span>
     </div>
   );
 
@@ -949,6 +1019,93 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           </div>
 
+          {/* Widget F — Post-exam follow-up */}
+          {postExamFbkVisible && !postExamFbkDone && (
+            <div style={{ ...S.card, marginBottom: 14, background: '#f0fdf4', border: '1.5px solid #1D9E7530' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1816', fontFamily: S.f, marginBottom: 14 }}>🎓 How did Step 1 go?</div>
+              {[
+                { key: 'feeling', label: 'How did you feel walking out?', opts: [['felt_prepared','Felt prepared'],['it_was_ok','It was OK'],['felt_unprepared','Felt unprepared']] },
+                { key: 'passed',  label: 'Did you pass?',                opts: [['yes','Yes! 🎉'],['waiting','Waiting for results'],['no','No'],['prefer_not','Prefer not to say']] },
+                { key: 'recommend', label: 'Would you recommend StepAdapt?', opts: [['definitely','Definitely'],['maybe','Maybe'],['no','No']] },
+              ].map(({ key, label, opts }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginBottom: 6 }}>{label}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {opts.map(([val, lbl]) => (
+                      <button key={val} onClick={() => setPostExamAnswers(p => ({ ...p, [key]: val }))}
+                        style={{ padding: '6px 13px', borderRadius: 20, border: `1.5px solid ${postExamAnswers[key] === val ? BRAND.green : '#e0dcd6'}`, background: postExamAnswers[key] === val ? `${BRAND.green}15` : '#fff', fontSize: 12, fontFamily: S.f, color: postExamAnswers[key] === val ? BRAND.green : '#4a4540', cursor: 'pointer', fontWeight: postExamAnswers[key] === val ? 700 : 400 }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginBottom: 6 }}>One thing we should improve? (optional)</div>
+                <input value={postExamAnswers.improvement || ''} onChange={e => setPostExamAnswers(p => ({ ...p, improvement: e.target.value }))}
+                  placeholder="Tell us…" style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e0dcd6', fontSize: 13, fontFamily: S.f, background: '#fff', outline: 'none', boxSizing: 'border-box', color: '#1a1816' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => {
+                  submitFeedback({ feedback_type: 'post_exam', responses: postExamAnswers });
+                  localStorage.setItem(`sa_post_exam_${user?.id}`, '1');
+                  setPostExamFbkDone(true); setPostExamFbkVisible(false);
+                }} style={{ ...S.btn, ...S.pri, padding: '8px 20px', fontSize: 13 }}>Submit</button>
+                <button onClick={() => { localStorage.setItem(`sa_post_exam_${user?.id}`, '1'); setPostExamFbkVisible(false); }}
+                  style={{ ...S.btn, ...S.ghost, padding: '8px 14px', fontSize: 13, color: '#8a857e' }}>Dismiss</button>
+              </div>
+            </div>
+          )}
+
+          {/* Widget E — Return check-in */}
+          {returnCheckinVisible && !returnCheckinDone && (
+            <div style={{ ...S.card, marginBottom: 14, background: '#fffbeb', border: '1.5px solid #f6c90e50' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 10 }}>👋 Welcome back! What happened?</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                {[['took_a_break','Took a break'],['plan_not_working','Plan wasn\'t working'],['life','Life got in the way'],['studying_without_app','Studying without the app']].map(([val, lbl]) => (
+                  <button key={val} onClick={() => {
+                    submitFeedback({ feedback_type: 'return_checkin', responses: { reason: val } });
+                    setReturnCheckinDone(true); setReturnCheckinVisible(false);
+                  }} style={{ padding: '7px 14px', borderRadius: 20, border: '1.5px solid #f6c90e80', background: '#fff', fontSize: 12, fontFamily: S.f, color: '#92600a', cursor: 'pointer' }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Widget D — Week 1 check-in */}
+          {weekCheckinVisible && !weekCheckinDone && (
+            <div style={{ ...S.card, marginBottom: 14, background: '#f8faff', border: '1.5px solid #2980b930' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1816', fontFamily: S.f, marginBottom: 14 }}>📋 Week 1 check-in</div>
+              {[
+                { key: 'schedule_realistic', label: 'Is the daily schedule realistic?', opts: [['yes','Yes'],['too_much','Too much'],['too_little','Too little'],['timing_off','Timing doesn\'t fit my schedule']] },
+                { key: 'resources_helpful',  label: 'Are the resource recommendations helpful?', opts: [['very_helpful','Very helpful'],['somewhat','Somewhat'],['not_relevant','Not relevant to me']] },
+              ].map(({ key, label, opts }) => (
+                <div key={key} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginBottom: 6 }}>{label}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {opts.map(([val, lbl]) => (
+                      <button key={val} onClick={() => setWeekCheckinAnswers(p => ({ ...p, [key]: val }))}
+                        style={{ padding: '6px 12px', borderRadius: 16, border: `1.5px solid ${weekCheckinAnswers[key] === val ? '#2980b9' : '#e0dcd6'}`, background: weekCheckinAnswers[key] === val ? '#2980b915' : '#fff', fontSize: 12, fontFamily: S.f, color: weekCheckinAnswers[key] === val ? '#2980b9' : '#4a4540', cursor: 'pointer', fontWeight: weekCheckinAnswers[key] === val ? 700 : 400 }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => {
+                  submitFeedback({ feedback_type: 'week_checkin', responses: weekCheckinAnswers });
+                  localStorage.setItem(`sa_week_checkin_${user?.id}`, '1');
+                  setWeekCheckinDone(true); setWeekCheckinVisible(false);
+                }} style={{ ...S.btn, ...S.pri, padding: '8px 18px', fontSize: 13 }}>Submit</button>
+                <button onClick={() => { localStorage.setItem(`sa_week_checkin_${user?.id}`, '1'); setWeekCheckinVisible(false); }}
+                  style={{ ...S.btn, ...S.ghost, padding: '8px 12px', fontSize: 13, color: '#8a857e' }}>Dismiss</button>
+              </div>
+            </div>
+          )}
+
           {/* Row 2: Today's schedule */}
           <div style={{ ...S.card, marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
@@ -982,6 +1139,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 Today is outside your current plan window. <button style={{ ...S.btn, ...S.ghost, fontSize: 13, display: 'inline', padding: '4px 8px' }} onClick={() => navigate("onboarding")}>Generate a new plan →</button>
               </div>
             ) : (
+              <>
               <div style={{ display: 'grid', gap: 8 }}>
                 {/* Exam-week / exam-eve lockdown banner */}
                 {(todayData.day.dayType === 'exam-week' || todayData.day.dayType === 'exam-eve') && (
@@ -1038,6 +1196,57 @@ export default function StudyPlanner({ onShowTerms }) {
                   );
                 })}
               </div>
+              {/* Widget A — daily rating */}
+              {!dailyRatingDone && todayData.day.dayType !== 'rest' && (
+                <div style={{ borderTop: '1px solid #f0ece6', paddingTop: 12, marginTop: 4 }}>
+                  {dailyRatingThanks ? (
+                    <div style={{ fontSize: 13, color: BRAND.green, fontFamily: S.f, textAlign: 'center', padding: '4px 0' }}>Thanks for the feedback! 🙏</div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, fontWeight: 600 }}>How was today's plan?</span>
+                        {[['😟', 1], ['😐', 2], ['🙂', 3], ['🤩', 4]].map(([emoji, val]) => (
+                          <button key={val} onClick={() => {
+                            setDailyRatingValue(val);
+                            if (val >= 3) {
+                              submitFeedback({ feedback_type: 'daily_rating', rating: val, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                              localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
+                              setDailyRatingThanks(true);
+                              setTimeout(() => { setDailyRatingDone(true); setDailyRatingThanks(false); }, 2000);
+                            } else {
+                              setDailyRatingShowInput(true);
+                            }
+                          }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '2px 4px', lineHeight: 1, borderRadius: 6, transition: 'transform 0.1s', transform: dailyRatingValue === val ? 'scale(1.3)' : 'scale(1)' }}>
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                      {dailyRatingShowInput && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                          <input
+                            value={dailyRatingComment}
+                            onChange={e => setDailyRatingComment(e.target.value)}
+                            placeholder="What felt off? (optional)"
+                            style={{ flex: 1, fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid #e0dcd6', fontFamily: S.f, background: '#fafaf8', outline: 'none', color: '#1a1816' }}
+                          />
+                          <button onClick={() => {
+                            submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, responses: { comment: dailyRatingComment }, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                            localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
+                            setDailyRatingThanks(true);
+                            setTimeout(() => { setDailyRatingDone(true); setDailyRatingThanks(false); }, 2000);
+                          }} style={{ ...S.btn, ...S.pri, padding: '7px 14px', fontSize: 12, flexShrink: 0 }}>Send</button>
+                          <button onClick={() => {
+                            submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                            localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
+                            setDailyRatingDone(true);
+                          }} style={{ ...S.btn, ...S.ghost, padding: '7px 10px', fontSize: 12, color: '#aaa9a6', flexShrink: 0 }}>Skip</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              </>
             )}
           </div>
 
@@ -2144,6 +2353,7 @@ export default function StudyPlanner({ onShowTerms }) {
         .then(enrichment => setPlanEnrichment(enrichment))
         .catch(() => {})
         .finally(() => setEnrichmentLoading(false));
+      setPostNbmeDone(false); setPostNbmeRating(null); setPostNbmeComment('');
       navigate(previousAssessment && !isRebuild ? "comparison" : "plan");
     };
 
@@ -2284,6 +2494,39 @@ export default function StudyPlanner({ onShowTerms }) {
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
             <button style={{ ...S.btn, ...S.pri }} onClick={() => navigate("plan")}>View updated plan →</button>
           </div>
+
+          {/* Widget C — post-NBME feedback */}
+          {!postNbmeDone && (
+            <div style={{ ...S.card, marginTop: 12, background: '#fafaf9', border: '1px solid #e8e4de' }}>
+              <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, marginBottom: 10 }}>Did the study plan help you improve?</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {[['Yes', 3], ['Somewhat', 2], ['Not really', 1]].map(([lbl, val]) => (
+                  <button key={val} onClick={() => {
+                    setPostNbmeRating(val);
+                    if (val > 1) {
+                      submitFeedback({ feedback_type: 'post_nbme', rating: val });
+                      setPostNbmeDone(true);
+                    }
+                  }} style={{ padding: '7px 16px', borderRadius: 20, border: `1.5px solid ${postNbmeRating === val ? BRAND.green : '#e0dcd6'}`, background: postNbmeRating === val ? `${BRAND.green}15` : '#fff', fontSize: 13, fontFamily: S.f, color: postNbmeRating === val ? BRAND.green : '#4a4540', cursor: 'pointer', fontWeight: postNbmeRating === val ? 700 : 400 }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {postNbmeRating === 1 && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <input value={postNbmeComment} onChange={e => setPostNbmeComment(e.target.value)}
+                    placeholder="What would have helped more? (optional)"
+                    style={{ flex: 1, fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid #e0dcd6', fontFamily: S.f, background: '#fff', outline: 'none', color: '#1a1816' }} />
+                  <button onClick={() => {
+                    submitFeedback({ feedback_type: 'post_nbme', rating: 1, responses: { comment: postNbmeComment } });
+                    setPostNbmeDone(true);
+                  }} style={{ ...S.btn, ...S.pri, padding: '7px 14px', fontSize: 12, flexShrink: 0 }}>Send</button>
+                  <button onClick={() => { submitFeedback({ feedback_type: 'post_nbme', rating: 1 }); setPostNbmeDone(true); }}
+                    style={{ ...S.btn, ...S.ghost, padding: '7px 10px', fontSize: 12, color: '#aaa9a6', flexShrink: 0 }}>Skip</button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2830,6 +3073,61 @@ export default function StudyPlanner({ onShowTerms }) {
       )}
 
       {showChat && <Chat onClose={() => setShowChat(false)} />}
+
+      {/* Widget B — General feedback modal */}
+      {showFeedbackModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowFeedbackModal(false)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: '28px 28px 24px', maxWidth: 480, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1816', fontFamily: S.f }}>Share your feedback</div>
+              <button onClick={() => setShowFeedbackModal(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#aaa9a6', lineHeight: 1 }}>×</button>
+            </div>
+
+            {genFbkDone ? (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div style={{ fontSize: 28, marginBottom: 10 }}>🙏</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: BRAND.green, fontFamily: S.f }}>Thank you for the feedback!</div>
+                <div style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f, marginTop: 6 }}>It genuinely helps us improve StepAdapt.</div>
+                <button onClick={() => setShowFeedbackModal(false)} style={{ ...S.btn, ...S.pri, marginTop: 18, padding: '9px 24px' }}>Close</button>
+              </div>
+            ) : (
+              <>
+                {[
+                  { key: 'working_well',       label: "What's working well?",     placeholder: "The daily structure is really clear…" },
+                  { key: 'needs_improvement',  label: "What needs improvement?",  placeholder: "The content review videos aren't specific enough…" },
+                  { key: 'other',              label: "Anything else?",           placeholder: "…" },
+                ].map(({ key, label, placeholder }) => (
+                  <div key={key} style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#6b6560', fontFamily: S.f, display: 'block', marginBottom: 5 }}>{label}</label>
+                    <textarea value={genFbk[key]} onChange={e => setGenFbk(p => ({ ...p, [key]: e.target.value }))}
+                      placeholder={placeholder} rows={2}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e0dcd6', fontSize: 13, fontFamily: S.f, resize: 'vertical', background: '#fafaf8', outline: 'none', color: '#1a1816', boxSizing: 'border-box' }} />
+                  </div>
+                ))}
+
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#6b6560', fontFamily: S.f, marginBottom: 8 }}>How likely are you to recommend StepAdapt to a classmate?</div>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                      <button key={n} onClick={() => setGenFbk(p => ({ ...p, nps: n }))}
+                        style={{ width: 36, height: 36, borderRadius: 8, border: `1.5px solid ${genFbk.nps === n ? BRAND.green : '#e0dcd6'}`, background: genFbk.nps === n ? `${BRAND.green}18` : '#fff', fontSize: 13, fontWeight: genFbk.nps === n ? 700 : 500, color: genFbk.nps === n ? BRAND.green : '#4a4540', cursor: 'pointer' }}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button onClick={() => {
+                  const { nps, working_well, needs_improvement, other } = genFbk;
+                  submitFeedback({ feedback_type: 'general', rating: nps, responses: { working_well, needs_improvement, other } });
+                  setGenFbkDone(true);
+                }} style={{ ...S.btn, ...S.pri, width: '100%', padding: '11px', justifyContent: 'center', fontSize: 14 }}>Submit</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <Footer />
     </div>
   );

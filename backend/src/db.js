@@ -69,10 +69,26 @@ db.exec(`
     archived_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    feedback_type TEXT NOT NULL,
+    rating INTEGER,
+    responses TEXT NOT NULL DEFAULT '{}',
+    plan_day INTEGER,
+    days_until_exam INTEGER,
+    latest_score INTEGER,
+    focus_system TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_assessments_user ON assessments(user_id);
   CREATE INDEX IF NOT EXISTS idx_plans_user ON study_plans(user_id);
   CREATE INDEX IF NOT EXISTS idx_schedule_user ON class_schedule(user_id);
   CREATE INDEX IF NOT EXISTS idx_cycles_user ON study_cycles(user_id);
+  CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
+  CREATE INDEX IF NOT EXISTS idx_feedback_type ON feedback(feedback_type);
+  CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 `);
 
 // ── Migrations (safe: no-op if column already exists) ────────────────

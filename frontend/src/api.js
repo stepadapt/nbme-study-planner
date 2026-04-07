@@ -119,6 +119,10 @@ export const api = {
     },
   },
 
+  feedback: {
+    submit: (data) => request('POST', '/feedback', data),
+  },
+
   reset: {
     full: () => request('POST', '/reset/full'),
     keepScores: () => request('POST', '/reset/keep-scores'),

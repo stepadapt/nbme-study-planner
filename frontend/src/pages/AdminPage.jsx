@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 const G = '#1D9E75';
 const G2 = '#0F6E56';
@@ -184,7 +184,13 @@ export default function AdminPage() {
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
   const [selectedUserId, setSelectedUserId] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'feedback'
+  const [feedbackData,   setFeedbackData]   = useState(null);
+  const [fbkLoading,     setFbkLoading]     = useState(false);
+  const [fbkError,       setFbkError]       = useState('');
+  const [fbkTypeFilter,  setFbkTypeFilter]  = useState('all');
+  const [fbkRatingFilter,setFbkRatingFilter]= useState('all');
+  const [fbkSort,        setFbkSort]        = useState('newest');
 
   const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
@@ -215,6 +221,33 @@ export default function AdminPage() {
     setAdminKey(keyInput.trim());
     loadData(keyInput.trim());
   };
+
+  const loadFeedback = useCallback(async (key, typeFilter = 'all', ratingFilter = 'all', sort = 'newest') => {
+    setFbkLoading(true);
+    setFbkError('');
+    try {
+      let url = `/api/admin/feedback?sort=${sort}&limit=200`;
+      if (typeFilter !== 'all')  url += `&type=${typeFilter}`;
+      if (ratingFilter === 'negative') url += '&rating_max=2';
+      if (ratingFilter === 'positive') url += '&rating_min=3';
+      const API_BASE = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_BASE}${url}`, { headers: { 'x-admin-key': key } });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const data = await res.json();
+      setFeedbackData(data);
+    } catch (e) {
+      setFbkError(e.message);
+    } finally {
+      setFbkLoading(false);
+    }
+  }, []);
+
+  // Auto-load feedback when Feedback tab is first opened
+  useEffect(() => {
+    if (activeTab === 'feedback' && authed && !feedbackData && !fbkLoading) {
+      loadFeedback(adminKey, fbkTypeFilter, fbkRatingFilter, fbkSort);
+    }
+  }, [activeTab, authed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogout = () => {
     sessionStorage.removeItem('sa_admin_key');
@@ -316,7 +349,7 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 28, background: WHITE, borderRadius: 10, padding: 4, width: 'fit-content', border: '1px solid rgba(0,0,0,0.08)' }}>
-          {[['overview', '📊 Overview'], ['users', '👥 Users']].map(([t, label]) => (
+          {[['overview', '📊 Overview'], ['users', '👥 Users'], ['feedback', '💬 Feedback']].map(([t, label]) => (
             <button key={t} onClick={() => setActiveTab(t)} style={{
               padding: '7px 18px', borderRadius: 7, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               background: activeTab === t ? `linear-gradient(135deg, ${G}, ${G2})` : 'transparent',
@@ -428,6 +461,139 @@ export default function AdminPage() {
               ))}
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: LIGHT, textAlign: 'right' }}>{filteredUsers.length} of {users.length} users</div>
+          </>
+        )}
+
+        {/* ── Feedback tab ─────────────────────────────────────── */}
+        {activeTab === 'feedback' && (
+          <>
+            {/* Toolbar */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={fbkTypeFilter} onChange={e => { setFbkTypeFilter(e.target.value); loadFeedback(adminKey, e.target.value, fbkRatingFilter, fbkSort); }}
+                style={{ padding: '8px 12px', borderRadius: 9, border: '1.5px solid #e0dcd6', fontSize: 13, fontFamily: '"DM Sans",sans-serif', background: WHITE, color: DARK, cursor: 'pointer' }}>
+                {[['all','All types'],['daily_rating','Daily rating'],['general','General'],['post_nbme','Post-NBME'],['week_checkin','Week check-in'],['return_checkin','Return check-in'],['post_exam','Post-exam']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <select value={fbkRatingFilter} onChange={e => { setFbkRatingFilter(e.target.value); loadFeedback(adminKey, fbkTypeFilter, e.target.value, fbkSort); }}
+                style={{ padding: '8px 12px', borderRadius: 9, border: '1.5px solid #e0dcd6', fontSize: 13, fontFamily: '"DM Sans",sans-serif', background: WHITE, color: DARK, cursor: 'pointer' }}>
+                {[['all','All ratings'],['negative','Negative only (1-2)'],['positive','Positive only (3+)']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <select value={fbkSort} onChange={e => { setFbkSort(e.target.value); loadFeedback(adminKey, fbkTypeFilter, fbkRatingFilter, e.target.value); }}
+                style={{ padding: '8px 12px', borderRadius: 9, border: '1.5px solid #e0dcd6', fontSize: 13, fontFamily: '"DM Sans",sans-serif', background: WHITE, color: DARK, cursor: 'pointer' }}>
+                {[['newest','Newest first'],['oldest','Oldest first'],['lowest_rating','Lowest rating first']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <button onClick={() => loadFeedback(adminKey, fbkTypeFilter, fbkRatingFilter, fbkSort)}
+                style={{ padding: '8px 16px', borderRadius: 9, border: '1.5px solid rgba(0,0,0,0.1)', background: 'transparent', color: MID, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>↻ Refresh</button>
+            </div>
+
+            {fbkError && <div style={{ background: '#dc26260d', border: '1px solid #dc262620', color: DANGER, borderRadius: 8, padding: '9px 14px', fontSize: 13, marginBottom: 16 }}>{fbkError}</div>}
+            {fbkLoading && <div style={{ color: LIGHT, fontSize: 14, fontFamily: '"DM Sans",sans-serif', padding: '24px 0', textAlign: 'center' }}>Loading feedback…</div>}
+
+            {feedbackData && !fbkLoading && (
+              <>
+                {/* Summary metrics */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 24 }}>
+                  <StatCard
+                    label="Daily Avg Rating"
+                    value={feedbackData.metrics.daily_avg !== null ? `${feedbackData.metrics.daily_avg}/4` : '—'}
+                    sub={`Last 7 days · ${feedbackData.metrics.daily_avg_count} ratings`}
+                    color={feedbackData.metrics.daily_avg >= 3 ? G : feedbackData.metrics.daily_avg >= 2 ? O : DANGER}
+                  />
+                  <StatCard
+                    label="NPS Score"
+                    value={feedbackData.metrics.nps !== null ? feedbackData.metrics.nps : '—'}
+                    sub={`${feedbackData.metrics.nps_count} responses · range −100 to +100`}
+                    color={feedbackData.metrics.nps >= 50 ? G : feedbackData.metrics.nps >= 0 ? O : DANGER}
+                  />
+                  <StatCard
+                    label={`"Plan helped" rate`}
+                    value={feedbackData.metrics.plan_helped_rate !== null ? `${feedbackData.metrics.plan_helped_rate}%` : '—'}
+                    sub={`${feedbackData.metrics.plan_helped_count} post-NBME responses`}
+                    color={feedbackData.metrics.plan_helped_rate >= 60 ? G : O}
+                  />
+                  <div style={{ background: WHITE, borderRadius: 14, padding: '20px 22px', border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: MID, marginBottom: 8, fontFamily: '"DM Sans",sans-serif' }}>Top churn reasons</div>
+                    {feedbackData.metrics.churn_breakdown.length === 0
+                      ? <div style={{ fontSize: 13, color: LIGHT }}>No data yet</div>
+                      : feedbackData.metrics.churn_breakdown.slice(0, 3).map((c, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: DARK, marginBottom: 4, fontFamily: '"DM Sans",sans-serif' }}>
+                          <span style={{ color: MID }}>{c.reason.replace(/_/g, ' ')}</span>
+                          <span style={{ fontWeight: 700 }}>{c.pct}%</span>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+
+                {/* Daily rating trend sparkline */}
+                {feedbackData.daily_trend.length > 0 && (
+                  <div style={{ background: WHITE, borderRadius: 14, padding: '20px 24px', border: '1px solid rgba(0,0,0,0.07)', marginBottom: 24 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 14 }}>Daily rating trend — last 14 days</div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 56 }}>
+                      {feedbackData.daily_trend.map((d, i) => (
+                        <div key={i} title={`${d.day}: avg ${d.avg_rating} (${d.count} ratings)`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%', justifyContent: 'flex-end' }}>
+                          <div style={{ width: '100%', background: d.avg_rating >= 3 ? `linear-gradient(180deg,${G},${G2})` : d.avg_rating >= 2 ? `linear-gradient(180deg,${O},#c0392b)` : DANGER, borderRadius: '3px 3px 1px 1px', height: `${Math.max(4, (d.avg_rating / 4) * 50)}px`, opacity: 0.85, transition: 'height 0.3s' }} />
+                          <div style={{ fontSize: 9, color: LIGHT, fontFamily: '"DM Sans",sans-serif' }}>{d.day.slice(5)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Score correlation panel */}
+                {(feedbackData.correlation.improving_avg !== null || feedbackData.correlation.declining_avg !== null) && (
+                  <div style={{ background: WHITE, borderRadius: 14, padding: '20px 24px', border: '1px solid rgba(0,0,0,0.07)', marginBottom: 24 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>Feedback–outcome correlation</div>
+                    <div style={{ fontSize: 13, color: DARK, fontFamily: '"DM Sans",sans-serif', lineHeight: 1.7 }}>
+                      {feedbackData.correlation.improving_avg && <div>📈 Students with <strong>improving scores</strong> rate the plan <strong style={{ color: G }}>{feedbackData.correlation.improving_avg}/4</strong> on average <span style={{ color: LIGHT }}>({feedbackData.correlation.improving_count} students)</span></div>}
+                      {feedbackData.correlation.declining_avg && <div>📉 Students with <strong>plateaued/declining scores</strong> rate the plan <strong style={{ color: O }}>{feedbackData.correlation.declining_avg}/4</strong> on average <span style={{ color: LIGHT }}>({feedbackData.correlation.declining_count} students)</span></div>}
+                      {!feedbackData.correlation.improving_avg && !feedbackData.correlation.declining_avg && <div style={{ color: LIGHT }}>Not enough data yet — need users with 2+ assessments and daily ratings.</div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Feedback table */}
+                <div style={{ background: WHITE, borderRadius: 14, border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                  <div style={{ padding: '10px 16px', background: BG, borderBottom: '1px solid rgba(0,0,0,0.07)', display: 'grid', gridTemplateColumns: '140px 180px 110px 60px 1fr', gap: 8 }}>
+                    {['Date', 'User', 'Type', 'Rating', 'Responses / Context'].map(h => (
+                      <div key={h} style={{ fontSize: 11, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</div>
+                    ))}
+                  </div>
+
+                  {feedbackData.feedback.length === 0 && (
+                    <div style={{ padding: '32px 16px', textAlign: 'center', color: LIGHT, fontSize: 13 }}>No feedback entries match these filters.</div>
+                  )}
+
+                  {feedbackData.feedback.map((f, i) => {
+                    const typeColors = { daily_rating: G, general: '#7c3aed', post_nbme: O, week_checkin: '#0369a1', return_checkin: '#92400e', post_exam: DANGER };
+                    const ratingEmojis = { 1: '😟', 2: '😐', 3: '🙂', 4: '🤩' };
+                    const responseText = f.responses ? Object.entries(f.responses).filter(([,v]) => v).map(([k, v]) => `${k.replace(/_/g,' ')}: ${v}`).join(' · ') : '';
+                    const ctx = [
+                      f.plan_day ? `Day ${f.plan_day}` : null,
+                      f.days_until_exam !== null ? `T-${f.days_until_exam}d` : null,
+                      f.latest_score ? `${f.latest_score}% avg` : null,
+                      f.focus_system || null,
+                    ].filter(Boolean).join(' · ');
+                    return (
+                      <div key={f.id} style={{ display: 'grid', gridTemplateColumns: '140px 180px 110px 60px 1fr', gap: 8, padding: '10px 16px', borderBottom: i < feedbackData.feedback.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', background: i % 2 ? '#fafaf9' : WHITE, alignItems: 'start' }}
+                        onMouseEnter={e => e.currentTarget.style.background = `${G}08`}
+                        onMouseLeave={e => e.currentTarget.style.background = i % 2 ? '#fafaf9' : WHITE}>
+                        <div style={{ fontSize: 11, color: LIGHT }}>{new Date(f.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
+                        <div style={{ fontSize: 12, color: MID, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.user_email || '—'}</div>
+                        <div><span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: `${typeColors[f.feedback_type] || LIGHT}18`, color: typeColors[f.feedback_type] || LIGHT }}>{f.feedback_type.replace(/_/g,' ')}</span></div>
+                        <div style={{ fontSize: 16 }}>{f.rating ? (ratingEmojis[f.rating] || f.rating) : <span style={{ color: LIGHT }}>—</span>}</div>
+                        <div>
+                          {responseText && <div style={{ fontSize: 12, color: DARK, fontFamily: '"DM Sans",sans-serif', lineHeight: 1.5, marginBottom: ctx ? 3 : 0 }}>{responseText}</div>}
+                          {ctx && <div style={{ fontSize: 11, color: LIGHT }}>{ctx}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, color: LIGHT, textAlign: 'right' }}>
+                  {feedbackData.feedback.length} of {feedbackData.total} entries
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

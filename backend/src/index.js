@@ -11,8 +11,9 @@ const planRoutes = require('./routes/plans');
 const aiRoutes = require('./routes/ai');
 const scheduleRoutes = require('./routes/schedule');
 const exportRoutes = require('./routes/export');
-const adminRoutes = require('./routes/admin');
-const resetRoutes = require('./routes/reset');
+const adminRoutes    = require('./routes/admin');
+const resetRoutes    = require('./routes/reset');
+const feedbackRoutes = require('./routes/feedback');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -111,6 +112,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/reset', resetRoutes);
+app.use('/api/feedback', feedbackRoutes);
 app.use('/api/admin', adminLimiter, adminRoutes);
 
 // Health check
