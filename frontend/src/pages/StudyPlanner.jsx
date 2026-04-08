@@ -272,7 +272,8 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none" });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", rest_days: [] });
+  const [showZeroRestNudge, setShowZeroRestNudge] = useState(false);
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
@@ -1031,7 +1032,12 @@ export default function StudyPlanner({ onShowTerms }) {
                   <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1816' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
                 )}
               </div>
-              {todayData?.day.totalQuestions > 0 && (
+              {todayData?.day.dayType === 'student-rest' && (
+                <div style={{ background: '#27ae6012', color: '#166534', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, fontFamily: S.f }}>
+                  🌿 Rest day
+                </div>
+              )}
+              {todayData?.day.totalQuestions > 0 && todayData?.day.dayType !== 'student-rest' && (
                 <div style={{ background: '#b4530912', color: '#b45309', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, fontFamily: S.f }}>
                   {todayData.day.totalQuestions} Qs today
                 </div>
@@ -1048,6 +1054,40 @@ export default function StudyPlanner({ onShowTerms }) {
             ) : !todayData ? (
               <div style={{ textAlign: 'center', padding: '16px 0', color: '#8a857e', fontFamily: S.f, fontSize: 14 }}>
                 Today is outside your current plan window. <button style={{ ...S.btn, ...S.ghost, fontSize: 13, display: 'inline', padding: '4px 8px' }} onClick={() => navigate("onboarding")}>Generate a new plan →</button>
+              </div>
+            ) : todayData.day.dayType === 'student-rest' ? (
+              <div style={{ padding: '4px 0' }}>
+                <div style={{ padding: '14px 16px', background: '#27ae6008', borderRadius: 10, border: '1px solid #27ae6025', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 20 }}>🌿</span>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#166534', fontFamily: S.f }}>Rest day</div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#2c2a26', fontFamily: S.f, lineHeight: 1.5, marginBottom: 8 }}>
+                    {todayData.day.blocks?.[0]?.label} — then you're done for the day.
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5, fontStyle: 'italic' }}>
+                    You've been working hard. Rest is part of the process. Your brain consolidates what you've learned during downtime — this is productive.
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {todayBlocksWithTimes.map((block, i) => {
+                    const bc = blockColors[block.type] || blockColors['catchup'];
+                    return (
+                      <div key={i} style={{ padding: '12px 14px', background: bc.bg, borderRadius: 10, borderLeft: `3px solid ${bc.border}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: block.tasks?.length > 0 ? 8 : 0 }}>
+                          <span style={{ fontSize: 15 }}>{blockIcon(block.type)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{block.label}</span>
+                          <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, marginLeft: 'auto' }}>{block.startTime} – {block.endTime}</span>
+                        </div>
+                        {block.tasks?.map((task, j) => (
+                          <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
+                            <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <>
@@ -1100,7 +1140,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 })}
               </div>
               {/* Widget A — daily rating */}
-              {!dailyRatingDone && todayData.day.dayType !== 'rest' && (
+              {!dailyRatingDone && todayData.day.dayType !== 'rest' && todayData.day.dayType !== 'student-rest' && (
                 <div style={{ borderTop: '1px solid #f0ece6', paddingTop: 12, marginTop: 4 }}>
                   {dailyRatingThanks ? (
                     <div style={{ fontSize: 13, color: BRAND.green, fontFamily: S.f, textAlign: 'center', padding: '4px 0' }}>Thanks for the feedback! 🙏</div>
@@ -1533,6 +1573,39 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
           {profile.examDate && (() => { const d = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)); const mode = d >= 42 ? "full dedicated" : d >= 21 ? "standard" : d >= 10 ? "compressed" : "triage"; return <p style={{ ...S.muted, textAlign: "center", marginTop: 8 }}><strong style={{ color: "#1a1816" }}>{d} days</strong> — <strong style={{ color: d < 14 ? "#c0392b" : "#1a1816" }}>{mode}</strong> plan{d < 14 ? ". Every hour counts." : "."}</p>; })()}
 
+          {/* ── Rest days ── */}
+          <div style={{ ...S.card, marginTop: 0 }}>
+            <label style={S.label}>Rest days</label>
+            <p style={{ ...S.muted, marginBottom: 12, marginTop: -4, lineHeight: 1.5 }}>
+              Which days do you want off each week? We strongly recommend at least one rest day — burnout is real and your brain needs recovery time to consolidate what you've learned.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (profile.rest_days || []).length >= 3 ? 10 : 0 }}>
+              {DAY_FULL.map((day, i) => {
+                const selected = (profile.rest_days || []).includes(i);
+                return (
+                  <div key={i}
+                    style={{ ...S.chip, ...(selected ? S.chipOn : {}), fontSize: 13 }}
+                    onClick={() => setProfile(p => {
+                      const current = p.rest_days || [];
+                      return { ...p, rest_days: selected ? current.filter(d => d !== i) : [...current, i] };
+                    })}>
+                    {selected ? '✓ ' : ''}{day.slice(0, 3)}
+                  </div>
+                );
+              })}
+            </div>
+            {(profile.rest_days || []).length >= 3 && (() => {
+              const restCount = (profile.rest_days || []).length;
+              const studyDaysPerWeek = 7 - restCount;
+              const daysLeft = profile.examDate ? Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)) : 0;
+              return (
+                <div style={{ padding: '10px 12px', background: '#e67e220d', borderRadius: 8, border: '1px solid #e67e2240', fontSize: 12, color: '#92600a', fontFamily: S.f, lineHeight: 1.5, marginTop: 10 }}>
+                  ⚠️ That's {restCount} rest days per week, which leaves only {studyDaysPerWeek} study days. With {daysLeft} days until your exam, this may not be enough time to cover all your weak areas. Consider reducing to 1–2 rest days.
+                </div>
+              );
+            })()}
+          </div>
+
           {/* ── Class schedule ── */}
           <div style={{ ...S.card, marginTop: 0 }}>
             <label style={S.label}>Class schedule (optional)</label>
@@ -1644,7 +1717,28 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}><button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => navigate(assessments.length === 0 ? "history-check" : "scores")}>Continue →</button></div>
+          {showZeroRestNudge && (
+            <div style={{ padding: '14px 18px', background: '#fffbeb', borderRadius: 10, border: '1px solid #f6c90e60', marginTop: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 6 }}>Are you sure? No rest days selected.</div>
+              <p style={{ ...S.muted, fontSize: 13, marginBottom: 12, lineHeight: 1.5, color: '#92600a' }}>
+                Students who take at least one rest day per week consistently perform better on exam day. Burnout during dedicated is the #1 reason students underperform. We strongly recommend at least one day off.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button style={{ ...S.btn, ...S.sec, fontSize: 13 }} onClick={() => setShowZeroRestNudge(false)}>← Add a rest day</button>
+                <button style={{ ...S.btn, ...S.ghost, fontSize: 13, color: '#8a857e' }} onClick={() => { setShowZeroRestNudge(false); navigate(assessments.length === 0 ? "history-check" : "scores"); }}>Continue without rest days</button>
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+            <button disabled={!ok} style={{ ...S.btn, ...S.pri, opacity: ok ? 1 : 0.4 }} onClick={() => {
+              if (!showZeroRestNudge && (profile.rest_days || []).length === 0) {
+                setShowZeroRestNudge(true);
+              } else {
+                setShowZeroRestNudge(false);
+                navigate(assessments.length === 0 ? "history-check" : "scores");
+              }
+            }}>Continue →</button>
+          </div>
         </div>
       </div>
     );
@@ -2665,7 +2759,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
           /* Render a full day's content (shared across day + full views) */
           const renderDayContent = (day) => {
-            const special = day.dayType === 'nbme' || day.dayType === 'rest';
+            const special = day.dayType === 'nbme' || day.dayType === 'rest' || day.dayType === 'student-rest';
 
             // Deduplicate sub-topics across all blocks → show once at top of day
             const seenTopics = new Set();
@@ -2696,6 +2790,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {day.calendarDay}</span>
                   {day.dayType === 'nbme' && <span style={{ ...S.tag, background: '#c0392b18', color: '#c0392b' }}>📋 NBME</span>}
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
+                  {day.dayType === 'student-rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>🌿 Rest day</span>}
                   {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
                   {day.dayType === 'exam-week' && <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed' }}>⚡ Exam week</span>}
                   {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75' }}>🌙 Exam eve</span>}
@@ -2813,7 +2908,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <div style={{ fontSize: 12, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
                       </div>
                       {week.days.map((day, di) => {
-                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : day.dayType === 'rest' ? '#27ae60' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
+                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
                         return (
                           <div key={di}
                             onClick={() => { setPlanViewDay(day.calendarDay); setPlanViewMode('day'); }}
@@ -2821,9 +2916,10 @@ export default function StudyPlanner({ onShowTerms }) {
                             <span style={{ ...S.tag, background: '#1a181608', color: '#6b6560', minWidth: 50, textAlign: 'center', flexShrink: 0 }}>Day {day.calendarDay}</span>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
-                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
                               </div>
-                              {day.totalQuestions > 0 && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
+                              {day.dayType === 'student-rest' && <div style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, marginTop: 1 }}>0 Qs — rest day · 30–45 min light activity</div>}
+                              {day.totalQuestions > 0 && day.dayType !== 'student-rest' && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
                             </div>
                             <span style={{ fontSize: 14, color: '#d0ccc6' }}>›</span>
                           </div>

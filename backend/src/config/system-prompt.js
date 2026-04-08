@@ -271,6 +271,10 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
   const resources = JSON.parse(profile?.resources || '[]');
   const ankiLevel = planSnapshot.anki_experience_level || 'none';
   const takenForms = JSON.parse(profile?.taken_assessments || '[]');
+  const restDays = JSON.parse(profile?.rest_days || '[]');
+  const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const todayWeekday = new Date().getDay();
+  const isTodayRestDay = restDays.length > 0 && restDays.includes(todayWeekday);
 
   lines.push('STUDENT CONTEXT:');
   lines.push(`- Student: ${name}`);
@@ -279,6 +283,8 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
   lines.push(`- Resources: ${resources.length ? resources.join(', ') : 'not specified'}`);
   lines.push(`- Anki experience level: ${ankiLevel}`);
   lines.push(`- Practice forms already taken: ${takenForms.length ? takenForms.join(', ') : 'none recorded'}`);
+  lines.push(`- Scheduled rest days: ${restDays.length > 0 ? restDays.map(d => DAY_NAMES_SHORT[d]).join(', ') : 'none'}`);
+  lines.push(`- Is today a rest day: ${isTodayRestDay ? 'YES — student should rest, not study' : 'no'}`);
 
   if (!assessments || assessments.length === 0) {
     lines.push('');

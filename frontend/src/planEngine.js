@@ -572,6 +572,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
   const hrs = profile.hoursPerDay || 8;
+  const planStartDate = new Date();
+  planStartDate.setHours(0, 0, 0, 0);
+  const studentRestDaySet = new Set(profile.rest_days || []);
 
   let priorities = [];
   for (const cat of STEP1_CATEGORIES) {
@@ -612,10 +615,14 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const isInLockdown = totalCalendarDays >= 14 && calendarDay >= totalCalendarDays - 8 && !isLastDay;
     const isExamEve = isInLockdown && calendarDay === totalCalendarDays - 1;
     const isExamWeekDay = isInLockdown && !isExamEve;
+    // Student-selected rest day: check actual weekday for this calendar date
+    const dayDate = new Date(planStartDate);
+    dayDate.setDate(planStartDate.getDate() + d);
+    const isStudentRest = studentRestDaySet.size > 0 && studentRestDaySet.has(dayDate.getDay());
     if (isLastDay) {
       daySchedule.push({ calendarDay, type: "rest" });
     } else if (assessmentDayMap.has(calendarDay)) {
-      // NBME days always take priority — Free120 is often inside the exam-week window
+      // Assessments always override rest days — NBME/Free120 takes priority
       daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
     } else if (restDebriefMap.has(calendarDay)) {
       daySchedule.push({ calendarDay, type: "rest-debrief", prevAssessItem: restDebriefMap.get(calendarDay) });
@@ -623,6 +630,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       daySchedule.push({ calendarDay, type: "exam-eve" });
     } else if (isExamWeekDay) {
       daySchedule.push({ calendarDay, type: "exam-week" });
+    } else if (isStudentRest) {
+      daySchedule.push({ calendarDay, type: "student-rest" });
     } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
       daySchedule.push({ calendarDay, type: "light" });
     } else {
@@ -778,6 +787,28 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "exam-week",
         blocks: lockdownBlocks, totalQuestions: lockdownTotalQs,
+      });
+      continue;
+    }
+
+    // ── Student-selected rest day ─────────────────────────────────────
+    if (sched.type === "student-rest") {
+      const studentRestBlocks = [];
+      if (hasAnki) {
+        studentRestBlocks.push({ type: "anki", label: "Anki reviews only", tasks: [
+          { resource: "AnKing Deck", activity: "Due reviews only — 30–45 min max. No new cards. Stop at 45 minutes even if cards remain.", hours: 0.75 },
+        ]});
+      } else {
+        studentRestBlocks.push({ type: "content-reactive", label: "Light First Aid review only", tasks: [
+          { resource: "First Aid", activity: "Flip through only your starred/flagged weak pages. No deep reading. No new material. Skim only. Stop at 45 minutes.", hours: 0.75 },
+        ]});
+      }
+      studentRestBlocks.push({ type: "rest", label: "Rest of day OFF", tasks: [
+        { resource: "Self", activity: `The rest of today is OFF. No questions. No First Aid.${hasAnki ? '' : ' No UWorld.'} No videos. Go outside, exercise, see friends, sleep. Your brain consolidates during rest — this is productive.`, hours: 0.5 },
+      ]});
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay, dayType: "student-rest",
+        blocks: studentRestBlocks, totalQuestions: 0,
       });
       continue;
     }
