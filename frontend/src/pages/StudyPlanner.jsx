@@ -89,84 +89,6 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
 }
 
 // ── Sub-topic Progress Panel ──────────────────────────────────────────────
-// Shows highest-yield sub-topics within a focus block as interactive chips.
-// Student marks each as ✓ improving or ✗ still struggling to get adaptive guidance.
-function SubTopicProgressPanel({ highYield, subTopicProgress = {}, onToggle, qbankFilterTip, compact = false }) {
-  if (!highYield || highYield.length === 0) return null;
-
-  const f = 'Georgia, "Times New Roman", serif';
-  const isReadOnly = !onToggle;
-
-  // Compute adaptive narrative (only shown in interactive / question-block mode)
-  const improvingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'improving');
-  const strugglingTopics = highYield.filter(hy => subTopicProgress[hy.topic] === 'struggling');
-  const activeTopics = highYield.filter(hy => subTopicProgress[hy.topic] !== 'improving');
-
-  let narrativeText = null;
-  if (!isReadOnly) {
-    if (improvingTopics.length > 0 && activeTopics.length > 0) {
-      const improvingNames = improvingTopics.map(t => t.topic.split('(')[0].trim()).join(' + ');
-      const nextPriority = strugglingTopics[0] || activeTopics[0];
-      const nextName = nextPriority?.topic.split('(')[0].trim();
-      narrativeText = `↑ ${improvingNames} improving — shift focus to ${nextName}`;
-    } else if (improvingTopics.length > 0 && activeTopics.length === 0) {
-      narrativeText = '↑ All tracked sub-topics improving — run random blocks across systems to consolidate';
-    }
-  }
-
-  const chipStyle = (status) => {
-    if (!isReadOnly) {
-      if (status === 'improving') return { bg: '#1d9e7510', border: '#1d9e75', text: '#1d6e56', icon: '✓' };
-      if (status === 'struggling') return { bg: '#c0392b0d', border: '#c0392b', text: '#a93226', icon: '✗' };
-      return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: '○' };
-    }
-    // Read-only: neutral styling, no status icons
-    return { bg: '#fefcf8', border: '#e8dcc8', text: '#6b6560', icon: null };
-  };
-
-  return (
-    <div style={{ marginBottom: 6, padding: compact ? '6px 8px' : '8px 10px', background: '#fefcf8', borderRadius: 8, border: '1px solid #e8dcc8' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: f }}>
-          Prioritize within this system:
-        </div>
-        {!isReadOnly && <div style={{ fontSize: 10, color: '#b0a898', fontFamily: f }}>tap to track progress</div>}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: narrativeText || qbankFilterTip ? 8 : 0 }}>
-        {highYield.map((hy, hi) => {
-          const status = isReadOnly ? null : (subTopicProgress[hy.topic] || null);
-          const c = chipStyle(status);
-          const shortName = hy.topic.split('(')[0].trim();
-          const chipProps = isReadOnly
-            ? { style: { fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4, background: c.bg, color: c.text, fontWeight: 600, border: `1px solid ${c.border}`, display: 'inline-flex', alignItems: 'center', gap: 4 } }
-            : {
-                onClick: () => onToggle(hy.topic),
-                title: `Click to mark as: ${status === null ? 'improving' : status === 'improving' ? 'struggling' : 'reset'}`,
-                style: { fontSize: compact ? 10 : 11, fontFamily: f, padding: '3px 9px', borderRadius: 4, background: c.bg, color: c.text, fontWeight: 600, border: `1px solid ${c.border}`, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, transition: 'all 0.15s' },
-              };
-          const Tag = isReadOnly ? 'span' : 'button';
-          return (
-            <Tag key={hi} {...chipProps}>
-              {!isReadOnly && c.icon && <span style={{ fontSize: 10 }}>{c.icon}</span>}
-              {hy.yield >= 9 && <span style={{ fontSize: 9, color: '#b45309' }}>★</span>}
-              {shortName}
-            </Tag>
-          );
-        })}
-      </div>
-      {narrativeText && (
-        <div style={{ fontSize: 11, color: '#1d6e56', fontFamily: f, fontWeight: 600, padding: '5px 8px', background: '#1d9e750d', borderRadius: 6, marginBottom: qbankFilterTip ? 6 : 0 }}>
-          {narrativeText}
-        </div>
-      )}
-      {qbankFilterTip && (
-        <div style={{ fontSize: 11, color: '#6b6560', fontFamily: f, padding: '5px 8px', background: '#2563eb08', borderRadius: 6, borderLeft: '2px solid #2563eb50' }}>
-          🔍 {qbankFilterTip}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── AI Enrichment helpers ──────────────────────────────────────────────────
 // Builds the student_data payload for the plan-intelligence endpoint.
@@ -568,17 +490,6 @@ export default function StudyPlanner({ onShowTerms }) {
     return next;
   });
 
-  const toggleSubTopicProgress = (topicKey) => {
-    setProfile(p => {
-      const current = (p.subTopicProgress || {})[topicKey];
-      const next = current === undefined || current === null ? 'improving'
-        : current === 'improving' ? 'struggling'
-        : null;
-      const updated = { ...(p.subTopicProgress || {}), [topicKey]: next };
-      if (next === null) delete updated[topicKey];
-      return { ...p, subTopicProgress: updated };
-    });
-  };
 
   // ── Export handlers ───────────────────────────────────────────────
   const handleExport = async (format) => {
@@ -1182,15 +1093,7 @@ export default function StudyPlanner({ onShowTerms }) {
                           <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
                         </div>
                       ))}
-                      {block.highYield && block.highYield.length > 0 && (
-                        <SubTopicProgressPanel
-                          highYield={block.highYield}
-                          subTopicProgress={profile.subTopicProgress}
-                          onToggle={block.type === 'content' || block.type === 'content-reactive' ? null : toggleSubTopicProgress}
-                          qbankFilterTip={block.qbankFilterTip}
-                          compact={true}
-                        />
-                      )}
+
                       {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} compact={true} />}
                     </div>
                   );
@@ -2802,17 +2705,6 @@ export default function StudyPlanner({ onShowTerms }) {
                   {day.totalQuestions > 0 && <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816', marginLeft: 'auto' }}>{day.totalQuestions} Qs</span>}
                 </div>
 
-                {/* Sub-topic priority list — shown ONCE at top of day */}
-                {allHighYield.length > 0 && (
-                  <div style={{ marginBottom: 8 }}>
-                    <SubTopicProgressPanel
-                      highYield={allHighYield}
-                      subTopicProgress={profile.subTopicProgress}
-                      onToggle={toggleSubTopicProgress}
-                      qbankFilterTip={dayQbankTip}
-                    />
-                  </div>
-                )}
 
                 {/* Blocks (collapsed by default) */}
                 <div style={{ display: 'grid', gap: 5 }}>
