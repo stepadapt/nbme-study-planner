@@ -297,6 +297,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [histSaving, setHistSaving] = useState(false);
   const [histError, setHistError] = useState('');
   const [histUploadingScreenshot, setHistUploadingScreenshot] = useState(false);
+  const [histHasScores, setHistHasScores] = useState(null); // null | boolean — tracks yes/no answer in unified assessment screen
 
   // ── Feedback state ────────────────────────────────────────────────
   // Widget A – daily rating
@@ -464,25 +465,6 @@ export default function StudyPlanner({ onShowTerms }) {
     profileSaveTimer.current = setTimeout(() => saveSchedule(updated), 1000);
   };
 
-  // ── Practice test helpers ─────────────────────────────────────────
-  const toggleTakenAssessment = (id) => {
-    setProfile(p => {
-      const taken = p.takenAssessments || [];
-      const exists = taken.find(t => t.id === id);
-      if (exists) return { ...p, takenAssessments: taken.filter(t => t.id !== id) };
-      return { ...p, takenAssessments: [...taken, { id }] };
-    });
-  };
-
-  const updateTakenDate = (id, date) => {
-    setProfile(p => {
-      const taken = p.takenAssessments || [];
-      const exists = taken.find(t => t.id === id);
-      if (exists) return { ...p, takenAssessments: taken.map(t => t.id === id ? { ...t, takenDate: date || undefined } : t) };
-      return { ...p, takenAssessments: [...taken, { id, takenDate: date || undefined }] };
-    });
-  };
-
   // ── Sub-topic progress tracking ──────────────────────────────────
   // Cycles: null → 'improving' → 'struggling' → null
   const toggleBlock = (key) => setExpandedBlocks(prev => {
@@ -542,7 +524,11 @@ export default function StudyPlanner({ onShowTerms }) {
     setScores({});
     setNbmeForm("");
     setStickingPoints([]);
-    navigate("scores");
+    setHistHasScores(true);
+    setHistList([]);
+    setHistDraft(defaultHistDraft());
+    setHistError('');
+    navigate("history-import");
   };
 
   // Rebuild plan from existing scores (Quick Actions "New Plan" + Option B reset)
@@ -1642,81 +1628,6 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
-          {/* ── Practice tests already taken ── */}
-          <div style={{ ...S.card, marginTop: 0 }}>
-            <label style={S.label}>Practice tests already taken</label>
-            <p style={{ ...S.muted, marginBottom: 16, marginTop: -4 }}>
-              Select any you've already done — the plan will schedule what's left and won't repeat anything you took in the last 6 weeks.
-            </p>
-            {/* NBME Forms 26–33 */}
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#8a857e', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>NBME CBSSA Forms</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {PRACTICE_TESTS.filter(t => t.type === 'nbme').map(test => {
-                  const entry = (profile.takenAssessments || []).find(t => t.id === test.id);
-                  const isTaken = !!entry;
-                  return (
-                    <div key={test.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <div
-                        style={{ ...S.chip, ...(isTaken ? S.chipOn : {}), fontSize: 13 }}
-                        onClick={() => toggleTakenAssessment(test.id)}
-                      >
-                        {isTaken ? '✓ ' : ''}{test.name}
-                      </div>
-                      {isTaken && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>When?</span>
-                          <input
-                            type="date"
-                            style={{ ...S.input, padding: '4px 8px', fontSize: 11, width: 130 }}
-                            value={entry.takenDate || ''}
-                            onChange={e => updateTakenDate(test.id, e.target.value)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Special tests */}
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#8a857e', fontFamily: S.f, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>UW Self-Assessments & Other</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(test => {
-                  const entry = (profile.takenAssessments || []).find(t => t.id === test.id);
-                  const isTaken = !!entry;
-                  return (
-                    <div key={test.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <div
-                        style={{ ...S.chip, ...(isTaken ? S.chipOn : {}), fontSize: 13 }}
-                        onClick={() => toggleTakenAssessment(test.id)}
-                      >
-                        {isTaken ? '✓ ' : ''}{test.icon ? `${test.icon} ` : ''}{test.name}
-                      </div>
-                      {isTaken && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>When?</span>
-                          <input
-                            type="date"
-                            style={{ ...S.input, padding: '4px 8px', fontSize: 11, width: 130 }}
-                            value={entry.takenDate || ''}
-                            onChange={e => updateTakenDate(test.id, e.target.value)}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            {(profile.takenAssessments || []).length > 0 && (
-              <p style={{ ...S.muted, marginTop: 10, fontSize: 12 }}>
-                {(profile.takenAssessments || []).length} test{(profile.takenAssessments || []).length > 1 ? 's' : ''} marked as taken — scheduler will work around these.
-              </p>
-            )}
-          </div>
-
           {showZeroRestNudge && (
             <div style={{ padding: '14px 18px', background: '#fffbeb', borderRadius: 10, border: '1px solid #f6c90e60', marginTop: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 6 }}>Are you sure? No rest days selected.</div>
@@ -1725,7 +1636,7 @@ export default function StudyPlanner({ onShowTerms }) {
               </p>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button style={{ ...S.btn, ...S.sec, fontSize: 13 }} onClick={() => setShowZeroRestNudge(false)}>← Add a rest day</button>
-                <button style={{ ...S.btn, ...S.ghost, fontSize: 13, color: '#8a857e' }} onClick={() => { setShowZeroRestNudge(false); navigate(assessments.length === 0 ? "history-check" : "scores"); }}>Continue without rest days</button>
+                <button style={{ ...S.btn, ...S.ghost, fontSize: 13, color: '#8a857e' }} onClick={() => { setShowZeroRestNudge(false); navigate(assessments.length === 0 ? "history-import" : "scores"); }}>Continue without rest days</button>
               </div>
             </div>
           )}
@@ -1735,7 +1646,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 setShowZeroRestNudge(true);
               } else {
                 setShowZeroRestNudge(false);
-                navigate(assessments.length === 0 ? "history-check" : "scores");
+                navigate(assessments.length === 0 ? "history-import" : "scores");
               }
             }}>Continue →</button>
           </div>
@@ -1801,7 +1712,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const removeFromList = (idx) => setHistList(prev => prev.filter((_, i) => i !== idx));
 
     const saveAllAndContinue = async () => {
-      if (histList.length === 0) { navigate("self-assessment"); return; }
+      if (histList.length === 0) { navigate(plan ? "dashboard" : "self-assessment"); return; }
       setHistSaving(true);
       setHistError('');
       try {
@@ -1869,10 +1780,43 @@ export default function StudyPlanner({ onShowTerms }) {
     return (
       <div style={S.app}>
         <VerifyBanner />
-        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("history-check")}>← Back</button>{dots(1)}<UserBar /></div>
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(plan ? "dashboard" : "onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
         <div style={S.wrap}>
-          <h1 style={S.h1}>Import past NBME scores</h1>
-          <p style={S.sub}>Add each exam you've taken — oldest first. We'll use your full trajectory to build a smarter plan.</p>
+          <h1 style={S.h1}>Your assessment history</h1>
+          <p style={S.sub}>Add any NBME exams you've already taken. The plan uses your real scores to focus on what actually needs work.</p>
+
+          {/* ── Yes / No gate (only shown first time, before any exams added) ── */}
+          {histHasScores === null && histList.length === 0 && (
+            <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
+              <button
+                style={{ ...S.card, marginBottom: 0, border: '2px solid #1D9E7530', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
+                onClick={() => setHistHasScores(true)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <span style={{ fontSize: 32, flexShrink: 0 }}>📋</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>Yes — I have past NBME scores</div>
+                    <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>Add them so your plan knows your trajectory, sticky weaknesses, and current baseline.</div>
+                  </div>
+                  <span style={{ fontSize: 20, color: '#1D9E75', flexShrink: 0 }}>→</span>
+                </div>
+              </button>
+              <button
+                style={{ ...S.card, marginBottom: 0, cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                onClick={() => navigate("self-assessment")}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <span style={{ fontSize: 32, flexShrink: 0 }}>🆕</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>No — I'm starting fresh</div>
+                    <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>Haven't taken an NBME yet. We'll build a diagnostic-first plan to get you real data fast.</div>
+                  </div>
+                  <span style={{ fontSize: 20, color: '#8a857e', flexShrink: 0 }}>→</span>
+                </div>
+              </button>
+              <p style={{ ...S.muted, fontSize: 12, textAlign: 'center' }}>You can always add past exams later from the dashboard.</p>
+            </div>
+          )}
 
           {histList.length > 0 && (
             <div style={S.card}>
@@ -1897,7 +1841,7 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           )}
 
-          <div style={S.card}>
+          {(histHasScores === true || histList.length > 0) && <div style={S.card}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1816', fontFamily: S.f, marginBottom: 14 }}>
               {histList.length === 0 ? 'Add your oldest exam first' : 'Add another exam'}
             </div>
@@ -1953,7 +1897,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 ＋ Add to list
               </button>
             </div>
-          </div>
+          </div>}
 
           {histError && !histUploadingScreenshot && histSaving && (
             <div style={{ padding: '10px 14px', background: '#c0392b08', borderRadius: 8, borderLeft: '3px solid #c0392b', fontSize: 13, color: '#c0392b', fontFamily: S.f, marginBottom: 12 }}>
@@ -1961,18 +1905,20 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 12 }}>
-            <p style={{ ...S.muted, fontSize: 13, flex: 1 }}>
-              {histList.length === 0 ? 'Add at least one exam, then tap Done.' : `${histList.length} exam${histList.length > 1 ? 's' : ''} ready. Tap Done to import and continue.`}
-            </p>
-            <button
-              disabled={histList.length === 0 || histSaving}
-              style={{ ...S.btn, ...S.pri, opacity: (histList.length === 0 || histSaving) ? 0.4 : 1, flexShrink: 0 }}
-              onClick={saveAllAndContinue}
-            >
-              {histSaving ? 'Saving…' : `Done →`}
-            </button>
-          </div>
+          {(histHasScores === true || histList.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 12 }}>
+              <p style={{ ...S.muted, fontSize: 13, flex: 1 }}>
+                {histList.length === 0 ? 'Fill in the form above and tap "Add to list" first.' : `${histList.length} exam${histList.length > 1 ? 's' : ''} ready. Tap Done to import and continue.`}
+              </p>
+              <button
+                disabled={histSaving}
+                style={{ ...S.btn, ...S.pri, opacity: histSaving ? 0.4 : 1, flexShrink: 0 }}
+                onClick={saveAllAndContinue}
+              >
+                {histSaving ? 'Saving…' : histList.length === 0 ? 'Skip →' : 'Done →'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2328,7 +2274,12 @@ export default function StudyPlanner({ onShowTerms }) {
     const generateAndNavigate = async () => {
       const isRebuild = skipAssessmentSaveRef.current;
       skipAssessmentSaveRef.current = false;
-      const generatedPlan = generatePlan(profile, scores, stickingPoints);
+      const derivedTaken = assessments.map(a => {
+        const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
+        return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
+      }).filter(Boolean);
+      const profileForPlan = { ...profile, takenAssessments: derivedTaken };
+      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints);
       setPlan(generatedPlan);
       setPlanEnrichment(null);
       setEnrichmentLoading(true);
