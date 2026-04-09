@@ -720,6 +720,7 @@ export default function StudyPlanner({ onShowTerms }) {
     "end-review": { bg: "#0369a10c", border: "#0369a1", icon: "✅", label: "End review" },
     "nbme": { bg: "#c0392b0c", border: "#c0392b", icon: "📋", label: "Practice exam" },
     "rest": { bg: "#27ae600c", border: "#27ae60", icon: "😴", label: "Rest" },
+    "review": { bg: "#d9770608", border: "#d97706", icon: "🔍", label: "Post-exam review" },
   };
 
   const steps = ["welcome", "onboarding", "scores", "sticking-points", "comparison", "plan"];
@@ -1079,6 +1080,19 @@ export default function StudyPlanner({ onShowTerms }) {
               <>
               <div style={{ display: 'grid', gap: 8 }}>
                 {/* Exam-week / exam-eve lockdown banner */}
+                {todayData.day.dayType === 'review' && (
+                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#d9770608', border: '1px solid #d9770625', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
+                    <span style={{ fontSize: 18, flexShrink: 0 }}>🔍</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#d97706', fontFamily: S.f, marginBottom: 2 }}>
+                        Post-exam review day — {todayData.day.triageFor || 'yesterday\'s exam'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f }}>
+                        Full study day. Morning: deep wrong-answer review. Afternoon: 80 targeted + random questions. This is your highest-leverage study day of the week.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {(todayData.day.dayType === 'exam-week' || todayData.day.dayType === 'exam-eve') && (
                   <div style={{ padding: '11px 14px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
                     <span style={{ fontSize: 18, flexShrink: 0 }}>{todayData.day.dayType === 'exam-eve' ? '🌙' : '🔒'}</span>
@@ -1126,7 +1140,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 })}
               </div>
               {/* Widget A — daily rating */}
-              {!dailyRatingDone && todayData.day.dayType !== 'rest' && todayData.day.dayType !== 'student-rest' && (
+              {!dailyRatingDone && todayData.day.dayType !== 'rest' && todayData.day.dayType !== 'student-rest' && todayData.day.dayType !== 'nbme' && (
                 <div style={{ borderTop: '1px solid #f0ece6', paddingTop: 12, marginTop: 4 }}>
                   {dailyRatingThanks ? (
                     <div style={{ fontSize: 13, color: BRAND.green, fontFamily: S.f, textAlign: 'center', padding: '4px 0' }}>Thanks for the feedback! 🙏</div>
@@ -2859,7 +2873,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <div style={{ fontSize: 12, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
                       </div>
                       {week.days.map((day, di) => {
-                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
+                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
                         return (
                           <div key={di}
                             onClick={() => { setPlanViewDay(day.calendarDay); setPlanViewMode('day'); }}
@@ -2867,10 +2881,11 @@ export default function StudyPlanner({ onShowTerms }) {
                             <span style={{ ...S.tag, background: '#1a181608', color: '#6b6560', minWidth: 50, textAlign: 'center', flexShrink: 0 }}>Day {day.calendarDay}</span>
                             <div style={{ flex: 1 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
-                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
                               </div>
                               {day.dayType === 'student-rest' && <div style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, marginTop: 1 }}>0 Qs — rest day · 30–45 min light activity</div>}
-                              {day.totalQuestions > 0 && day.dayType !== 'student-rest' && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
+                              {day.dayType === 'review' && <div style={{ fontSize: 11, color: '#d97706', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · deep review + reinforcement</div>}
+                              {day.totalQuestions > 0 && day.dayType !== 'student-rest' && day.dayType !== 'review' && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
                             </div>
                             <span style={{ fontSize: 14, color: '#d0ccc6' }}>›</span>
                           </div>

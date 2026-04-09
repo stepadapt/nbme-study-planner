@@ -599,10 +599,14 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const hasExistingScores = options.hasExistingScores ?? Object.keys(scores).length > 0;
   const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
-  // Rest/debrief days = day after each assessment (unless that day is also an assessment day)
-  const restDebriefMap = new Map(
+  // Review days = day after each assessment (unless that day is also an assessment day or exam day).
+  // Review days are FULL study days — they take priority over student-selected rest days.
+  const reviewDayMap = new Map(
     assessmentSchedule
-      .filter(a => !assessmentDayMap.has(a.day + 1))
+      .filter(a => {
+        const nextDay = a.day + 1;
+        return !assessmentDayMap.has(nextDay) && nextDay < totalCalendarDays;
+      })
       .map(a => [a.day + 1, a])
   );
 
@@ -624,8 +628,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     } else if (assessmentDayMap.has(calendarDay)) {
       // Assessments always override rest days — NBME/Free120 takes priority
       daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
-    } else if (restDebriefMap.has(calendarDay)) {
-      daySchedule.push({ calendarDay, type: "rest-debrief", prevAssessItem: restDebriefMap.get(calendarDay) });
+    } else if (reviewDayMap.has(calendarDay)) {
+      // Review day wins over student rest — exam data is time-sensitive
+      daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay) });
     } else if (isExamEve) {
       daySchedule.push({ calendarDay, type: "exam-eve" });
     } else if (isExamWeekDay) {
@@ -692,22 +697,59 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       continue;
     }
 
-    // ── Rest + debrief day (day after each assessment) ────────────────
-    if (sched.type === "rest-debrief") {
+    // ── Post-assessment REVIEW DAY — full structured study day ───────
+    // This is NOT a rest day. The student just generated their most valuable
+    // diagnostic data. Today converts wrong answers into score improvement.
+    if (sched.type === "review") {
       const ai = sched.prevAssessItem;
       const testName = ai?.test?.name || 'assessment';
-      const debriefBlocks = [];
-      if (hasAnki) {
-        debriefBlocks.push({ type: "anki", label: "Morning retention", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — keep the streak, protect mental energy", hours: ankiHrs },
-        ]});
-      }
-      debriefBlocks.push({ type: "catchup", label: `${testName} — full debrief`, tasks: [
-        { resource: "Self-review", activity: `Work through every wrong answer from ${testName}. Don't just read explanations — understand the concept and why each distractor is wrong. Annotate First Aid for every missed pattern.${hasAnki ? ' For each missed concept, search the AnKing deck by keyword and unsuspend the existing card — do NOT make your own cards.' : ' Star flagged pages for tomorrow\'s morning review.'}`, hours: 2.5 },
+      const reviewBlocks = [];
+
+      // Block 1: Morning retention (Anki due reviews / UWorld incorrects)
+      reviewBlocks.push({ type: "anki", label: "Morning retention", tasks: [
+        hasAnki
+          ? { resource: "AnKing Deck", activity: `Due reviews only — keep the streak. 45–60 min max. This primes your memory before the deep review session.`, hours: 1 }
+          : { resource: "UWorld", activity: `Review yesterday's incorrect/marked questions from ${testName} — read every explanation, including why the right answer is right and why each distractor is wrong. 45–60 min.`, hours: 1 },
       ]});
+
+      // Block 2: Deep wrong-answer review (4 hrs, no questions)
+      reviewBlocks.push({ type: "catchup", label: `${testName} — deep wrong-answer review`, tasks: [
+        { resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept that tripped you up, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? ', (4) search AnKing by keyword and unsuspend the existing card — do NOT create your own cards' : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`, hours: 4 },
+      ]});
+
+      // Lunch
+      reviewBlocks.push({ type: "lunch", label: "Lunch break", tasks: [
+        { resource: "Break", activity: "Step away completely. Eat, move, decompress. Your brain needs this reset before the afternoon execution session.", hours: 1 },
+      ]});
+
+      // Block 3: Targeted reinforcement — 40 Qs on the 2–3 weakest systems from yesterday
+      const topWeak = priorities.slice(0, 3);
+      const weakSystemStr = topWeak.length > 0 ? topWeak.map(p => p.category).slice(0, 3).join(", ") : "weakest systems";
+      const primaryRes = topWeak.length > 0 ? getRes(topWeak[0].category) : { practice: [] };
+      const primaryQBank = primaryRes.practice.length > 0 ? rn(primaryRes.practice[0]) : "Question bank";
+      reviewBlocks.push({
+        type: "questions-focus",
+        label: `Targeted reinforcement: ${weakSystemStr}`,
+        tasks: [
+          { resource: primaryQBank, activity: `${qBlockSize} Qs — filtered to the 2–3 systems with the most wrong answers on ${testName} (${weakSystemStr}). Timed, test mode. This is your first test of whether the morning's review actually stuck.`, hours: 1.25 },
+          { resource: "Self-review", activity: `Thorough review of every wrong answer. If you missed something you reviewed this morning, it means you need a different mental model — not more re-reading. Annotate the pattern, not the fact.`, hours: 0.75 },
+        ],
+      });
+
+      // Block 4: Random maintenance — 40 Qs all systems
+      reviewBlocks.push({ type: "questions-random", label: "Random maintenance: all systems", tasks: [
+        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage and prevents over-indexing on yesterday's weak areas.`, hours: 0.75 },
+        { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag patterns for tomorrow's morning retention session.", hours: 0.25 },
+      ]});
+
+      // Block 5: Plan recalibration — 30 min
+      reviewBlocks.push({ type: "end-review", label: "Plan recalibration check", tasks: [
+        { resource: "Study plan", activity: `Review how your plan adjusted based on ${testName}'s new scores. Note which focus systems changed and why. Check whether today's reinforcement questions showed improvement. Adjust tomorrow's priority focus if needed.`, hours: 0.5 },
+      ]});
+
       currentWeek.days.push({
-        calendarDay: sched.calendarDay, dayType: "rest", triageFor: testName,
-        blocks: debriefBlocks, totalQuestions: 0,
+        calendarDay: sched.calendarDay, dayType: "review", triageFor: testName,
+        blocks: reviewBlocks, totalQuestions: qBlockSize * 2, // 40 targeted + 40 random
       });
       continue;
     }
@@ -951,6 +993,27 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     });
   }
   if (currentWeek.days.length > 0) weeks.push(currentWeek);
+
+  // ── Safety net: no more than 1 rest day per week ──────────────────────
+  // If any code path produced >1 rest day in a week, convert extras to study days.
+  // "review" days are never rest days — this only catches dayType === "rest" or "student-rest".
+  for (const week of weeks) {
+    const restInWeek = week.days.filter(d => d.dayType === 'rest' || d.dayType === 'student-rest');
+    if (restInWeek.length > 1) {
+      // Keep the first rest day; convert remaining to study days with a minimal block set
+      for (let ri = 1; ri < restInWeek.length; ri++) {
+        const rd = restInWeek[ri];
+        rd.dayType = 'study';
+        if (!rd.blocks || rd.blocks.length === 0) {
+          rd.blocks = [{ type: "questions-random", label: "Random block: all systems", tasks: [
+            { resource: "Question bank", activity: `${qBlockSize} Qs — RANDOM, all systems, timed.`, hours: 0.75 },
+            { resource: "Self-review", activity: "Review wrong answers.", hours: 0.25 },
+          ]}];
+          rd.totalQuestions = qBlockSize;
+        }
+      }
+    }
+  }
 
   const totalWeeks = weeks.length;
   weeks.forEach((w, i) => {
