@@ -368,16 +368,18 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   // Priority: untaken NBMEs 26-33 (ascending, highest saved for final slot)
   // Only if allNBMEsDone: then UWSA/AMBOSS, then NBME retakes
   // ════════════════════════════════════════════════════════════════════
-  const interval = tier === '8w' ? 12   // 10-14 days
-    : tier === '5w' ? 11                // 10-12 days
-    : tier === '3w' ? 11               // ~11 days
-    : 0;                               // 2-week: no interval progress checks
+  // Spacing scales with dedicated period length — tighter data = faster plan adaptation
+  const interval = totalCalendarDays > 42 ? 7   // 6+ weeks: weekly NBMEs
+    : totalCalendarDays > 28 ? 5               // 4-6 weeks: every ~5 days
+    : totalCalendarDays > 14 ? 4               // 2-4 weeks: every ~4 days
+    : 3;                                       // <2 weeks: minimum 3-day spacing
 
-  if (interval > 0 && LAST_ASSESSMENT_DAY >= interval) {
+  if (LAST_ASSESSMENT_DAY >= interval) {
     const baseItem = result.find(r => r.label === 'Baseline diagnostic');
     let cursor = baseItem ? baseItem.day + interval : interval;
 
-    const maxProgress = tier === '8w' ? 5 : tier === '5w' ? 3 : 1;
+    // Cap at 8 — one per NBME 26-33; loop stops naturally when days or tests run out
+    const maxProgress = 8;
     let progressCount = 0;
 
     while (progressCount < maxProgress) {

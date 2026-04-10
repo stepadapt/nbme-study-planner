@@ -1746,16 +1746,20 @@ export default function StudyPlanner({ onShowTerms }) {
             return combined;
           });
         }
-        // If most recent imported exam has a breakdown, pre-fill scores → go to sticking-points
-        const lastExam = histList[histList.length - 1];
-        const lastScores = lastExam.hasBreakdown ? Object.fromEntries(Object.entries(lastExam.scores).filter(([, v]) => v !== undefined)) : {};
-        if (Object.keys(lastScores).length > 0) {
-          setScores(lastScores);
-          setNbmeForm(lastExam.formName || '');
+        if (saved.length > 0) {
+          // At least one assessment was saved — skip directly to sticking-points.
+          // Never send the student back to the score entry screen after they've already imported data.
+          const lastExam = histList[histList.length - 1];
+          const lastScores = lastExam.hasBreakdown ? Object.fromEntries(Object.entries(lastExam.scores).filter(([, v]) => v !== undefined)) : {};
+          if (Object.keys(lastScores).length > 0) {
+            setScores(lastScores);
+            setNbmeForm(lastExam.formName || '');
+          }
           skipAssessmentSaveRef.current = true;
           navigate("sticking-points");
         } else {
-          navigate("scores");
+          // No valid score data found in the list — go to self-assessment or dashboard
+          navigate(plan ? "dashboard" : "self-assessment");
         }
       } catch (err) {
         setHistError(err.message || 'Failed to save assessments. Please try again.');
@@ -2270,9 +2274,16 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
             <button style={{ ...S.btn, ...S.sec }} onClick={() => { const d = {}; cats.forEach(c => { d[c] = Math.floor(Math.random() * 60) + 20; }); setScores(d); }}>Demo scores</button>
-            <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => navigate("sticking-points")}>Analyze →</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {assessments.length > 0 && (
+                <button style={{ ...S.btn, ...S.ghost, fontSize: 13 }} onClick={() => { skipAssessmentSaveRef.current = true; navigate("sticking-points"); }}>
+                  Skip — use imported scores →
+                </button>
+              )}
+              <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => navigate("sticking-points")}>Analyze →</button>
+            </div>
           </div>
         </div>
       </div>
