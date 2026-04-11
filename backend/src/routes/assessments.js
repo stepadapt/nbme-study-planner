@@ -78,6 +78,31 @@ router.post('/', (req, res) => {
   });
 });
 
+// PUT /api/assessments/:id — update an existing assessment's fields
+router.put('/:id', (req, res) => {
+  const row = db.prepare('SELECT id FROM assessments WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
+  if (!row) return res.status(404).json({ error: 'Assessment not found' });
+  const { formName, scores, stickingPoints, gapTypes, takenAt } = req.body;
+  if (!scores || typeof scores !== 'object') return res.status(400).json({ error: 'scores object required' });
+  let normalizedTakenAt = null;
+  if (takenAt) {
+    const d = new Date(takenAt);
+    if (!isNaN(d.getTime())) normalizedTakenAt = d.toISOString().split('T')[0];
+  }
+  db.prepare(`UPDATE assessments SET form_name=?, scores=?, sticking_points=?, gap_types=?, taken_at=? WHERE id=?`).run(
+    formName || null, JSON.stringify(scores), JSON.stringify(stickingPoints || []),
+    JSON.stringify(gapTypes || {}), normalizedTakenAt, req.params.id
+  );
+  const saved = db.prepare('SELECT * FROM assessments WHERE id = ?').get(req.params.id);
+  const effectiveDate = saved.taken_at || saved.created_at;
+  res.json({ assessment: {
+    id: saved.id, formName: saved.form_name,
+    date: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    scores: JSON.parse(saved.scores), stickingPoints: JSON.parse(saved.sticking_points),
+    gapTypes: JSON.parse(saved.gap_types), createdAt: saved.created_at, takenAt: saved.taken_at || null,
+  }});
+});
+
 // DELETE /api/assessments/:id
 router.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM assessments WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);

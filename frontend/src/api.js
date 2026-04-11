@@ -46,6 +46,7 @@ export const api = {
   assessments: {
     list: () => request('GET', '/assessments'),
     save: (data) => request('POST', '/assessments', data),
+    update: (id, data) => request('PUT', `/assessments/${id}`, data),
     delete: (id) => request('DELETE', `/assessments/${id}`),
   },
 

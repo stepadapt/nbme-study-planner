@@ -291,6 +291,16 @@ export default function StudyPlanner({ onShowTerms }) {
   const [planViewDay, setPlanViewDay] = useState(1);
   const [expandedBlocks, setExpandedBlocks] = useState(new Set());
 
+  // ── Assessment edit / delete state ────────────────────────────────
+  const [editingAssessment, setEditingAssessment] = useState(null);
+  const [editScores, setEditScores] = useState({});
+  const [editFormName, setEditFormName] = useState('');
+  const [editTakenAt, setEditTakenAt] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [assessmentActionLoading, setAssessmentActionLoading] = useState(false);
+  const [assessmentActionMsg, setAssessmentActionMsg] = useState('');
+
   // ── Historical import state ────────────────────────────────────────
   const [histDraft, setHistDraft] = useState(defaultHistDraft);
   const [histList, setHistList] = useState([]); // accumulated exams in import flow
@@ -529,6 +539,85 @@ export default function StudyPlanner({ onShowTerms }) {
     setHistDraft(defaultHistDraft());
     setHistError('');
     navigate("history-import");
+  };
+
+  // ── Assessment edit / delete helpers ──────────────────────────────
+
+  const regeneratePlanFromAssessments = (updatedAssessments) => {
+    const sorted = [...updatedAssessments].sort((a, b) =>
+      new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt)
+    );
+    const last = sorted[sorted.length - 1];
+    // Use breakdown scores from most recent assessment if available
+    const catScores = (() => {
+      if (!last) return {};
+      const s = last.scores || {};
+      const cats = Object.keys(s).filter(k => k !== '__total__');
+      return cats.length > 0 ? Object.fromEntries(cats.map(k => [k, s[k]])) : {};
+    })();
+    const newScores = Object.keys(catScores).length > 0 ? catScores : scores;
+    const derivedTaken = updatedAssessments.map(a => {
+      const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
+      return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
+    }).filter(Boolean);
+    const profileForPlan = { ...profile, takenAssessments: derivedTaken };
+    const generatedPlan = updatedAssessments.length === 0
+      ? generateFirstTimerPlan(profile, [], null)
+      : generatePlan(profileForPlan, newScores, stickingPoints);
+    setPlan(generatedPlan);
+    if (Object.keys(catScores).length > 0) setScores(catScores);
+    api.plans.save({ planData: generatedPlan, profileSnapshot: profile, assessmentId: null })
+      .then(result => { if (result?.id) setLatestPlanMeta(prev => ({ ...prev, id: result.id })); })
+      .catch(() => {});
+  };
+
+  const startEditAssessment = (a) => {
+    setEditingAssessment(a);
+    setEditFormName(a.formName || '');
+    const dateVal = a.takenAt ? a.takenAt.slice(0, 10) : (a.createdAt ? a.createdAt.slice(0, 10) : '');
+    setEditTakenAt(dateVal);
+    const cats = Object.keys(a.scores || {}).filter(k => k !== '__total__');
+    setEditScores(cats.length > 0 ? Object.fromEntries(cats.map(k => [k, a.scores[k]])) : { ...(a.scores || {}) });
+  };
+
+  const saveEditAssessment = async () => {
+    if (!editingAssessment) return;
+    setEditSaving(true);
+    try {
+      const { assessment: updated } = await api.assessments.update(editingAssessment.id, {
+        formName: editFormName,
+        scores: editScores,
+        stickingPoints: editingAssessment.stickingPoints || [],
+        takenAt: editTakenAt || null,
+      });
+      const newAssessments = assessments.map(a => a.id === updated.id ? updated : a);
+      setAssessments(newAssessments);
+      regeneratePlanFromAssessments(newAssessments);
+      setEditingAssessment(null);
+      setAssessmentActionMsg('Assessment updated — your plan has been recalculated with the corrected scores.');
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to save: ' + (err.message || 'Please try again.'));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteAssessment = async (id) => {
+    setAssessmentActionLoading(true);
+    try {
+      await api.assessments.delete(id);
+      const newAssessments = assessments.filter(a => a.id !== id);
+      setAssessments(newAssessments);
+      regeneratePlanFromAssessments(newAssessments);
+      setDeleteConfirmId(null);
+      setAssessmentActionMsg('Assessment deleted — your plan has been recalculated.');
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to delete: ' + (err.message || 'Please try again.'));
+    } finally {
+      setAssessmentActionLoading(false);
+    }
   };
 
   // Rebuild plan from existing scores (Quick Actions "New Plan" + Option B reset)
@@ -783,6 +872,14 @@ export default function StudyPlanner({ onShowTerms }) {
     const progress = plan && latestPlanMeta ? calcPlanProgress(plan, latestPlanMeta.createdAt, profile.examDate) : null;
     const examPassed = daysUntilExam !== null && daysUntilExam === 0 && examDate && today >= examDate;
 
+    // Plan-day → calendar date helpers (dashboard scope)
+    const getPlanDayDate = (dayNum) => {
+      if (!latestPlanMeta?.createdAt) return null;
+      const d = new Date(latestPlanMeta.createdAt); d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + dayNum - 1); return d;
+    };
+    const fmtDayDate = (d) => d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+
     // Score trend from assessments
     const selectedExamLocal = { categories: STEP1_CATEGORIES };
     const scoreTrend = assessments.map(a => {
@@ -1013,6 +1110,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 {todayData ? (
                   <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1816' }}>
                     Day {todayData.day.calendarDay}
+                    {fmtDayDate(getPlanDayDate(todayData.day.calendarDay)) && <span style={{ fontSize: 13, fontWeight: 500, color: '#8a857e', marginLeft: 6, fontFamily: S.f }}>{fmtDayDate(getPlanDayDate(todayData.day.calendarDay))}</span>}
                     {todayData.day.focusTopic && <span style={{ fontSize: 13, fontWeight: 400, color: '#6b6560', marginLeft: 8, fontFamily: S.f }}>Focus: {todayData.day.focusTopic}</span>}
                   </div>
                 ) : (
@@ -1249,11 +1347,13 @@ export default function StudyPlanner({ onShowTerms }) {
                     const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
                     const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (a.date || '');
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < Math.min(assessments.length, 5) - 1 ? '1px solid #f0ece6' : 'none' }}>
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < Math.min(assessments.length, 5) - 1 ? '1px solid #f0ece6' : 'none' }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: heatColor(avg), flexShrink: 0 }} />
                         <div style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>{a.formName}</div>
                         <div style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{dateStr}</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: heatColor(avg), fontFamily: S.f }}>{avg}%</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: heatColor(avg), fontFamily: S.f, minWidth: 34, textAlign: 'right' }}>{avg}%</div>
+                        <button onClick={() => startEditAssessment(a)} title="Edit" style={{ padding: '3px 6px', fontSize: 12, background: 'none', border: '1px solid #e0dbd4', borderRadius: 6, cursor: 'pointer', color: '#6b6560', lineHeight: 1, flexShrink: 0 }}>✏️</button>
+                        <button onClick={() => setDeleteConfirmId(a.id)} title="Delete" style={{ padding: '3px 6px', fontSize: 12, background: 'none', border: '1px solid #f8e8e8', borderRadius: 6, cursor: 'pointer', color: '#c0392b', lineHeight: 1, flexShrink: 0 }}>🗑️</button>
                       </div>
                     );
                   })}
@@ -1280,6 +1380,78 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           </div>
         </div>
+
+        {/* ── Assessment action toast ── */}
+        {assessmentActionMsg && (
+          <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1816', color: '#fff', padding: '12px 22px', borderRadius: 12, fontSize: 13, fontFamily: S.f, zIndex: 2000, boxShadow: '0 4px 20px #0000002a', maxWidth: 460, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+            {assessmentActionMsg}
+          </div>
+        )}
+
+        {/* ── Delete confirmation dialog ── */}
+        {deleteConfirmId !== null && (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
+              <div style={{ fontSize: 22, marginBottom: 10 }}>🗑️</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 8 }}>Delete this assessment?</div>
+              <div style={{ fontSize: 13, color: '#6b6560', lineHeight: 1.5, marginBottom: 22 }}>This will permanently remove the assessment and immediately recalculate your study plan. This action cannot be undone.</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setDeleteConfirmId(null)} disabled={assessmentActionLoading} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={() => handleDeleteAssessment(deleteConfirmId)} disabled={assessmentActionLoading}
+                  style={{ ...S.btn, flex: 1, background: '#c0392b', color: '#fff', border: 'none', opacity: assessmentActionLoading ? 0.6 : 1 }}>
+                  {assessmentActionLoading ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Edit assessment modal ── */}
+        {editingAssessment && (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 20 }}>✏️ Edit Assessment</div>
+              <div style={{ display: 'grid', gap: 16 }}>
+                {/* Form name */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Form Name</label>
+                  <input value={editFormName} onChange={e => setEditFormName(e.target.value)} placeholder="e.g. NBME 26"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+                </div>
+                {/* Date taken */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Date Taken</label>
+                  <input type="date" value={editTakenAt} onChange={e => setEditTakenAt(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+                </div>
+                {/* Scores */}
+                {Object.keys(editScores).length > 0 && (
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 8 }}>Scores (%)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {Object.keys(editScores).map(cat => (
+                        <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#faf8f5', borderRadius: 8 }}>
+                          <span style={{ fontSize: 11, color: '#6b6560', flex: 1, lineHeight: 1.3 }}>{cat}</span>
+                          <input type="number" min="0" max="100" value={editScores[cat] ?? ''}
+                            onChange={e => setEditScores(prev => ({ ...prev, [cat]: Number(e.target.value) }))}
+                            style={{ width: 54, padding: '4px 6px', borderRadius: 6, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, textAlign: 'right', outline: 'none' }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                <button onClick={() => setEditingAssessment(null)} disabled={editSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={saveEditAssessment} disabled={editSaving}
+                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: editSaving ? 0.6 : 1 }}>
+                  {editSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <Footer />
       </div>
     );
@@ -2586,7 +2758,8 @@ export default function StudyPlanner({ onShowTerms }) {
               </p>
               <div style={{ display: 'grid', gap: 12 }}>
                 {plan.assessmentSchedule.map((a, i) => {
-                  const approxDate = planStart ? new Date(planStart.getTime() + (a.day - 1) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+                  const approxDateObj = planStart ? new Date(planStart.getTime() + (a.day - 1) * 86400000) : null;
+                  const approxDate = approxDateObj ? approxDateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : null;
                   const ls = getLabelStyle(a.label);
                   return (
                     <div key={i} style={{ padding: '14px 16px', borderRadius: 12, background: '#faf8f5', border: '1px solid #ece8e2' }}>
@@ -2655,6 +2828,45 @@ export default function StudyPlanner({ onShowTerms }) {
         {/* ── View toggle + Day / Week / Full rendering ── */}
         {(() => {
           const allDays = plan.weeks.flatMap(w => w.days).sort((a, b) => a.calendarDay - b.calendarDay);
+
+          // ── Plan-day → calendar date helpers (plan view scope) ──────────────
+          const planViewStart = latestPlanMeta?.createdAt ? (() => { const d = new Date(latestPlanMeta.createdAt); d.setHours(0,0,0,0); return d; })() : null;
+          const getPlanDayDate = (dayNum) => {
+            if (!planViewStart) return null;
+            const d = new Date(planViewStart); d.setDate(d.getDate() + dayNum - 1); return d;
+          };
+          const fmtPlanDate = (d) => d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+          const todayFlat = new Date(); todayFlat.setHours(0,0,0,0);
+          const isToday = (d) => d && d.getTime() === todayFlat.getTime();
+
+          // ── Calendar weeks (Sun–Sat grouping for display) ──────────────────
+          const calendarWeeks = (() => {
+            if (!planViewStart) {
+              return plan.weeks.map(w => ({ ...w, weekNum: w.week, dateRange: null, startDate: null }));
+            }
+            const weekMap = new Map();
+            for (const day of allDays) {
+              const d = getPlanDayDate(day.calendarDay);
+              if (!d) continue;
+              const sunday = new Date(d); sunday.setDate(d.getDate() - d.getDay());
+              const key = sunday.toISOString().slice(0, 10);
+              if (!weekMap.has(key)) {
+                const saturday = new Date(sunday); saturday.setDate(sunday.getDate() + 6);
+                const matchPW = plan.weeks.find(w => w.days.some(dd => dd.calendarDay === day.calendarDay));
+                weekMap.set(key, {
+                  weekNum: weekMap.size + 1,
+                  startDate: new Date(sunday), endDate: saturday,
+                  phase: matchPW?.phase || '',
+                  isLockdown: matchPW?.isLockdown || false,
+                  focusTopics: matchPW?.focusTopics || [],
+                  dateRange: `${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${saturday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+                  days: [],
+                });
+              }
+              weekMap.get(key).days.push(day);
+            }
+            return Array.from(weekMap.values());
+          })();
 
           /* Render a single block row — collapsed by default, expand on click */
           const renderBlockRow = (block, bi, day) => {
@@ -2763,7 +2975,10 @@ export default function StudyPlanner({ onShowTerms }) {
               <>
                 {/* Day header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {day.calendarDay}</span>
+                  <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>
+                    Day {day.calendarDay}{fmtPlanDate(getPlanDayDate(day.calendarDay)) ? ` · ${fmtPlanDate(getPlanDayDate(day.calendarDay))}` : ''}
+                  </span>
+                  {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75', fontWeight: 700 }}>TODAY</span>}
                   {day.dayType === 'nbme' && <span style={{ ...S.tag, background: '#c0392b18', color: '#c0392b' }}>📋 NBME</span>}
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
                   {day.dayType === 'student-rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>🌿 Rest day</span>}
@@ -2859,7 +3074,9 @@ export default function StudyPlanner({ onShowTerms }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <button onClick={() => prevDay && setPlanViewDay(prevDay.calendarDay)} disabled={!prevDay}
                           style={{ ...S.btn, ...S.ghost, padding: '4px 10px', fontSize: 12, opacity: prevDay ? 1 : 0.3 }}>← Prev</button>
-                        <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, minWidth: 70, textAlign: 'center' }}>Day {day.calendarDay} / {allDays.length}</span>
+                        <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, textAlign: 'center' }}>
+                          Day {day.calendarDay}{fmtPlanDate(getPlanDayDate(day.calendarDay)) ? ` · ${fmtPlanDate(getPlanDayDate(day.calendarDay))}` : ''} / {allDays.length}
+                        </span>
                         <button onClick={() => nextDay && setPlanViewDay(nextDay.calendarDay)} disabled={!nextDay}
                           style={{ ...S.btn, ...S.ghost, padding: '4px 10px', fontSize: 12, opacity: nextDay ? 1 : 0.3 }}>Next →</button>
                       </div>
@@ -2872,11 +3089,12 @@ export default function StudyPlanner({ onShowTerms }) {
               {/* ── WEEK VIEW: compact 7-day summaries, click to jump to day ── */}
               {planViewMode === 'week' && (
                 <div style={{ display: 'grid', gap: 12 }}>
-                  {plan.weeks.map((week, wi) => (
+                  {calendarWeeks.map((week, wi) => (
                     <div key={wi} style={{ ...S.card, padding: 0, overflow: 'hidden', ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
                       <div style={{ padding: '12px 18px', background: week.isLockdown ? '#f5f3ff' : '#faf8f5', borderBottom: '1px solid #ece8e2' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.week}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.weekNum}</span>
+                          {week.dateRange && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{week.dateRange}</span>}
                           {week.isLockdown
                             ? <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed', fontSize: 10 }}>🔒 Exam week</span>
                             : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: '#b4530915', color: '#b45309', fontSize: 10 }}>{ft}</span>)}
@@ -2885,14 +3103,22 @@ export default function StudyPlanner({ onShowTerms }) {
                       </div>
                       {week.days.map((day, di) => {
                         const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
+                        const dayDate = getPlanDayDate(day.calendarDay);
+                        const isTodayDay = isToday(dayDate);
                         return (
                           <div key={di}
                             onClick={() => { setPlanViewDay(day.calendarDay); setPlanViewMode('day'); }}
-                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: di > 0 ? '1px solid #f0ece6' : 'none', cursor: 'pointer', background: '#fff' }}>
-                            <span style={{ ...S.tag, background: '#1a181608', color: '#6b6560', minWidth: 50, textAlign: 'center', flexShrink: 0 }}>Day {day.calendarDay}</span>
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: di > 0 ? '1px solid #f0ece6' : 'none', cursor: 'pointer', background: isTodayDay ? '#f0faf5' : '#fff' }}>
+                            <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 54 }}>
+                              <div style={{ ...S.tag, background: isTodayDay ? '#1D9E7520' : '#1a181608', color: isTodayDay ? '#1D9E75' : '#6b6560', fontWeight: isTodayDay ? 700 : 400 }}>Day {day.calendarDay}</div>
+                              {dayDate && <div style={{ fontSize: 10, color: '#aaa', fontFamily: S.f, marginTop: 2 }}>{dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>}
+                            </div>
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
-                                {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
+                                  {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                                </div>
+                                {isTodayDay && <span style={{ fontSize: 10, fontWeight: 700, color: '#1D9E75', background: '#1D9E7518', padding: '1px 6px', borderRadius: 6, fontFamily: S.f }}>TODAY</span>}
                               </div>
                               {day.dayType === 'student-rest' && <div style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, marginTop: 1 }}>0 Qs — rest day · 30–45 min light activity</div>}
                               {day.dayType === 'review' && <div style={{ fontSize: 11, color: '#d97706', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · deep review + reinforcement</div>}
@@ -2908,12 +3134,13 @@ export default function StudyPlanner({ onShowTerms }) {
               )}
 
               {/* ── FULL VIEW: all weeks expanded with collapsible blocks ── */}
-              {planViewMode === 'full' && plan.weeks.map((week, wi) => (
+              {planViewMode === 'full' && calendarWeeks.map((week, wi) => (
                 <div key={wi} style={{ ...S.card, padding: 0, overflow: 'hidden', marginBottom: 12, ...(week.isLockdown ? { border: '1.5px solid #7c3aed30' } : {}) }}>
                   <div style={{ padding: '16px 24px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: expandedWeek === wi ? (week.isLockdown ? '#f5f3ff' : '#faf8f5') : (week.isLockdown ? '#fdfcff' : '#fff') }} onClick={() => setExpandedWeek(expandedWeek === wi ? -1 : wi)}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.week}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: '#1a1816' }}>Week {week.weekNum}</span>
+                        {week.dateRange && <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{week.dateRange}</span>}
                         {week.isLockdown
                           ? <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed', fontSize: 10 }}>🔒 Exam week</span>
                           : week.focusTopics?.slice(0, 3).map((ft, fi) => <span key={fi} style={{ ...S.tag, background: '#b4530915', color: '#b45309', fontSize: 10 }}>{ft}</span>)}
