@@ -1,42 +1,57 @@
 const nodemailer = require('nodemailer');
 
-// Build transporter from env vars — works with any SMTP provider.
-// If no SMTP config is set, falls back to console logging (dev mode).
-function createTransporter() {
+// ── Sender identity ───────────────────────────────────────────────────
+const FROM = process.env.EMAIL_FROM || 'StepAdapt <noreply@stepadapt.com>';
+const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+
+// ── Transport selection ───────────────────────────────────────────────
+// Priority: 1) Resend SDK  2) SMTP (nodemailer)  3) Console (dev mode)
+
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  try {
+    const { Resend } = require('resend');
+    return new Resend(key);
+  } catch {
+    return null;
+  }
+}
+
+function getSmtpTransport() {
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-
-  if (!host || !user || !pass) {
-    // Dev mode: log emails to console instead of sending them
-    return null;
-  }
-
+  if (!host || !user || !pass) return null;
   return nodemailer.createTransport({
     host,
     port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true', // true for port 465
+    secure: process.env.SMTP_SECURE === 'true',
     auth: { user, pass },
   });
 }
 
-const FROM = process.env.EMAIL_FROM || 'StepAdapt <noreply@nbmestudyplanner.com>';
-const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
-
 async function sendEmail({ to, subject, html, text }) {
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    // Dev fallback — print to console so you can follow links without email setup
-    console.log('\n📧 ─── DEV EMAIL (not sent) ───────────────────────────');
-    console.log(`To: ${to}`);
-    console.log(`Subject: ${subject}`);
-    console.log(text || html);
-    console.log('────────────────────────────────────────────────────\n');
+  // 1. Try Resend SDK
+  const resend = getResend();
+  if (resend) {
+    await resend.emails.send({ from: FROM, to, subject, html, text });
     return;
   }
 
-  await transporter.sendMail({ from: FROM, to, subject, html, text });
+  // 2. Try SMTP (nodemailer)
+  const transport = getSmtpTransport();
+  if (transport) {
+    await transport.sendMail({ from: FROM, to, subject, html, text });
+    return;
+  }
+
+  // 3. Dev fallback — print to console so you can follow links without email setup
+  console.log('\n📧 ─── DEV EMAIL (not sent) ───────────────────────────');
+  console.log(`To: ${to}`);
+  console.log(`Subject: ${subject}`);
+  console.log(text || html);
+  console.log('────────────────────────────────────────────────────\n');
 }
 
 // ── Email templates ───────────────────────────────────────────────────

@@ -92,6 +92,9 @@ function AppContent() {
     setUrlAction(null);
     setUrlToken(null);
     clearUrlParams();
+    // Send user to login form after password reset
+    setAuthMode('login');
+    setShowAuth(true);
   };
 
   if (loading) {
@@ -106,11 +109,12 @@ function AppContent() {
     );
   }
 
-  // Password reset page — shown regardless of auth state
-  if (urlAction === 'reset' && urlToken) {
+  // Password reset page — shown regardless of auth state.
+  // Also shown with token=null so ResetPassword can display the "invalid link" error state.
+  if (urlAction === 'reset') {
     return (
       <>
-        <ResetPassword token={urlToken} onDone={handleResetDone} />
+        <ResetPassword token={urlToken || null} onDone={handleResetDone} />
         {termsPage && <TermsModal page={termsPage} onClose={() => setTermsPage(null)} />}
       </>
     );
