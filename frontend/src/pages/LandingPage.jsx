@@ -455,78 +455,24 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
         </div>
       </section>
 
-      {/* ── Pricing ────────────────────────────────────────────────── */}
-      <section id="pricing" style={{ padding: '96px 24px', background: `linear-gradient(160deg, ${G}08 0%, transparent 70%)` }}>
-        <div ref={priceRef} style={{ maxWidth: 960, margin: '0 auto' }}>
-          <div style={{
-            textAlign: 'center', marginBottom: 56,
-            transition: 'opacity 0.7s ease, transform 0.7s ease',
-            opacity: priceVis ? 1 : 0, transform: priceVis ? 'none' : 'translateY(24px)',
+      {/* ── Beta pricing placeholder ────────────────────────────────── */}
+      <section id="pricing" style={{ padding: '96px 24px', background: `linear-gradient(160deg, ${G}08 0%, transparent 70%)`, textAlign: 'center' }}>
+        <div style={{ maxWidth: 540, margin: '0 auto' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: G, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16, fontFamily: '"DM Sans", sans-serif' }}>Pricing</div>
+          <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 38px)', fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif', margin: '0 0 16px', letterSpacing: '-0.02em' }}>
+            Free during beta
+          </h2>
+          <p style={{ fontSize: 16, color: MID, margin: '0 auto 32px', lineHeight: 1.65, fontFamily: '"DM Sans", sans-serif' }}>
+            StepAdapt is free while we build it with real students. Beta users get a discounted rate when we launch paid plans.
+          </p>
+          <button onClick={onGetStarted} style={{
+            display: 'inline-block', background: G, color: WHITE,
+            padding: '14px 32px', borderRadius: 8, border: 'none',
+            fontSize: 15, fontWeight: 600, cursor: 'pointer',
+            fontFamily: '"DM Sans", sans-serif', boxShadow: `0 4px 16px ${G}40`,
           }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: G, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Pricing</div>
-            <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 38px)', fontWeight: 800, color: DARK, fontFamily: '"Source Serif 4", serif', margin: '0 0 16px', letterSpacing: '-0.02em' }}>
-              Simple, honest pricing
-            </h2>
-            <p style={{ fontSize: 16, color: MID, maxWidth: 440, margin: '0 auto', lineHeight: 1.65 }}>Start free. Upgrade when you're ready to unlock everything.</p>
-          </div>
-
-          <div style={{
-            display: 'flex', gap: 24, flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-start',
-            transition: 'opacity 0.7s ease 0.15s, transform 0.7s ease 0.15s',
-            opacity: priceVis ? 1 : 0, transform: priceVis ? 'none' : 'translateY(30px)',
-          }}>
-            <PricingCard
-              tier="Free"
-              price="$0"
-              features={[
-                'Upload 1 NBME assessment',
-                'Manual score entry',
-                '1 generated study plan',
-                'Basic score tracking',
-                'Email support',
-              ]}
-              cta="Start for Free"
-              highlight={false}
-              onCTA={onGetStarted}
-            />
-            <PricingCard
-              tier="Pro"
-              price="$19"
-              period="/ month"
-              features={[
-                'Unlimited NBME assessments',
-                'Automatic score import (screenshot & PDF)',
-                'Unlimited study plans',
-                'Time-blocked daily schedules',
-                'Category heatmap & score trends',
-                'Coaching chat with full context on your plan — unlimited',
-                'Export plans to PDF/calendar',
-                'Priority support',
-              ]}
-              cta="Start 7-Day Free Trial"
-              highlight={true}
-              onCTA={onGetStarted}
-            />
-            <PricingCard
-              tier="Annual Pro"
-              price="$149"
-              period="/ year"
-              features={[
-                'Everything in Pro',
-                'Save $79 vs monthly',
-                'Exam-day readiness report',
-                'Early access to new features',
-                'Priority support',
-              ]}
-              cta="Best Value — Save 34%"
-              highlight={false}
-              onCTA={onGetStarted}
-            />
-          </div>
-
-          <div style={{ textAlign: 'center', marginTop: 32, fontSize: 13, color: LIGHT, fontFamily: '"DM Sans", sans-serif' }}>
-            No credit card required to start. Cancel anytime.
-          </div>
+            Get Started Free →
+          </button>
         </div>
       </section>
 
