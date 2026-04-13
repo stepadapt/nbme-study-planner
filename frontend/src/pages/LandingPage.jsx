@@ -243,11 +243,14 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
       }}>
         <div style={{ maxWidth: 1120, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
           {/* Logo */}
-          <img src="/logo.png" alt="StepAdapt" style={{ height: 42 }} />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <img src="/logo.png" alt="StepAdapt" style={{ height: 42 }} />
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#1D9E75', border: '1px solid #1D9E75', borderRadius: 4, padding: '2px 6px', marginLeft: 8, letterSpacing: '1px', verticalAlign: 'middle' }}>BETA</span>
+          </div>
 
           {/* Desktop links */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-            {['Features', 'How It Works', 'Pricing'].map(l => (
+            {['Features', 'How It Works'].map(l => (
               <a key={l} href={`#${l.toLowerCase().replace(/ /g, '-')}`} style={{ fontSize: 14, fontWeight: 500, color: MID, textDecoration: 'none', transition: 'color 0.2s' }}
                 onMouseEnter={e => e.target.style.color = G} onMouseLeave={e => e.target.style.color = MID}>{l}</a>
             ))}
@@ -313,6 +316,7 @@ export default function LandingPage({ onGetStarted, onSignIn, onShowTerms }) {
                 See How It Works
               </button>
             </div>
+            <p style={{ fontSize: 13, color: '#888', margin: '8px 0 0', fontFamily: '"DM Sans", sans-serif' }}>Free during beta · No credit card required</p>
 
             {/* Product facts strip */}
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>

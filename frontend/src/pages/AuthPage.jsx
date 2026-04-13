@@ -138,7 +138,7 @@ export default function AuthPage({ onShowTerms, initialMode = 'login', onBackToL
           </h1>
           <p style={{ ...S.sub, marginBottom: 0 }}>
             {mode === 'login' && 'Sign in to your account'}
-            {mode === 'signup' && 'Start your personalized USMLE prep today'}
+            {mode === 'signup' && 'Join the StepAdapt beta — everything is free.'}
             {mode === 'forgot' && 'Enter the email you signed up with and we\'ll send you a reset link.'}
           </p>
         </div>
