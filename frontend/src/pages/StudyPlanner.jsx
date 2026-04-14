@@ -272,7 +272,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", rest_days: [] });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", ankiDeck: "anking", rest_days: [] });
   const [showZeroRestNudge, setShowZeroRestNudge] = useState(false);
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
@@ -1690,14 +1690,14 @@ export default function StudyPlanner({ onShowTerms }) {
                   return {
                     ...p,
                     resources: removing ? p.resources.filter(x => x !== r.id) : [...p.resources, r.id],
-                    ...(r.id === 'anking' && removing ? { anki_experience_level: 'none' } : {}),
+                    ...(r.id === 'anking' && removing ? { anki_experience_level: 'none', ankiDeck: 'anking' } : {}),
                   };
                 })}><span>{r.icon}</span> {r.name}</div>
               ); })}
             </div>
             {profile.resources.includes('anking') && (
               <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
-                <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 How long have you been using Anki with the AnKing deck?</label>
+                <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 How long have you been using Anki?</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {[
                     { value: 'none',         label: "I've never used Anki before" },
@@ -1713,6 +1713,32 @@ export default function StudyPlanner({ onShowTerms }) {
                           {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                         </div>
                         <span style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816' }}>{opt.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {profile.resources.includes('anking') && (
+              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+                <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 Which Anki deck do you use?</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {[
+                    { value: 'anking',  label: 'AnKing Step 1 Overhaul', desc: 'Recommended — comprehensive, 30,000+ cards, tagged to Pathoma / Sketchy / First Aid' },
+                    { value: 'mehlman', label: 'Mehlman Medical',         desc: 'Focused — ~1,000–2,000 high-yield cards, best for rapid review or late starters' },
+                    { value: 'other',   label: 'Other / Custom deck',     desc: 'Your own deck or a different pre-made deck' },
+                  ].map(opt => {
+                    const selected = (profile.ankiDeck || 'anking') === opt.value;
+                    return (
+                      <div key={opt.value} onClick={() => setProfile(p => ({ ...p, ankiDeck: opt.value }))}
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
+                          {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
+                        </div>
+                        <div>
+                          <span style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: selected ? 600 : 400 }}>{opt.label}</span>
+                          <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 2 }}>{opt.desc}</div>
+                        </div>
                       </div>
                     );
                   })}

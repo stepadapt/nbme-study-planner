@@ -427,9 +427,9 @@ export default function AnkiGuidePage({ onGetStarted, onSignIn }) {
           />
           <DeckCard
             name="Mehlman Medical"
-            best="Best for HY facts only"
-            pros="Very concise, focuses on classic 'buzzword' associations, low daily card volume"
-            cons="Misses subtlety and mechanism, not sufficient as a standalone deck"
+            best="Best for rapid review or late starters"
+            pros="Small enough to complete entirely during dedicated (~1,000–2,000 cards), focused on the most frequently tested facts, pairs well with Mehlman's free HY PDFs"
+            cons="Less comprehensive than AnKing — some Step 1 topics won't have cards. Not tagged to Pathoma/Sketchy. If a concept is missing, flag it in First Aid instead of making your own card."
           />
         </div>
 
@@ -638,6 +638,14 @@ export default function AnkiGuidePage({ onGetStarted, onSignIn }) {
 
         <FaqItem q="FSRS vs the default SM-2 — is it actually better?">
           FSRS consistently outperforms SM-2 in research comparisons. It uses a more sophisticated memory model and adapts to your individual retention pattern over time. The improvement is more pronounced the longer you use it. If you're starting fresh, set up FSRS from day one (it's a 2-minute configuration). If you've been using SM-2 for months, switching is still worthwhile — it will recalibrate within 1–2 weeks.
+        </FaqItem>
+
+        <FaqItem q="Is the Mehlman deck enough by itself for Step 1?">
+          It depends on your situation. If you're starting Anki late in dedicated (less than 4 weeks out), Mehlman is likely the better choice — you can realistically get through the entire deck, which you cannot do with AnKing in that timeframe. The deck covers the most frequently tested concepts and pairs well with UWorld for exposure to everything else.
+          <br /><br />
+          If you have 6+ weeks and want comprehensive coverage, AnKing is more thorough. Mehlman is a rifle — it hits the highest-yield targets precisely. AnKing is a shotgun — it covers everything but takes much more time to get through.
+          <br /><br />
+          Either way, Anki is a <strong>retention tool, not a learning tool</strong>. UWorld questions are what actually teach you the material and prepare you for exam-day question patterns.
         </FaqItem>
 
         <FaqItem q="Can I use Anki as my only resource?">

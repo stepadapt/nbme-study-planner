@@ -467,6 +467,25 @@ function getStudyDayParams(hrs, hasAnki) {
   return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5  };
 }
 
+// ── Deck-aware helper functions ────────────────────────────────────────────
+function getDeckName(ankiDeck) {
+  switch (ankiDeck) {
+    case 'mehlman': return 'Mehlman Medical';
+    case 'other':   return 'your Anki deck';
+    default:        return 'AnKing';
+  }
+}
+function getUnsuspendInstruction(ankiDeck) {
+  switch (ankiDeck) {
+    case 'mehlman':
+      return 'review the relevant Mehlman card — if the concept is not in your deck, flag it in First Aid';
+    case 'other':
+      return 'search your Anki deck for this concept and prioritize it in reviews';
+    default:
+      return 'search the AnKing deck by keyword and unsuspend the relevant card';
+  }
+}
+
 // ── Morning retention block builder ───────────────────────────────────────
 // Returns the Block 1 "morning retention" block appropriate for the student's
 // Anki experience level. Called for every standard study day.
@@ -474,15 +493,48 @@ function getStudyDayParams(hrs, hasAnki) {
 // hasAnki: whether the student selected AnKing as a resource
 // hours: block duration in hours
 // isFirstStudyDay: true on calendarDay == 1 (triggers setup guide for new users)
-function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay) {
-  // No AnKing selected — use UWorld incorrects for spaced repetition
+function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, ankiDeck = 'anking') {
+  // No Anki selected — use UWorld incorrects for spaced repetition
   if (!hasAnki) {
     return { type: 'anki', label: 'Morning retention', tasks: [
       { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning. Your annotated First Aid pages are your "deck" — flip through flagged pages quickly.', hours: 0.5 },
     ]};
   }
 
-  // AnKing selected, never used before (level "none" with hasAnki) — show setup guide on day 1
+  const deckLabel = getDeckName(ankiDeck);
+
+  // ── Mehlman deck ────────────────────────────────────────────────────────
+  if (ankiDeck === 'mehlman') {
+    if (ankiLevel === 'none' || (ankiLevel === 'beginner' && isFirstStudyDay)) {
+      return { type: 'anki', label: ankiLevel === 'none' ? 'Morning retention — Mehlman setup' : 'Morning retention', tasks: [
+        { resource: 'Mehlman Medical', activity: 'Do all due reviews first. Then learn 20–30 new cards. The Mehlman deck is small enough to get through entirely during dedicated — aim to see all cards within your first 2–3 weeks. Focus on the Rapid Review and HY Arrows cards first — these are the most frequently tested concepts.\n\nDo NOT make your own cards. The deck already covers the highest-yield material.', hours },
+      ]};
+    }
+    if (ankiLevel === 'beginner') {
+      return { type: 'anki', label: 'Morning retention', tasks: [
+        { resource: 'Mehlman Medical', activity: 'Do all due reviews first. Then learn 20–30 new cards. The Mehlman deck is small enough to get through entirely during dedicated — aim to see all cards within your first 2–3 weeks. Focus on the Rapid Review and HY Arrows cards first.\n\nDo NOT make your own cards.', hours },
+      ]};
+    }
+    if (ankiLevel === 'intermediate') {
+      return { type: 'anki', label: 'Morning retention', tasks: [
+        { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. The Mehlman deck is lean enough that reviews should stay manageable (usually 100–300 cards daily). If you\'ve finished all new cards, use the remaining time to review your most-missed UWorld concepts in First Aid.\n\nDo NOT make your own cards.', hours },
+      ]};
+    }
+    // veteran
+    return { type: 'anki', label: 'Morning retention', tasks: [
+      { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. Your Mehlman deck should be mostly mature at this point with manageable daily reviews. If you finish in under 30 minutes, use the remaining time reviewing UWorld incorrects from yesterday.\n\nDo NOT make your own cards.', hours },
+    ]};
+  }
+
+  // ── Other / custom deck ─────────────────────────────────────────────────
+  if (ankiDeck === 'other') {
+    return { type: 'anki', label: 'Morning retention', tasks: [
+      { resource: 'Anki (your deck)', activity: 'Do all due reviews — 1 hour max. Stop at 1 hour even if cards remain. Questions are more important than clearing your queue. Add new cards only if reviews are comfortably under 30 minutes.\n\nDo NOT make your own cards during dedicated.', hours },
+    ]};
+  }
+
+  // ── AnKing (default) ────────────────────────────────────────────────────
+  // Never used before (level "none" with hasAnki) — show setup guide on day 1
   if (ankiLevel === 'none' || (ankiLevel === 'beginner' && isFirstStudyDay)) {
     const setupGuide = ankiLevel === 'none' ? `ANKI SETUP (one-time — do this today before anything else):
 1. Download Anki — free on desktop (apps.ankiweb.net), free on Android, $25 on iOS
@@ -655,8 +707,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   };
   const rn = (id) => RESOURCES.find(r => r.id === id)?.name || id;
   const hasAnki = profile.resources.includes("anking");
-  // "none" = AnKing not selected (UWorld incorrects) OR selected but never used (→ setup guide on day 1)
+  // "none" = Anki not selected (UWorld incorrects) OR selected but never used (→ setup guide on day 1)
   const ankiLevel = hasAnki ? (profile.anki_experience_level || "none") : "none";
+  const ankiDeck = hasAnki ? (profile.ankiDeck || 'anking') : 'anking';
 
   const topPriorities = priorities.filter(p => p.flagged || p.score <= 50);
   const midPriorities = priorities.filter(p => !p.flagged && p.score > 50 && p.score <= 70);
@@ -693,7 +746,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         predictorNote: ai?.predictorNote,
         blocks: [{ type: "nbme", label: testName, tasks: [
           { resource: testName, activity: 'Full-length exam — timed, test-day conditions, no interruptions', hours: 4 },
-          { resource: 'Self-review', activity: `Thorough review of every wrong answer — understand the concept, annotate patterns in First Aid.${hasAnki ? ' Search the AnKing deck by keyword and unsuspend cards for any concept you missed — do NOT make your own cards.' : ' Star flagged First Aid pages for your morning review sessions.'}`, hours: reviewHrs },
+          { resource: 'Self-review', activity: `Thorough review of every wrong answer — understand the concept, annotate patterns in First Aid.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed — do NOT make your own cards.` : ' Star flagged First Aid pages for your morning review sessions.'}`, hours: reviewHrs },
         ]}],
       });
       continue;
@@ -710,13 +763,13 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       // Block 1: Morning retention (Anki due reviews / UWorld incorrects)
       reviewBlocks.push({ type: "anki", label: "Morning retention", tasks: [
         hasAnki
-          ? { resource: "AnKing Deck", activity: `Due reviews only — keep the streak. 45–60 min max. This primes your memory before the deep review session.`, hours: 1 }
+          ? { resource: getDeckName(ankiDeck), activity: `Due reviews only — keep the streak. 45–60 min max. This primes your memory before the deep review session.`, hours: 1 }
           : { resource: "UWorld", activity: `Review yesterday's incorrect/marked questions from ${testName} — read every explanation, including why the right answer is right and why each distractor is wrong. 45–60 min.`, hours: 1 },
       ]});
 
       // Block 2: Deep wrong-answer review (4 hrs, no questions)
       reviewBlocks.push({ type: "catchup", label: `${testName} — deep wrong-answer review`, tasks: [
-        { resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept that tripped you up, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? ', (4) search AnKing by keyword and unsuspend the existing card — do NOT create your own cards' : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`, hours: 4 },
+        { resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept that tripped you up, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? `, (4) ${getUnsuspendInstruction(ankiDeck)} — do NOT create your own cards` : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`, hours: 4 },
       ]});
 
       // Lunch
@@ -761,7 +814,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const restBlocks = [];
       if (hasAnki) {
         restBlocks.push({ type: "anki", label: "Light retention", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — 30 min max. Protect sleep and mental energy.", hours: 0.5 },
+          { resource: getDeckName(ankiDeck), activity: "Due reviews only — 30 min max. Protect sleep and mental energy.", hours: 0.5 },
         ]});
       }
       restBlocks.push({ type: "rest", label: "Pre-exam rest", tasks: [
@@ -779,7 +832,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const eveBlocks = [];
       if (hasAnki) {
         eveBlocks.push({ type: "anki", label: "Light retention", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — 20 min max. Calm and focused.", hours: 0.25 },
+          { resource: getDeckName(ankiDeck), activity: "Due reviews only — 20 min max. Calm and focused.", hours: 0.25 },
         ]});
       }
       eveBlocks.push({ type: "questions-random", label: "Warm-up: 20 random questions", tasks: [
@@ -809,7 +862,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const lockdownBlocks = [];
       if (hasAnki) {
         lockdownBlocks.push({ type: "anki", label: "Morning retention", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — quick streak maintenance.", hours: ankiHrs },
+          { resource: getDeckName(ankiDeck), activity: "Due reviews only — quick streak maintenance.", hours: ankiHrs },
         ]});
       }
       lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
@@ -840,7 +893,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const studentRestBlocks = [];
       if (hasAnki) {
         studentRestBlocks.push({ type: "anki", label: "Anki reviews only", tasks: [
-          { resource: "AnKing Deck", activity: "Due reviews only — 30–45 min max. No new cards. Stop at 45 minutes even if cards remain.", hours: 0.75 },
+          { resource: getDeckName(ankiDeck), activity: "Due reviews only — 30–45 min max. No new cards. Stop at 45 minutes even if cards remain.", hours: 0.75 },
         ]});
       } else {
         studentRestBlocks.push({ type: "content-reactive", label: "Light First Aid review only", tasks: [
@@ -882,7 +935,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     // ── BLOCK 1: Morning retention — always first, every day ──────────────
     // Content and duration vary by Anki experience level (see buildMorningRetentionBlock).
     const b1Hrs = hasAnki ? ankiHrs : 0.5;
-    blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1));
+    blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1, ankiDeck));
 
     if (isLight) {
       // ── LIGHT DAY: Block 1 + shortened targeted Qs + 1 random block ──────
@@ -975,7 +1028,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       // BLOCK 5 — End-of-day review: consolidate the day, triage misses, prep tomorrow's retention
       const b5AnkiNote = hasAnki
-        ? 'For any concept you keep missing: search the AnKing deck by keyword and unsuspend the existing card — do NOT make your own cards.'
+        ? `For any concept you keep missing: ${getUnsuspendInstruction(ankiDeck)} — do NOT make your own cards.`
         : 'Star or annotate flagged First Aid pages — these become tomorrow\'s morning review targets.';
       blocks.push({ type: "end-review", label: "End-of-day review", tasks: [
         { resource: "Self-review", activity: `Review ALL wrong answers from today's random blocks. Quick First Aid lookup for each missed concept (2 min max). ${b5AnkiNote} Flag patterns for tomorrow's retention session.`, hours: params.b5Hrs },
