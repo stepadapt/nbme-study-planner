@@ -2881,7 +2881,7 @@ export default function StudyPlanner({ onShowTerms }) {
         {plan.assessmentSchedule?.length > 0 && (
           <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
             <div onClick={() => setShowAssessmentSched(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>📋 Assessment schedule <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.assessmentSchedule.length} scheduled)</span></span>
+              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>📋 Assessment schedule <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.assessmentSchedule?.length} scheduled)</span></span>
               <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showAssessmentSched ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
             </div>
             {showAssessmentSched && (() => {
@@ -2918,7 +2918,7 @@ export default function StudyPlanner({ onShowTerms }) {
         {plan.priorities?.length > 0 && (
           <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
             <div onClick={() => setShowPriorityRanking(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>🎯 Priority ranking <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.priorities.length} systems ranked)</span></span>
+              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>🎯 Priority ranking <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.priorities?.length} systems ranked)</span></span>
               <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showPriorityRanking ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
             </div>
             {showPriorityRanking && (
@@ -2940,7 +2940,7 @@ export default function StudyPlanner({ onShowTerms }) {
                       {isExpanded && subs.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, paddingRight: 8 }}>
                           {subs.map(s => (
-                            <span key={s} style={{ ...S.tag, background: `${gapColor}10`, color: gapColor, fontSize: 10 }}>{s}</span>
+                            <span key={s.topic} style={{ ...S.tag, background: `${gapColor}10`, color: gapColor, fontSize: 10 }}>{s.topic}</span>
                           ))}
                         </div>
                       )}
