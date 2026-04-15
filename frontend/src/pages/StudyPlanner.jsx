@@ -3,7 +3,6 @@ import { STEP1_CATEGORIES, STEP1_SYSTEM_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES,
 import { generatePlan, generateFirstTimerPlan, getTopSubTopics, getQbankFilterTip, getPerformanceLevel, assignBlockTimes, findTodayInPlan, calcPlanProgress, formatDuration, roundToQuarterHour } from '../planEngine.js';
 import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
-import Chat from '../components/Chat.jsx';
 
 function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
   return (
@@ -90,178 +89,6 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
 
 // ── Sub-topic Progress Panel ──────────────────────────────────────────────
 
-// ── AI Enrichment helpers ──────────────────────────────────────────────────
-// Builds the student_data payload for the plan-intelligence endpoint.
-function buildEnrichmentStudentData(profile, assessments, stickingPoints, plan) {
-  const COHORT = 70;
-  const latest = assessments.length > 0 ? assessments[assessments.length - 1] : null;
-  const latestScores = latest?.scores || {};
-  const weakSystems = Object.entries(latestScores)
-    .filter(([, s]) => s < COHORT).sort((a, b) => a[1] - b[1]).map(([sys]) => sys);
-  const strongSystems = Object.entries(latestScores)
-    .filter(([, s]) => s >= COHORT).sort((a, b) => b[1] - a[1]).map(([sys]) => sys);
-  const gapTypes = {};
-  for (const p of plan?.priorities || []) {
-    if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
-  }
-  const examDate = profile.examDate || null;
-  const daysRemaining = examDate
-    ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000))
-    : null;
-  return {
-    exam_date: examDate,
-    days_remaining: daysRemaining,
-    nbme_scores: assessments.map(a => ({
-      form: a.formName || 'Unknown',
-      date: a.date || a.created_at || null,
-      total_epc: a.totalScore || null,
-      systems: a.scores || {},
-    })),
-    weak_systems: weakSystems,
-    strong_systems: strongSystems,
-    sticking_points: stickingPoints || [],
-    gap_types: gapTypes,
-    study_hours_per_day: profile.hoursPerDay || 8,
-    resources_available: profile.resources || [],
-  };
-}
-
-// Returns the next `maxDays` study days from the plan (calendarDay order).
-function getNextStudyDays(plan, maxDays = 7) {
-  const allDays = [];
-  for (const week of plan?.weeks || []) {
-    for (const day of week.days || []) {
-      allDays.push(day);
-    }
-  }
-  allDays.sort((a, b) => a.calendarDay - b.calendarDay);
-  return allDays.slice(0, maxDays);
-}
-
-// ── AI Enrichment Panel ────────────────────────────────────────────────────
-// Shown inside content blocks in the plan view.
-// Shows loading shimmer, then AI-specific sub-topics and step-by-step sequence.
-function AIEnrichmentPanel({ dayN, enrichment, loading, compact = false }) {
-  const [open, setOpen] = useState(false);
-  const f = 'Georgia, "Times New Roman", serif';
-
-  const dayData = enrichment?.enrichments?.[`day_${dayN}`]?.content_review;
-  const hasData = !!dayData;
-  const isLoading = loading && !enrichment;
-
-  if (!isLoading && !hasData) return null;
-
-  // YouTube-only resources get a link pill
-  const ytResources = new Set(['Ninja Nerd', 'Dirty Medicine', 'Armando Hasudungan', 'Randy Neil MD', 'HY Guru']);
-  const buildYtUrl = (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-
-  const stepColors = {
-    video: { bg: '#7c3aed0c', border: '#7c3aed', text: '#5b21b6' },
-    read:  { bg: '#92400e0c', border: '#b45309', text: '#92400e' },
-    practice: { bg: '#1d6e5610', border: '#1D9E75', text: '#1d6e56' },
-  };
-  const stepEmoji = (resource) => {
-    if (['Ninja Nerd', 'Dirty Medicine', 'Armando Hasudungan', 'Randy Neil MD', 'HY Guru'].includes(resource)) return '📺';
-    if (resource === 'Pathoma' || resource === 'Sketchy') return '📖';
-    if (resource === 'First Aid') return '📗';
-    if (resource === 'UWorld' || resource === 'Amboss') return '🎯';
-    return '📌';
-  };
-
-  return (
-    <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e8dcc8' }}>
-      <button
-        onClick={() => !isLoading && setOpen(o => !o)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '7px 10px' : '9px 12px', background: '#f0f9f5', border: 'none', cursor: isLoading ? 'default' : 'pointer', textAlign: 'left' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: compact ? 12 : 13 }}>✨</span>
-          <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: '#1a1816', fontFamily: f }}>AI Study Plan</span>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: '#1D9E7515', color: '#1D9E75', fontFamily: f }}>Personalized</span>
-          {isLoading && <span style={{ fontSize: 10, color: '#8a857e', fontFamily: f }}>Generating…</span>}
-        </div>
-        {!isLoading && <span style={{ fontSize: 14, color: '#8a857e', transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▾</span>}
-      </button>
-
-      {isLoading && (
-        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3' }}>
-          {[0.7, 0.5, 0.85].map((w, i) => (
-            <div key={i} style={{ height: 10, background: '#f0ebe3', borderRadius: 5, marginBottom: 6, width: `${w * 100}%`, animation: 'pulse 1.4s ease-in-out infinite' }} />
-          ))}
-        </div>
-      )}
-
-      {open && hasData && (
-        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3', display: 'grid', gap: 10 }}>
-          {/* Sub-topics */}
-          {dayData.sub_topics?.length > 0 && (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', fontFamily: f, marginBottom: 5 }}>Focus on these sub-topics</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {dayData.sub_topics.map((topic, i) => (
-                  <span key={i} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 4, background: '#1D9E7510', color: '#1d6e56', fontWeight: 600, border: '1px solid #1D9E7530', fontFamily: f }}>{topic}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          {/* Skip topics */}
-          {dayData.skip_topics?.length > 0 && (
-            <div style={{ padding: '5px 8px', background: '#6b65600a', borderRadius: 6, border: '1px solid #6b656020' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#8a857e', fontFamily: f, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Skip: </span>
-              <span style={{ fontSize: 11, color: '#8a857e', fontFamily: f }}>{dayData.skip_topics.join(' · ')}</span>
-            </div>
-          )}
-          {/* Step-by-step sequence */}
-          {dayData.steps?.length > 0 && (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {dayData.steps.map((step, si) => {
-                const isYt = ytResources.has(step.resource);
-                const c = step.resource === 'UWorld' || step.resource === 'Amboss'
-                  ? stepColors.practice
-                  : step.resource === 'First Aid' || step.resource === 'Pathoma' || step.resource === 'Sketchy'
-                  ? stepColors.read
-                  : stepColors.video;
-                return (
-                  <div key={si} style={{ padding: '9px 11px', background: c.bg, borderRadius: 7, borderLeft: `3px solid ${c.border}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 14 }}>{stepEmoji(step.resource)}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: c.text, fontFamily: f, flex: 1 }}>
-                        Step {step.step}: {step.resource} — {step.topic}
-                      </span>
-                      {step.duration && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: f, whiteSpace: 'nowrap' }}>{step.duration}</span>}
-                    </div>
-                    {step.specific_focus && (
-                      <div style={{ fontSize: 11, color: '#6b6560', fontFamily: f, lineHeight: 1.5, paddingLeft: 20, marginBottom: step.skip || (isYt && step.youtube_search_query) ? 4 : 0 }}>
-                        <span style={{ fontWeight: 600 }}>Focus:</span> {step.specific_focus}
-                      </div>
-                    )}
-                    {step.skip && (
-                      <div style={{ fontSize: 11, color: '#8a857e', fontFamily: f, paddingLeft: 20, marginBottom: (isYt && step.youtube_search_query) ? 4 : 0 }}>
-                        <span style={{ fontWeight: 600 }}>Skip:</span> {step.skip}
-                      </div>
-                    )}
-                    {isYt && step.youtube_search_query && (
-                      <div style={{ paddingLeft: 20 }}>
-                        <a
-                          href={buildYtUrl(step.youtube_search_query)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: 11, fontWeight: 600, color: '#c0392b', fontFamily: f, padding: '3px 9px', borderRadius: 12, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                        >
-                          ▶ {step.resource}
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 const defaultHistDraft = () => ({ formName: '', takenAt: '', totalScore: '', hasBreakdown: false, scores: {} });
 
@@ -290,6 +117,12 @@ export default function StudyPlanner({ onShowTerms }) {
   const [planViewMode, setPlanViewMode] = useState('day'); // 'day' | 'week' | 'full'
   const [planViewDay, setPlanViewDay] = useState(1);
   const [expandedBlocks, setExpandedBlocks] = useState(new Set());
+  const [showAssessmentSched, setShowAssessmentSched] = useState(false);
+  const [showPriorityRanking, setShowPriorityRanking] = useState(false);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [expandedPriorityIdx, setExpandedPriorityIdx] = useState(null);
+  const [expandedAssessmentIdx, setExpandedAssessmentIdx] = useState(null);
+  const [starterBannerDismissed, setStarterBannerDismissed] = useState(false);
 
   // ── Assessment edit / delete state ────────────────────────────────
   const [editingAssessment, setEditingAssessment] = useState(null);
@@ -346,10 +179,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const skipAssessmentSaveRef = useRef(false);
 
   // ── AI features state ─────────────────────────────────────────────
-  const [showChat, setShowChat] = useState(false);
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
-  const [planEnrichment, setPlanEnrichment] = useState(null);
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [screenshotError, setScreenshotError] = useState('');
   const fileInputRef = useRef(null);
 
@@ -645,8 +475,6 @@ export default function StudyPlanner({ onShowTerms }) {
         setStickingPoints([]);
         setPlan(null);
         setLatestPlanMeta(null);
-        setPlanEnrichment(null);
-        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         navigate("welcome");
@@ -654,8 +482,6 @@ export default function StudyPlanner({ onShowTerms }) {
         await api.reset.keepScores();
         setPlan(null);
         setLatestPlanMeta(null);
-        setPlanEnrichment(null);
-        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         startNewPlanFromScores();
@@ -668,8 +494,6 @@ export default function StudyPlanner({ onShowTerms }) {
         setStickingPoints([]);
         setPlan(null);
         setLatestPlanMeta(null);
-        setPlanEnrichment(null);
-        setEnrichmentLoading(false);
         setProfile(p => ({ ...p, takenAssessments: [], subTopicProgress: {} }));
         setResetType(null); setResetConfirmText(''); setResetConfirmed(false);
         navigate("welcome");
@@ -1367,7 +1191,6 @@ export default function StudyPlanner({ onShowTerms }) {
                 {[
                   { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
                   { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
-                  { icon: '💬', label: 'AI Coach', action: () => setShowChat(true) },
                   { icon: '🕰️', label: 'Past Exam', action: () => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); } },
                   { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
                 ].map((item, i) => (
@@ -1656,7 +1479,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 { icon: "🔄", title: "Maintenance blocks simulate test day", desc: "Random mixed questions across all systems — trains context-switching and prevents decay" },
                 { icon: "📚", title: "Content review is reactive, not passive", desc: "You don't re-read chapters — you look up what you got wrong in questions" },
                 { icon: "📈", title: "NBMEs every ~2 weeks recalibrate the plan", desc: "New scores restart the cycle with smarter targeting" },
-                { icon: "💬", title: "Coaching chat + automatic score import", desc: "Upload your NBME score report to auto-import scores — then ask your coaching chat anything, and it can see your full history" },
+                { icon: "📸", title: "Automatic score import", desc: "Upload a screenshot of your NBME score report and scores are extracted automatically." },
               ].map((item, i) => (
                 <div key={i} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                   <div style={{ fontSize: 22, flexShrink: 0, marginTop: 2 }}>{item.icon}</div>
@@ -2180,7 +2003,7 @@ export default function StudyPlanner({ onShowTerms }) {
         <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("dashboard"); }}>← Back</button><UserBar /></div>
         <div style={S.wrap}>
           <h1 style={S.h1}>Add a past exam</h1>
-          <p style={S.sub}>Import a historical NBME score. It'll show up in your score history and help your coaching chat see your full score trajectory.</p>
+          <p style={S.sub}>Import a historical NBME score. It'll show up in your score history so your plan has your full score trajectory.</p>
 
           <div style={{ ...S.card, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
@@ -2346,8 +2169,6 @@ export default function StudyPlanner({ onShowTerms }) {
             <button style={{ ...S.btn, ...S.pri }} onClick={async () => {
               const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
               setPlan(generatedPlan);
-              setPlanEnrichment(null);
-              setEnrichmentLoading(true);
               setExpandedWeek(0);
               api.plans.save({
                 planData: generatedPlan,
@@ -2356,13 +2177,6 @@ export default function StudyPlanner({ onShowTerms }) {
               }).then(result => {
                 if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
               }).catch(() => {});
-              // Fire enrichment with what we know (no NBME scores yet)
-              const studentData = { weak_systems: weakSystems, study_hours_per_day: profile.hoursPerDay || 8, resources_available: profile.resources || [], exam_date: profile.examDate || null, nbme_scores: [], sticking_points: [] };
-              const nextDays = getNextStudyDays(generatedPlan, 7);
-              api.ai.planIntelligence(studentData, { days: nextDays })
-                .then(enrichment => setPlanEnrichment(enrichment))
-                .catch(() => {})
-                .finally(() => setEnrichmentLoading(false));
               navigate("plan");
             }}>
               Build my starter plan →
@@ -2504,8 +2318,6 @@ export default function StudyPlanner({ onShowTerms }) {
       const profileForPlan = { ...profile, takenAssessments: derivedTaken };
       const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints);
       setPlan(generatedPlan);
-      setPlanEnrichment(null);
-      setEnrichmentLoading(true);
       setExpandedWeek(0);
       let savedAssessment;
       if (isRebuild) {
@@ -2520,13 +2332,6 @@ export default function StudyPlanner({ onShowTerms }) {
       }).then(result => {
         if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString() });
       }).catch(() => {});
-      // Fire AI enrichment asynchronously — plan still renders without it
-      const studentData = buildEnrichmentStudentData(profile, assessments, stickingPoints, generatedPlan);
-      const nextDays = getNextStudyDays(generatedPlan, 7);
-      api.ai.planIntelligence(studentData, { days: nextDays })
-        .then(enrichment => setPlanEnrichment(enrichment))
-        .catch(() => {})
-        .finally(() => setEnrichmentLoading(false));
       setPostNbmeDone(false); setPostNbmeRating(null); setPostNbmeComment('');
       navigate(previousAssessment && !isRebuild ? "comparison" : "plan");
     };
@@ -2715,143 +2520,22 @@ export default function StudyPlanner({ onShowTerms }) {
         <h1 style={S.h1}>Your study plan</h1>
         <p style={S.sub}>Question-driven {plan.totalWeeks}-week plan. Focused blocks attack weaknesses, random blocks maintain everything, NBMEs recalibrate.</p>
 
-        {plan.firstTimer && assessments.length === 0 && (
-          <div style={{ background: '#fffbeb', border: '1.5px solid #f6c90e60', borderRadius: 14, padding: '16px 20px', marginBottom: 16, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 22, flexShrink: 0 }}>🧭</span>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#92600a', fontFamily: S.f, marginBottom: 4 }}>Starter plan — diagnostic NBME unlocks your full personalisation</div>
-              <div style={{ fontSize: 13, color: '#92600a', fontFamily: S.f, lineHeight: 1.5 }}>
-                This plan is seeded from your self-assessment. Check your schedule for an early diagnostic NBME (days 1–3). Once you take it and enter your scores, the app rebuilds your plan around real performance data.
-              </div>
-              <button style={{ ...S.btn, background: '#f6c90e30', color: '#92600a', border: '1px solid #f6c90e80', padding: '7px 14px', fontSize: 12, marginTop: 10 }} onClick={() => navigate("scores")}>
-                Enter NBME scores now →
+        {/* Compact dismissible starter banner — only shown when no scores entered yet */}
+        {plan.firstTimer && assessments.length === 0 && !starterBannerDismissed && (
+          <div style={{ background: '#fffbeb', border: '1.5px solid #f6c90e60', borderRadius: 10, padding: '9px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>🧭</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#92600a', fontFamily: S.f, flex: 1 }}>
+              Starter plan — diagnostic NBME unlocks your full personalization
+              {' · '}
+              <button style={{ background: 'none', border: 'none', padding: 0, fontSize: 13, color: '#92600a', fontFamily: S.f, cursor: 'pointer', textDecoration: 'underline' }} onClick={() => navigate("scores")}>
+                Enter scores →
               </button>
-            </div>
+            </span>
+            <button style={{ background: 'none', border: 'none', fontSize: 18, color: '#b8950a', cursor: 'pointer', padding: '0 2px', lineHeight: 1, opacity: 0.7 }} onClick={() => setStarterBannerDismissed(true)}>×</button>
           </div>
         )}
 
-        <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, fontFamily: S.f, color: "#1a1816", marginBottom: 12 }}>How every day works</div>
-          <div style={{ display: "grid", gap: 8 }}>
-            {[
-              { icon: "🧠", label: "Morning Anki", desc: "Spaced repetition first — locks in yesterday's learning", color: "#27ae60" },
-              { icon: "🔥", label: "Focus block (40 Qs, ~2.5h)", desc: "System-specific on your weakest high-yield topic + deep thorough review", color: "#b45309" },
-              { icon: "🎲", label: "Random blocks (40 Qs each, ~1.75h)", desc: "RANDOM all-systems — the real exam simulator and core of your daily prep", color: "#2563eb" },
-              { icon: "📚", label: "Reactive content review", desc: "ONLY for concepts you missed in today's questions — never passive re-reading", color: "#8b5cf6" },
-            ].map((item, i) => <div key={i} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
-              <span style={{ fontSize: 13, fontFamily: S.f }}><strong style={{ color: item.color }}>{item.label}</strong><span style={{ color: "#6b6560" }}> — {item.desc}</span></span>
-            </div>)}
-          </div>
-        </div>
-
-        <div style={{ ...S.card, marginBottom: 20 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
-            {[{ val: plan.totalStudyDays, l: "study days" }, { val: `~${plan.totalQEstimate}`, l: "questions" }, { val: plan.nbmeDays, l: "NBMEs" }, { val: `${profile.hoursPerDay}h`, l: "per day" }].map((s, i) => (
-              <div key={i} style={{ background: "#faf8f5", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: "#1a1816" }}>{s.val}</div><div style={{ ...S.muted, fontSize: 11 }}>{s.l}</div>
-              </div>
-            ))}
-          </div>
-          {plan.timelineMode === "triage" && <div style={{ marginTop: 12, padding: "10px 14px", background: "#c0392b10", borderRadius: 8 }}>
-            <p style={{ fontSize: 13, color: "#c0392b", fontFamily: S.f, margin: 0, fontWeight: 600 }}>⚠ Triage mode — only highest-impact topics get focus.</p>
-          </div>}
-        </div>
-
-        {/* ── Assessment Schedule ── */}
-        {plan.assessmentSchedule && plan.assessmentSchedule.length > 0 && (() => {
-          const planStart = latestPlanMeta?.createdAt ? new Date(latestPlanMeta.createdAt) : null;
-          const labelColors = {
-            'Baseline diagnostic': { bg: '#c0392b18', color: '#c0392b' },
-            'Baseline': { bg: '#c0392b18', color: '#c0392b' },
-            'Progress check': { bg: '#2980b918', color: '#2980b9' },
-            'Midpoint learning tool': { bg: '#8b5cf618', color: '#8b5cf6' },
-            'Score predictor': { bg: '#1D9E7518', color: '#1D9E75' },
-            'Style calibrator': { bg: '#D85A3018', color: '#D85A30' },
-            'Checkpoint': { bg: '#f59e0b18', color: '#f59e0b' },
-          };
-          const getLabelStyle = (label) => {
-            for (const [key, style] of Object.entries(labelColors)) {
-              if (label?.includes(key)) return style;
-            }
-            return { bg: '#1a181618', color: '#1a1816' };
-          };
-          return (
-            <div style={{ ...S.card, marginBottom: 20 }}>
-              <h3 style={{ ...S.h3, marginBottom: 4 }}>📋 Assessment Schedule</h3>
-              <p style={{ ...S.muted, marginBottom: 16, fontSize: 13 }}>
-                {plan.assessmentSchedule.length} practice test{plan.assessmentSchedule.length > 1 ? 's' : ''} scheduled — spaced for maximum learning and score prediction accuracy.
-              </p>
-              <div style={{ display: 'grid', gap: 12 }}>
-                {plan.assessmentSchedule.map((a, i) => {
-                  const approxDateObj = planStart ? new Date(planStart.getTime() + (a.day - 1) * 86400000) : null;
-                  const approxDate = approxDateObj ? approxDateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : null;
-                  const ls = getLabelStyle(a.label);
-                  return (
-                    <div key={i} style={{ padding: '14px 16px', borderRadius: 12, background: '#faf8f5', border: '1px solid #ece8e2' }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>Day {a.day}{approxDate ? ` · ${approxDate}` : ''}</span>
-                          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: S.f, color: a.mandatory ? '#c0392b' : '#1a1816' }}>{a.test?.name || a.testId}</span>
-                          {a.mandatory && <span style={{ ...S.tag, background: '#c0392b15', color: '#c0392b', fontSize: 10 }}>🔒 LOCKED</span>}
-                          {a.label && !a.mandatory && <span style={{ ...S.tag, background: ls.bg, color: ls.color }}>{a.label}</span>}
-                          {a.mandatory && <span style={{ ...S.tag, background: '#c0392b10', color: '#c0392b' }}>Style calibrator</span>}
-                        </div>
-                        {a.reviewHours > 0 && (
-                          <span style={{ ...S.muted, fontSize: 11, whiteSpace: 'nowrap' }}>+{a.reviewHours}h review</span>
-                        )}
-                      </div>
-                      {a.mandatory && (
-                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#c0392b08', border: '1px solid #c0392b25', fontSize: 12, color: '#c0392b', fontFamily: S.f, lineHeight: 1.4, marginBottom: 6 }}>
-                          🔒 <strong>Mandatory — cannot be moved.</strong> The Free 120 is the closest match to real Step 1 question style. It must be taken 2 days before your exam under full test conditions.
-                        </div>
-                      )}
-                      {a.reason && (
-                        <p style={{ ...S.muted, fontSize: 12, margin: '0 0 6px', lineHeight: 1.5, fontStyle: 'italic' }}>💡 {a.reason}</p>
-                      )}
-                      {a.overpredictWarning && (
-                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#f59e0b10', border: '1px solid #f59e0b30', fontSize: 12, color: '#b45309', fontFamily: S.f, lineHeight: 1.4 }}>
-                          ⚠️ <strong>Note:</strong> UWSA1 tends to overpredict by 10–25 points. Use for learning direction, not score prediction.
-                        </div>
-                      )}
-                      {a.predictorNote && (
-                        <div style={{ padding: '6px 10px', borderRadius: 6, background: '#1D9E7510', border: '1px solid #1D9E7530', fontSize: 12, color: '#0F6E56', fontFamily: S.f, lineHeight: 1.4 }}>
-                          🎯 <strong>Strongest predictor:</strong> UWSA2 correlates most closely with your actual Step 1 score.
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-
-        <div style={{ ...S.card, marginBottom: 20 }}>
-          <h3 style={{ ...S.h3, marginBottom: 12 }}>Priority ranking — with highest-yield sub-topics</h3>
-          <div style={{ display: "grid", gap: 8 }}>
-            {plan.priorities.slice(0, 8).map((p, i) => {
-              const subs = getTopSubTopics(p.category, 5);
-              return (
-                <div key={i} style={{ padding: "8px 12px", borderRadius: 10, background: i < 3 ? "#b4530908" : "#faf8f5", border: i < 3 ? "1px solid #b4530920" : "1px solid #f0ece6" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: subs.length > 0 ? 6 : 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: S.f, color: i < 3 ? "#b45309" : "#1a1816", minWidth: 20 }}>{i + 1}.</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, fontFamily: S.f, color: "#1a1816", flex: 1 }}>{p.category}</span>
-                    {p.flagged && <span style={{ ...S.tag, background: "#b4530918", color: "#b45309", fontSize: 10 }}>Flagged ★</span>}
-                    <span style={{ fontSize: 12, fontFamily: S.f, color: "#8a857e" }}>{p.score}%</span>
-                  </div>
-                  {subs.length > 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 3, paddingLeft: 28 }}>
-                      {subs.map((sub, si) => <span key={si} style={{ fontSize: 10, fontFamily: S.f, padding: "2px 6px", borderRadius: 3, background: sub.yield >= 9 ? "#b4530912" : sub.yield >= 7 ? "#2980b90c" : "#6b656008", color: sub.yield >= 9 ? "#b45309" : sub.yield >= 7 ? "#2980b9" : "#8a857e", fontWeight: 500 }}>{sub.yield >= 9 ? "★ " : ""}{sub.topic}</span>)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── View toggle + Day / Week / Full rendering ── */}
+        {/* ── View toggle + Day / Week / Full rendering (PRIMARY section — top of page) ── */}
         {(() => {
           const allDays = plan.weeks.flatMap(w => w.days).sort((a, b) => a.calendarDay - b.calendarDay);
 
@@ -2954,18 +2638,6 @@ export default function StudyPlanner({ onShowTerms }) {
                     ))}
                   </div>
                   {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} />}
-                  {(block.type === 'content' || block.type === 'content-reactive') && (
-                    <AIEnrichmentPanel dayN={day.calendarDay} enrichment={planEnrichment} loading={enrichmentLoading} />
-                  )}
-                  {block.type === 'questions-focus' && planEnrichment?.enrichments?.[`day_${day.calendarDay}`]?.targeted_questions && (() => {
-                    const tq = planEnrichment.enrichments[`day_${day.calendarDay}`].targeted_questions;
-                    return (
-                      <div style={{ marginTop: 6, padding: '7px 10px', background: '#2563eb08', borderRadius: 7, borderLeft: '3px solid #2563eb50' }}>
-                        {tq.filter_suggestion && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: tq.what_to_watch_for ? 4 : 0 }}><span style={{ fontWeight: 700 }}>🔍 Filter:</span> {tq.filter_suggestion}</div>}
-                        {tq.what_to_watch_for && <div style={{ fontSize: 11, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif' }}><span style={{ fontWeight: 700 }}>⚠ Watch for:</span> {tq.what_to_watch_for}</div>}
-                      </div>
-                    );
-                  })()}
                 </div>
               </div>
             );
@@ -3199,13 +2871,113 @@ export default function StudyPlanner({ onShowTerms }) {
           );
         })()}
 
-        {/* ── Strategic insight card ── */}
-        {planEnrichment?.strategic_insight && (
-          <div style={{ ...S.card, background: '#f0f9f5', border: '1.5px solid #1D9E7530', marginTop: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>✨ AI Strategic Insight</div>
-            <p style={{ fontSize: 14, color: '#2c2a26', fontFamily: 'Georgia, "Times New Roman", serif', lineHeight: 1.7, margin: 0 }}>{planEnrichment.strategic_insight}</p>
+        {/* ── Plan stats — single thin line ── */}
+        <div style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f, padding: '10px 0 8px', marginBottom: 4, borderBottom: '1px solid #f0ece6' }}>
+          {plan.totalStudyDays} study days · ~{(plan.totalQEstimate || 0).toLocaleString()} Qs · {plan.nbmeDays} NBMEs · {profile.hoursPerDay}h/day
+          {plan.timelineMode === 'triage' && <span style={{ color: '#c0392b', fontWeight: 600 }}> · ⚠ Triage mode</span>}
+        </div>
+
+        {/* ── Assessment schedule collapsible ── */}
+        {plan.assessmentSchedule?.length > 0 && (
+          <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
+            <div onClick={() => setShowAssessmentSched(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>📋 Assessment schedule <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.assessmentSchedule.length} scheduled)</span></span>
+              <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showAssessmentSched ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
+            </div>
+            {showAssessmentSched && (() => {
+              const psDate = latestPlanMeta?.createdAt ? (() => { const d = new Date(latestPlanMeta.createdAt); d.setHours(0,0,0,0); return d; })() : null;
+              return (
+                <div style={{ paddingBottom: 10 }}>
+                  {plan.assessmentSchedule.map((a, i) => {
+                    const dayDate = psDate ? new Date(psDate.getTime() + (a.day - 1) * 86400000) : null;
+                    const dateStr = dayDate ? dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Day ${a.day}`;
+                    const isExpanded = expandedAssessmentIdx === i;
+                    return (
+                      <div key={i}
+                        style={{ padding: '7px 0 7px 12px', borderLeft: '2.5px solid #c0392b30', marginBottom: 4, cursor: a.reason ? 'pointer' : 'default' }}
+                        onClick={() => a.reason && setExpandedAssessmentIdx(isExpanded ? null : i)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#c0392b', fontFamily: S.f, minWidth: 48 }}>Day {a.day}</span>
+                          <span style={{ fontSize: 12, fontFamily: S.f, color: '#1a1816', fontWeight: 600, flex: 1 }}>{a.test?.name || 'Practice Assessment'}</span>
+                          <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{dateStr}</span>
+                          <span style={{ ...S.tag, background: '#c0392b12', color: '#c0392b', fontSize: 10 }}>{a.label || 'NBME'}</span>
+                        </div>
+                        {isExpanded && a.reason && (
+                          <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginTop: 4, lineHeight: 1.5 }}>{a.reason}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
+
+        {/* ── Priority ranking collapsible ── */}
+        {plan.priorities?.length > 0 && (
+          <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
+            <div onClick={() => setShowPriorityRanking(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>🎯 Priority ranking <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.priorities.length} systems ranked)</span></span>
+              <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showPriorityRanking ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
+            </div>
+            {showPriorityRanking && (
+              <div style={{ paddingBottom: 10 }}>
+                {plan.priorities.slice(0, 12).map((p, i) => {
+                  const isExpanded = expandedPriorityIdx === i;
+                  const subs = getTopSubTopics(p.category, 4);
+                  const gapColor = p.gapType === 'critical' ? '#c0392b' : p.gapType === 'moderate' ? '#D85A30' : BRAND.green;
+                  return (
+                    <div key={i}
+                      style={{ padding: '6px 0 6px 12px', borderLeft: `2.5px solid ${gapColor}40`, marginBottom: 3, cursor: 'pointer' }}
+                      onClick={() => setExpandedPriorityIdx(isExpanded ? null : i)}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#8a857e', fontFamily: S.f, minWidth: 20 }}>{i + 1}.</span>
+                        <span style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816', flex: 1 }}>{p.category}</span>
+                        {p.gapType && <span style={{ ...S.tag, background: `${gapColor}12`, color: gapColor, fontSize: 10 }}>{p.gapType}</span>}
+                        <span style={{ fontSize: 11, color: '#aaa9a6' }}>{isExpanded ? '▾' : '▸'}</span>
+                      </div>
+                      {isExpanded && subs.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, paddingRight: 8 }}>
+                          {subs.map(s => (
+                            <span key={s} style={{ ...S.tag, background: `${gapColor}10`, color: gapColor, fontSize: 10 }}>{s}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── How every day works collapsible ── */}
+        <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 12 }}>
+          <div onClick={() => setShowHowItWorks(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>📖 How every day works</span>
+            <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showHowItWorks ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
+          </div>
+          {showHowItWorks && (
+            <div style={{ paddingBottom: 10 }}>
+              {[
+                { icon: '🧠', title: 'Morning retention (Anki)', desc: 'Start each day with your Anki deck to lock in what you learned yesterday.' },
+                { icon: '🔥', title: 'Focus block — targeted questions', desc: 'Drill your weakest topic with UWorld in tutor mode. Read every explanation carefully.' },
+                { icon: '🎲', title: 'Random block — breadth maintenance', desc: 'Random UW questions across all systems. Prevents atrophy in your stronger areas.' },
+                { icon: '📚', title: 'Content review is reactive', desc: "You don't re-read chapters. You look up exactly what you got wrong in questions." },
+                { icon: '✅', title: 'End-of-day review', desc: "Go back through every wrong answer from today's blocks. That's your content session." },
+              ].map((item, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, padding: '7px 0', borderTop: i > 0 ? '1px solid #f5f2ee' : 'none' }}>
+                  <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#1a1816', marginBottom: 2 }}>{item.title}</div>
+                    <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>{item.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* ── Export plan ── */}
         <div style={{ ...S.card, marginTop: 20, marginBottom: 0 }}>
@@ -3276,24 +3048,6 @@ export default function StudyPlanner({ onShowTerms }) {
           ↺ Start fresh / reset plan
         </button>
       </div>
-
-      {/* Floating chat button */}
-      {!showChat && (
-        <button
-          onClick={() => setShowChat(true)}
-          style={{
-            position: 'fixed', bottom: 20, right: 20, padding: '13px 20px',
-            background: '#1a1816', color: '#fff', border: 'none', borderRadius: 50,
-            fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: S.f,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 8,
-            zIndex: 999,
-          }}
-        >
-          💬 Ask your coach
-        </button>
-      )}
-
-      {showChat && <Chat onClose={() => setShowChat(false)} />}
 
       {/* Widget B — General feedback modal */}
       {showFeedbackModal && (
