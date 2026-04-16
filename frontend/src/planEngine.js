@@ -1,4 +1,4 @@
-import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS } from './data.js';
+import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS, DISCIPLINE_ATTACK_STRATEGIES } from './data.js';
 import { getContentSequence } from './contentEngine.js';
 
 // ── Time-block helpers ────────────────────────────────────────────────
@@ -640,6 +640,54 @@ function getDominantDisciplinesForSystem(category) {
     .map(([d]) => d);
 }
 
+// Returns the single discipline the student is weakest in, weighted by sub-topic yield.
+// subTopics: [{topic, yield, disciplines?}], scores: {disciplineName: number}
+function getWeakestDisciplineInSubTopics(subTopics, scores) {
+  const discScore = {}; // discipline → { totalWeight, weightedScoreSum }
+  for (const sub of subTopics) {
+    for (const d of (sub.disciplines || [])) {
+      if (!discScore[d]) discScore[d] = { totalWeight: 0, weightedSum: 0 };
+      const w = sub.yield || 5;
+      discScore[d].totalWeight += w;
+      discScore[d].weightedSum += (scores[d] ?? 50) * w;
+    }
+  }
+  let weakest = null;
+  let lowestAvg = Infinity;
+  for (const [d, { totalWeight, weightedSum }] of Object.entries(discScore)) {
+    const avg = totalWeight > 0 ? weightedSum / totalWeight : 50;
+    if (avg < lowestAvg) { lowestAvg = avg; weakest = d; }
+  }
+  return weakest; // null if no sub-topics have disciplines
+}
+
+// Builds a discipline-aware Block 2 content review activity string.
+// discipline: string|null, system: string, subLabel: string, gapType: string,
+// resources: string[], b2Hrs: number, studyDayNum: number
+function getDisciplineAwareActivity(discipline, system, subLabel, gapType, resources, b2Hrs) {
+  const strategy = discipline ? DISCIPLINE_ATTACK_STRATEGIES[discipline] : null;
+  const timeNote = `Time: ${formatDuration(b2Hrs)}.`;
+
+  if (!strategy) {
+    // Fallback — no discipline data available for these sub-topics
+    return gapType === "knowledge"
+      ? `Content review: ${system} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. ${timeNote}`
+      : `Content review: ${system} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. ~45 min.`;
+  }
+
+  // Pick resource based on what student has selected
+  const hasPathoma = resources.some(r => r.toLowerCase().includes("pathoma"));
+  const hasSketchy = resources.some(r => r.toLowerCase().includes("sketchy"));
+  const hasBRS     = resources.some(r => r.toLowerCase().includes("brs"));
+  let resourceNote = strategy.primaryResource;
+  if (discipline === "Pathology"  && !hasPathoma) resourceNote = `${strategy.freeVideo} (free) + First Aid`;
+  if (discipline === "Pharmacology" && !hasSketchy) resourceNote = `${strategy.freeVideo} (free) + First Aid Pharm tables`;
+  if (discipline === "Microbiology & Immunology" && !hasSketchy) resourceNote = `${strategy.freeVideo} (free) + First Aid Micro tables`;
+  if (discipline === "Physiology"  && !hasBRS)     resourceNote = `${strategy.freeVideo} (free) + First Aid`;
+
+  return `Content review: ${system} — ${subLabel}. [${discipline} focus — ${strategy.approach}] ${strategy.contentReview} Resource: ${resourceNote}. ${timeNote}`;
+}
+
 export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
@@ -1005,9 +1053,16 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           ? { gapType: contentSeqFull.gapType, sequence: (contentSeqFull.sequence || []).filter(s => s.type !== "practice" && s.type !== "annotate") }
           : null;
         const b2Resource = "Content review";
-        const b2Activity = isKG
-          ? `Content review: ${focusTopic.category} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. Time: ${formatDuration(b2Hrs)}.`
-          : `Content review: ${focusTopic.category} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. Time: ~45 min.`;
+        // Identify the weakest discipline in today's focus sub-topics for targeted advice
+        const weakestDisc = getWeakestDisciplineInSubTopics(topSubs, scores);
+        const b2Activity = getDisciplineAwareActivity(
+          weakestDisc,
+          focusTopic.category,
+          subLabel,
+          focusTopic.gapType,
+          profile.resources || [],
+          b2Hrs,
+        );
         const b2Label = isRamp
           ? `Content foundation: ${focusTopic.category}`
           : `Content review: ${focusTopic.category}`;
@@ -1031,7 +1086,14 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         qbankFilterTip,
         tasks: [
           { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode.${qbankFilterTip ? " " + qbankFilterTip : ""}${prioritizeStr}`, hours: params.b3QHrs },
-          { resource: "Self-review", activity: "Thorough review of EVERY question — right and wrong. Annotate First Aid for wrong answers. Track which sub-topics you're still missing.", hours: params.b3ReviewHrs },
+          { resource: "Self-review", activity: (() => {
+              const focusDisc = getWeakestDisciplineInSubTopics(focusSubTopics, scores);
+              const strategy = focusDisc ? DISCIPLINE_ATTACK_STRATEGIES[focusDisc] : null;
+              const base = "Thorough review of EVERY question — right and wrong. Track which sub-topics you're still missing.";
+              return strategy
+                ? `${base} ${strategy.wrongAnswerReview}`
+                : `${base} Annotate First Aid for wrong answers.`;
+            })(), hours: params.b3ReviewHrs },
         ],
       });
 

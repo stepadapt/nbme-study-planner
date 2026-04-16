@@ -353,3 +353,81 @@ export const SUB_TOPICS = {
     { topic: "Imprinting & uniparental disomy (Prader-Willi, Angelman)", yield: 5 },
   ],
 };
+
+// ── Discipline-specific attack strategies ────────────────────────────────────
+// Used by planEngine to generate tailored Block 2 (content review) and Block 3
+// (wrong-answer review) instructions for each discipline's failure mode.
+export const DISCIPLINE_ATTACK_STRATEGIES = {
+  "Pathology": {
+    approach: "Mechanism → Morphology → Manifestation",
+    primaryResource: "Pathoma (all chapters, in system order)",
+    freeVideo: "Ninja Nerd Pathology series",
+    contentReview: "Watch Pathoma for the system, then read First Aid. For each disease: write the mechanism → gross/micro finding → clinical result chain. Annotate buzzwords (\"apple-green birefringence\", \"psammoma bodies\") directly in First Aid.",
+    wrongAnswerReview: "For every wrong path question: identify whether you missed the mechanism, the morphology, or the clinical presentation. Map it to the M→M→M chain and annotate First Aid. If you missed a buzzword, highlight it in yellow and read the full FA paragraph.",
+    keyInsight: "Pathology is tested visually — if you can't picture the gross or micro finding, you'll miss the question. Sketchy Path mnemonics work well for associations.",
+  },
+  "Physiology": {
+    approach: "Baseline → Perturbation → Compensation",
+    primaryResource: "BRS Physiology (Costanzo) — read the chapter, not just FA",
+    freeVideo: "Ninja Nerd Physiology — best free resource for mechanisms",
+    contentReview: "For the target system: draw the physiologic circuit from scratch (e.g., cardiac output loop, nephron reabsorption). Annotate each step with the drug or disease that perturbs it. Read BRS or FA and fill in gaps in your diagram.",
+    wrongAnswerReview: "For every wrong physiology question: re-draw the affected circuit. Identify the step you misunderstood. Find the matching FA table and annotate which direction each variable shifts under the question's condition.",
+    keyInsight: "Most physiology questions are about compensatory responses, not baseline physiology. Practice predicting: if X goes up, what else changes and why?",
+  },
+  "Pharmacology": {
+    approach: "Mechanism → Side Effects → Clinical Use",
+    primaryResource: "First Aid Pharmacology chapter + Sketchy Pharm",
+    freeVideo: "Sketchy Pharm (best ROI for memorization)",
+    contentReview: "Use Sketchy Pharm for the drug class, then read the FA pharmacology table for the same class. For each drug: commit MOA → 3 key side effects → top clinical indication. Group drugs by class and compare within-class differences.",
+    wrongAnswerReview: "For wrong pharm questions: was it MOA, side effect, or indication? Write the drug name + the fact you missed on a flashcard-style sticky note. If it was a side effect, find all drugs in FA that share that side effect.",
+    keyInsight: "Pharmacology rewards systematic thinking. Learn drug classes, not individual drugs — then learn the exceptions within each class.",
+  },
+  "Microbiology & Immunology": {
+    approach: "Bug → Virulence Factor → Disease → Treatment",
+    primaryResource: "Sketchy Micro (non-negotiable) + FA Micro tables",
+    freeVideo: "Sketchy Micro — each video is a story, not a list",
+    contentReview: "Watch Sketchy Micro for the bug category, then read the matching FA table. For each pathogen: commit the virulence factor → classic clinical scenario → drug of choice. Pay special attention to gram stain, encapsulation, and culture findings.",
+    wrongAnswerReview: "For wrong micro questions: did you confuse two bugs? Draw a comparison table of both bugs side-by-side. If you missed a treatment, look up all drugs used for that pathogen class and their resistance patterns.",
+    keyInsight: "Micro questions are heavily scenario-based. Practice converting clinical vignettes into a bug profile: immunocompromised vs healthy host, exposure history, culture result.",
+  },
+  "Gross Anatomy & Embryology": {
+    approach: "Structure → Function → Clinical Correlation",
+    primaryResource: "First Aid Anatomy sections + Acland's Atlas (free online)",
+    freeVideo: "Ninja Nerd Anatomy for clinical correlations",
+    contentReview: "For each anatomical region: draw the relevant structures from memory (brachial plexus, inguinal canal, etc.). For embryology: draw the developmental timeline and identify what goes wrong at each stage for each high-yield defect.",
+    wrongAnswerReview: "For wrong anatomy questions: trace the clinical presentation back to the injured structure. Draw the cross-section or diagram. For embryo: identify the developmental week and the failed process.",
+    keyInsight: "Anatomy on Step 1 is almost entirely clinical — nerve injuries, hernias, referred pain, developmental defects. Learn the clinical correlation, not just the structure name.",
+  },
+  "Behavioral Sciences": {
+    approach: "Concept → Statistical Definition → Clinical Example",
+    primaryResource: "First Aid Behavioral Science chapter (complete read-through)",
+    freeVideo: "Dirty Medicine behavioral science review",
+    contentReview: "Read the FA behavioral science chapter in one sitting — it's short and dense. For biostats: make a 2×2 table and derive sensitivity, specificity, PPV, NPV from scratch. For ethics: memorize the 4-scenario framework (competent adult, minor, impaired patient, end of life).",
+    wrongAnswerReview: "For wrong behavioral science questions: write out the exact statistical formula or ethical rule that applies. If biostats, draw the 2×2 and recalculate. If ethics, state which of the 4 principles (autonomy, beneficence, non-maleficence, justice) was violated.",
+    keyInsight: "Biostats is pure calculation — you either know the formula or you don't. Spend 30 minutes deriving all formulas from a single 2×2 table and you'll never miss a biostats question.",
+  },
+  "Biochemistry & Nutrition": {
+    approach: "Enzyme → Pathway → Deficiency Disease",
+    primaryResource: "First Aid Biochemistry chapter + Dirty Medicine biochem videos",
+    freeVideo: "Dirty Medicine — short, high-yield biochem reviews",
+    contentReview: "For each pathway (glycolysis, TCA, urea cycle, etc.): draw the pathway from memory, label each enzyme, then list the disease caused by each enzyme deficiency. For vitamins: use the FA table and focus on deficiency vs toxicity presentations.",
+    wrongAnswerReview: "For wrong biochem questions: identify whether you missed the enzyme name, the substrate/product, or the clinical deficiency syndrome. Redraw the relevant pathway section with the correct answer annotated.",
+    keyInsight: "Biochemistry is low-yield individually but tested in clusters. Know the pathways cold — the questions all follow the same template: enzyme deficiency → accumulate upstream substrate → present with classic findings.",
+  },
+  "Histology & Cell Biology": {
+    approach: "Cell Type → Function → Pathological Change",
+    primaryResource: "First Aid Histology tables + Pathoma Chapter 1 (cell injury)",
+    freeVideo: "Pathoma Chapter 1 (Robbins-level cell biology in 30 minutes)",
+    contentReview: "Focus on cell injury (reversible vs irreversible), cellular adaptations (hypertrophy, hyperplasia, metaplasia, dysplasia), and tissue-specific cell types (goblet cells, chief cells, parietal cells). Know which cell types are in each tissue and what their pathologic changes look like.",
+    wrongAnswerReview: "For wrong histo questions: identify the tissue layer or cell type you confused. Find the FA table for that organ system and read the full description of each cell type's function and location.",
+    keyInsight: "Histology on Step 1 is mostly about recognizing normal cell types and their pathological counterparts. A photomicrograph question is asking: which normal cell here has gone wrong, and how?",
+  },
+  "Genetics": {
+    approach: "Pattern → Mechanism → Classic Disease",
+    primaryResource: "First Aid Genetics chapter (pedigrees, mutations, testing)",
+    freeVideo: "Ninja Nerd Genetics — clear visual explanations",
+    contentReview: "Master all 6 inheritance patterns with a representative disease for each. For chromosomal disorders: know the karyotype, clinical features, and mechanism (nondisjunction, deletion, imprinting). For molecular: know the difference between missense, nonsense, frameshift, and splice site mutations.",
+    wrongAnswerReview: "For wrong genetics questions: draw the pedigree again and re-determine the pattern. If you missed a disease, add it to your inheritance pattern list. For molecular genetics, redraw the codon and mutation type.",
+    keyInsight: "Genetics questions are almost always pedigrees or molecular mechanisms — they test pattern recognition. Practice interpreting 10 pedigrees in a row until the pattern jumps out immediately.",
+  },
+};
