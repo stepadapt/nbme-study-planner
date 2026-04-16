@@ -14,75 +14,73 @@ function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
 
 // ── Content Sequence Panel ────────────────────────────────────────────────
 // Renders recommended study steps (Watch → Read → Practice) for content blocks.
+// Clean numbered format: N. ACTION: Resource — Topic  ~time
+//                           Focus: [2-3 concepts]
+//                           Skip: [what to skip]  (optional)
 function ContentSequencePanel({ contentSequence, compact = false }) {
-  const [open, setOpen] = useState(false);
   if (!contentSequence || !contentSequence.sequence || contentSequence.sequence.length === 0) return null;
 
   const { gapType, sequence } = contentSequence;
-  const tagColor = gapType === 'knowledge' ? '#7c3aed' : '#0369a1';
-  const tagBg   = gapType === 'knowledge' ? '#7c3aed12' : '#0369a112';
-  const tagLabel = gapType === 'knowledge' ? 'Knowledge gap — build the framework first' : 'Application gap — practice-first approach';
+  const tagLabel = gapType === 'knowledge' ? 'Knowledge gap — build the framework first' : 'Application gap — recall-first approach';
 
-  const typeColor = (type) => ({
-    video:    { bg: '#7c3aed0c', border: '#7c3aed', text: '#5b21b6' },
-    read:     { bg: '#92400e0c', border: '#b45309', text: '#92400e' },
-    practice: { bg: '#1d6e5610', border: '#1D9E75', text: '#1d6e56' },
-    annotate: { bg: '#0369a10c', border: '#0369a1', text: '#01508a' },
-  }[type] || { bg: '#6b65600c', border: '#6b6560', text: '#6b6560' });
+  // Map step action/type to display color
+  const actionColor = (step) => {
+    const act = step.action || (step.type === 'video' ? 'WATCH' : step.type === 'read' ? 'READ' : step.type === 'practice' ? 'PRACTICE' : 'REVIEW');
+    return { WATCH: '#5b21b6', READ: '#92400e', PRACTICE: '#1d6e56', REVIEW: '#01508a' }[act] || '#6b6560';
+  };
+
+  const sz = compact ? { label: 11, action: 10, body: 11, time: 10 } : { label: 13, action: 11, body: 12, time: 11 };
 
   return (
-    <div style={{ marginTop: 8, borderRadius: 8, overflow: 'hidden', border: '1px solid #e8dcc8' }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: compact ? '7px 10px' : '9px 12px', background: '#fefcf8', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: compact ? 12 : 13 }}>🗺️</span>
-          <span style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: '#1a1816', fontFamily: 'Georgia, "Times New Roman", serif' }}>How to study this</span>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: tagBg, color: tagColor, fontFamily: 'Georgia, "Times New Roman", serif', whiteSpace: 'nowrap' }}>{gapType === 'knowledge' ? '📖 Knowledge' : '⚡ Application'}</span>
-        </div>
-        <span style={{ fontSize: 14, color: '#8a857e', transform: open ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▾</span>
-      </button>
+    <div style={{ marginTop: compact ? 8 : 10, paddingTop: compact ? 7 : 9, borderTop: '1px solid #f0ebe3' }}>
+      <div style={{ fontSize: sz.body, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: compact ? 6 : 8, fontStyle: 'italic' }}>
+        📋 {tagLabel}
+      </div>
+      {sequence.map((step, si) => {
+        const act = step.action || (step.type === 'video' ? 'WATCH' : step.type === 'read' ? 'READ' : step.type === 'practice' ? 'PRACTICE' : 'REVIEW');
+        const resource = step.resource || step.label;
+        const topic    = step.topic || '';
+        const timeStr  = step.timeLabel || '';
+        const focusStr = step.focus || '';
+        const skipStr  = step.skip  || '';
+        const col = actionColor(step);
 
-      {open && (
-        <div style={{ padding: compact ? '8px 10px' : '10px 12px', background: '#fff', borderTop: '1px solid #f0ebe3', display: 'grid', gap: 8 }}>
-          <div style={{ fontSize: 11, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: 2 }}>{tagLabel}</div>
-          {sequence.map((step, si) => {
-            const c = typeColor(step.type);
-            return (
-              <div key={si} style={{ padding: '9px 11px', background: c.bg, borderRadius: 7, borderLeft: `3px solid ${c.border}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: step.instruction ? 4 : 0 }}>
-                  <span style={{ fontSize: 14 }}>{step.emoji}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: c.text, fontFamily: 'Georgia, "Times New Roman", serif', flex: 1 }}>
-                    Step {si + 1}: {step.label}
-                  </span>
-                  <span style={{ fontSize: 11, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', whiteSpace: 'nowrap' }}>{step.timeLabel}</span>
-                </div>
-                {step.instruction && (
-                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: 'Georgia, "Times New Roman", serif', lineHeight: 1.5, marginBottom: step.links?.length > 0 ? 6 : 0, paddingLeft: 20 }}>
-                    {step.instruction}
-                  </div>
-                )}
-                {step.links && step.links.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingLeft: 20 }}>
-                    {step.links.map((link, li) => (
-                      <a
-                        key={li}
-                        href={link.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ fontSize: 11, fontWeight: 600, color: '#c0392b', fontFamily: 'Georgia, "Times New Roman", serif', padding: '3px 9px', borderRadius: 12, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                      >
-                        ▶ {link.channel}
-                      </a>
-                    ))}
-                  </div>
-                )}
+        return (
+          <div key={si} style={{ paddingBottom: si < sequence.length - 1 ? (compact ? 7 : 9) : 0, marginBottom: si < sequence.length - 1 ? (compact ? 7 : 9) : 0, borderBottom: si < sequence.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}>
+            {/* Step header: N. ACTION: Resource — Topic  ~time */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 3, fontFamily: 'Georgia, "Times New Roman", serif' }}>
+              <span style={{ fontSize: sz.label, fontWeight: 600, color: '#888', minWidth: 16 }}>{si + 1}.</span>
+              <span style={{ fontSize: sz.action, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: col }}>{act}:</span>
+              <span style={{ fontSize: sz.label, fontWeight: 600, color: '#1D9E75' }}>{resource}</span>
+              {topic && <><span style={{ fontSize: sz.label, color: '#ccc' }}>—</span><span style={{ fontSize: sz.label, color: '#1a1816' }}>{topic}</span></>}
+              <span style={{ marginLeft: 'auto', fontSize: sz.time, color: '#999', whiteSpace: 'nowrap', paddingLeft: 6 }}>{timeStr}</span>
+            </div>
+            {/* Focus line */}
+            {focusStr && (
+              <div style={{ fontSize: sz.body, color: '#555', fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: compact ? 18 : 20, marginTop: 2, lineHeight: 1.45 }}>
+                <span style={{ fontWeight: 600, color: '#888' }}>Focus:</span> {focusStr}
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+            {/* Skip line */}
+            {skipStr && (
+              <div style={{ fontSize: compact ? 10 : sz.body, color: '#aaa', fontStyle: 'italic', fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: compact ? 18 : 20, marginTop: 1 }}>
+                <span style={{ fontWeight: 600 }}>Skip:</span> {skipStr}
+              </div>
+            )}
+            {/* YouTube search links */}
+            {step.links && step.links.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: compact ? 18 : 20, marginTop: compact ? 3 : 5 }}>
+                {step.links.slice(0, 2).map((link, li) => (
+                  <a key={li} href={link.url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: compact ? 10 : 11, fontWeight: 600, color: '#c0392b', fontFamily: 'Georgia, "Times New Roman", serif', padding: '2px 8px', borderRadius: 10, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    ▶ {link.channel}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -82,7 +82,7 @@ Sub-topics with yield rating 5-6 only if higher-yield topics are already at or a
 Never prioritize sub-topics with yield rating below 5 unless all higher-yield topics are mastered. Rare diseases, obscure embryology details, and edge-case presentations are NOT worth study time during dedicated.
 5. Resource Recommendation Rules
 Sketchy is ONLY for Pharmacology and Microbiology. Never recommend Sketchy for any other topic. If the student does not have Sketchy, use Dirty Medicine (YouTube) for pharm mnemonics and Ninja Nerd for micro overviews.
-Pathoma is ONLY for Pathology content (inflammation, neoplasia, cell injury, hemodynamics, organ-system pathology chapters). Never recommend Pathoma for Physiology, Pharmacology, Anatomy, or Biochemistry.
+Pathoma is ONLY recommended for Chapters 1-3 (Cell Injury, Inflammation, Neoplasia). These cover general pathology principles that apply across all systems. For system-specific pathology (Ch. 4-17 — cardiovascular, respiratory, renal, GI, etc.), use Ninja Nerd for deep understanding or Dirty Medicine for mnemonics. Never recommend Pathoma Ch. 4-17. Never recommend Pathoma for Physiology, Pharmacology, Anatomy, or Biochemistry.
 YouTube channel specialization:
 
 Ninja Nerd: Deep conceptual understanding. Best for physiology, pathophysiology, complex disease mechanisms. Recommend for KNOWLEDGE GAPS where the student needs to build a framework from scratch.
@@ -128,7 +128,7 @@ For sticky weaknesses, recommend a resource change: if the student has been usin
 2. Gap Type Classification
 For each weak system, determine the gap type:
 
-Knowledge gap: The student has not learned the material. They need content FIRST (video → First Aid → questions). Content review block is longer (1.5 hrs). Video resource should be Ninja Nerd or Pathoma for deep understanding.
+Knowledge gap: The student has not learned the material. They need content FIRST (video → First Aid → questions). Content review block is longer (1.5 hrs). Video resource should be Ninja Nerd for deep understanding. Use Pathoma only if the topic is general pathology (Ch. 1-3: cell injury, inflammation, or neoplasia) — never for system-specific content.
 Application gap: The student knows the concepts but misses questions. They need MORE QUESTIONS with targeted review. Content review block is shorter (45 min). Video resource should be Dirty Medicine for recall hooks. Focus block gets 50 Qs instead of 40 if time allows.
 
 3. Plan Generation

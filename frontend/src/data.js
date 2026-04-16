@@ -360,9 +360,9 @@ export const SUB_TOPICS = {
 export const DISCIPLINE_ATTACK_STRATEGIES = {
   "Pathology": {
     approach: "Mechanism → Morphology → Manifestation",
-    primaryResource: "Pathoma (all chapters, in system order)",
-    freeVideo: "Ninja Nerd Pathology series",
-    contentReview: "Watch Pathoma for the system, then read First Aid. For each disease: write the mechanism → gross/micro finding → clinical result chain. Annotate buzzwords (\"apple-green birefringence\", \"psammoma bodies\") directly in First Aid.",
+    primaryResource: "Pathoma Ch. 1-3 (Cell Injury, Inflammation, Neoplasia) + Ninja Nerd for system-specific pathology",
+    freeVideo: "Ninja Nerd Pathology series (system-specific); Pathoma Ch. 1-3 only for general principles",
+    contentReview: "For general pathology principles (cell injury, inflammation, neoplasia): use Pathoma Ch. 1-3. For system-specific pathology (Ch. 4-17 topics): watch Ninja Nerd instead — do not use Pathoma past Ch. 3. Then read First Aid. For each disease: write the mechanism → gross/micro finding → clinical result chain. Annotate buzzwords (\"apple-green birefringence\", \"psammoma bodies\") directly in First Aid.",
     wrongAnswerReview: "For every wrong path question: identify whether you missed the mechanism, the morphology, or the clinical presentation. Map it to the M→M→M chain and annotate First Aid. If you missed a buzzword, highlight it in yellow and read the full FA paragraph.",
     keyInsight: "Pathology is tested visually — if you can't picture the gross or micro finding, you'll miss the question. Sketchy Path mnemonics work well for associations.",
   },

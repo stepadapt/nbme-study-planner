@@ -716,27 +716,13 @@ function getWeakestDisciplineInSubTopics(subTopics, scores) {
 // discipline: string|null, system: string, subLabel: string, gapType: string,
 // resources: string[], b2Hrs: number, studyDayNum: number
 function getDisciplineAwareActivity(discipline, system, subLabel, gapType, resources, b2Hrs) {
-  const strategy = discipline ? DISCIPLINE_ATTACK_STRATEGIES[discipline] : null;
-  const timeNote = `Time: ${formatDuration(b2Hrs)}.`;
-
-  if (!strategy) {
-    // Fallback — no discipline data available for these sub-topics
-    return gapType === "knowledge"
-      ? `Content review: ${system} — ${subLabel}. Watch a conceptual video first (Ninja Nerd / Pathoma / Sketchy per your resources), then read the specific First Aid section. Annotate new associations in the margins. ${timeNote}`
-      : `Content review: ${system} — ${subLabel}. Quick mnemonic/recall video (Dirty Medicine), then skim the First Aid summary table. Focus on the patterns you keep missing. ~45 min.`;
+  // Returns a compact summary line — the detailed step-by-step instructions live in
+  // the ContentSequencePanel (rendered from block.contentSequence), not in this text.
+  const gapLabel = gapType === 'knowledge' ? 'Knowledge gap' : 'Application gap';
+  if (subLabel) {
+    return `Sub-topics: ${subLabel}  ·  ${gapLabel}`;
   }
-
-  // Pick resource based on what student has selected
-  const hasPathoma = resources.some(r => r.toLowerCase().includes("pathoma"));
-  const hasSketchy = resources.some(r => r.toLowerCase().includes("sketchy"));
-  const hasBRS     = resources.some(r => r.toLowerCase().includes("brs"));
-  let resourceNote = strategy.primaryResource;
-  if (discipline === "Pathology"  && !hasPathoma) resourceNote = `${strategy.freeVideo} (free) + First Aid`;
-  if (discipline === "Pharmacology" && !hasSketchy) resourceNote = `${strategy.freeVideo} (free) + First Aid Pharm tables`;
-  if (discipline === "Microbiology & Immunology" && !hasSketchy) resourceNote = `${strategy.freeVideo} (free) + First Aid Micro tables`;
-  if (discipline === "Physiology"  && !hasBRS)     resourceNote = `${strategy.freeVideo} (free) + First Aid`;
-
-  return `Content review: ${system} — ${subLabel}. [${discipline} focus — ${strategy.approach}] ${strategy.contentReview} Resource: ${resourceNote}. ${timeNote}`;
+  return `${system}  ·  ${gapLabel}`;
 }
 
 export function generatePlan(profile, scores, stickingPoints, options = {}) {
@@ -1098,11 +1084,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       if (focusTopic) {
         const b2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75); // ~45 min for application gaps
         const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
-        // Build content sequence and strip practice/annotate steps — those belong in Block 3
+        // Build content sequence — PRACTICE is the final step in the sequence
         const contentSeqFull = getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs);
-        const contentSeqB2 = contentSeqFull
-          ? { gapType: contentSeqFull.gapType, sequence: (contentSeqFull.sequence || []).filter(s => s.type !== "practice" && s.type !== "annotate") }
-          : null;
+        const contentSeqB2 = contentSeqFull || null;
         const b2Resource = "Content review";
         // Identify the weakest discipline in today's focus sub-topics for targeted advice
         const weakestDisc = getWeakestDisciplineInSubTopics(topSubs, scores);

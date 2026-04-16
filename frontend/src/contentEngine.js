@@ -22,10 +22,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan cardiology heart disease" },
       { channel: "Boards & Beyond", query: "Boards Beyond cardiovascular system USMLE step 1" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 5: Cardiovascular",
-      query: "Pathoma cardiovascular chapter 5 heart disease",
-    },
+    // Pathoma Ch. 5 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     subTopicVideos: {
       "Heart failure": [
         { channel: "Ninja Nerd", query: "Ninja Nerd heart failure CHF systolic diastolic step 1" },
@@ -60,10 +57,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan respiratory renal pathophysiology" },
       { channel: "Boards & Beyond", query: "Boards Beyond pulmonary renal USMLE step 1" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 12–13: Pulmonary & Urinary",
-      query: "Pathoma pulmonary pathology chapter 12 renal urinary chapter 13",
-    },
+    // Pathoma Ch. 12-13 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     subTopicVideos: {
       "Acid-base": [
         { channel: "Ninja Nerd", query: "Ninja Nerd acid base disorders metabolic respiratory ABGs step 1" },
@@ -106,10 +100,7 @@ const CONTENT_MAP = {
       { channel: "Boards & Beyond", query: "Boards Beyond nervous system psychiatry USMLE step 1" },
       { channel: "Armando Hasudungan", query: "Armando Hasudungan neurology pathophysiology brain" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 8: Neuropathology",
-      query: "Pathoma neuropathology chapter 8 brain tumors",
-    },
+    // Pathoma Ch. 8 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     // NO sketchy field — Sketchy does not cover neurology/behavioral science
     subTopicVideos: {
       "Stroke": [
@@ -153,10 +144,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan hematology anemia leukemia" },
       { channel: "Boards & Beyond", query: "Boards Beyond hematology immunology step 1" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 4 & 11: Hematopathology & Immune",
-      query: "Pathoma hematology chapter 4 immunopathology chapter 11",
-    },
+    // Pathoma Ch. 4 & 11 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     // NO sketchy field — Sketchy does not cover hematology/oncology
     subTopicVideos: {
       "Anemias": [
@@ -218,10 +206,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan rheumatology musculoskeletal bone" },
       { channel: "Boards & Beyond", query: "Boards Beyond musculoskeletal skin step 1" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 7 & 9: Musculoskeletal & Skin",
-      query: "Pathoma musculoskeletal chapter 7 skin chapter 9",
-    },
+    // Pathoma Ch. 7 & 9 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     subTopicVideos: {
       "Autoimmune joint": [
         { channel: "Ninja Nerd", query: "Ninja Nerd rheumatoid arthritis SLE gout pseudogout step 1" },
@@ -248,10 +233,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan GI pathology liver gastroenterology" },
       { channel: "Boards & Beyond", query: "Boards Beyond gastrointestinal system USMLE step 1" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 14–15: GI & Hepatobiliary",
-      query: "Pathoma gastrointestinal chapter 14 hepatobiliary chapter 15",
-    },
+    // Pathoma Ch. 14-15 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     subTopicVideos: {
       "Liver pathology": [
         { channel: "Ninja Nerd", query: "Ninja Nerd liver pathology hepatitis cirrhosis liver failure step 1" },
@@ -282,10 +264,7 @@ const CONTENT_MAP = {
       { channel: "Armando Hasudungan", query: "Armando Hasudungan endocrinology reproductive hormones" },
       { channel: "Boards & Beyond", query: "Boards Beyond endocrine reproductive system USMLE" },
     ],
-    pathoma: {
-      label: "Pathoma — Ch. 16–17: Endocrine & Reproductive",
-      query: "Pathoma endocrine chapter 16 reproductive chapter 17",
-    },
+    // Pathoma Ch. 16-17 NOT recommended — use Ninja Nerd / Dirty Medicine for system-specific content
     // NO sketchy field — Sketchy does not cover endocrine/reproductive physiology
     subTopicVideos: {
       "Diabetes mellitus": [
@@ -857,14 +836,15 @@ export function getFirstAidRef(category, subTopics = []) {
 // ── Validation gate ───────────────────────────────────────────────────────
 // Safety net: blocks any Sketchy or Pathoma recommendation outside their valid domains.
 // Sketchy: ONLY Pharmacology or Microbiology & Immunology.
-// Pathoma: ONLY Pathology discipline or path-specific topics.
+// Pathoma: ONLY Ch. 1-3 topics — general pathology, inflammation, neoplasia, cell injury.
+//   Allowed categories are those with a ch. 1-3 Pathoma entry: Pathology discipline,
+//   Multisystem Processes (Ch. 1-3 explicitly), and Histology (Ch. 1 cell injury).
+//   System-specific chapters (Ch. 4-17) are NOT recommended — use Ninja Nerd / Dirty Medicine.
 const SKETCHY_ALLOWED_CATEGORIES = new Set(['Pharmacology', 'Microbiology & Immunology']);
 const PATHOMA_ALLOWED_CATEGORIES = new Set([
-  'Pathology', 'Multisystem Processes & Disorders',
-  'Cardiovascular System', 'Gastrointestinal System',
-  'Respiratory and Renal/Urinary Systems', 'Blood & Lymphoreticular/Immune Systems',
-  'Musculoskeletal, Skin & Subcutaneous Tissue', 'Reproductive & Endocrine Systems',
-  'Behavioral Health & Nervous Systems/Special Senses', 'Histology & Cell Biology',
+  'Pathology',                          // Ch. 1-3 general pathology principles
+  'Multisystem Processes & Disorders',  // Ch. 1-3 cell injury, inflammation, neoplasia
+  'Histology & Cell Biology',           // Ch. 1 cell injury & pathology
 ]);
 
 function validateRecommendation(resource, category) {
@@ -903,128 +883,133 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     .slice(0, 3)
     .map(s => (typeof s === 'string' ? s : (s.topic || '')).split('(')[0].trim())
     .filter(Boolean);
-  const focusClause = topSubNames.length > 0
-    ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}.`
-    : '';
-  const skipClause = topSubNames.length > 0
-    ? ` Skip any sections unrelated to ${topSubNames.slice(0, 2).join(' or ')} — you have limited time.`
-    : '';
 
-  // Build the primary video recommendation (Pathoma/Sketchy override first)
+  // Helper: shorten FA focus text to first clause only (before first semicolon), max 90 chars
+  function shortFocus(raw) {
+    const first = raw.split(';')[0].replace(/\(.*?\)/g, '').trim();
+    return first.length > 90 ? first.substring(0, 87) + '…' : first;
+  }
+
+  // Build the primary video recommendation (Pathoma Ch.1-3 / Sketchy override first)
   let primaryVideoStep;
   if (hasPathoma) {
+    // Pathoma ONLY for Ch. 1-3 topics (cell injury, inflammation, neoplasia)
+    const pathomaLabel = bucket.pathoma.label.replace('Pathoma — ', '');
     primaryVideoStep = {
-      type: 'video',
-      emoji: '🔬',
+      type: 'video', emoji: '🔬',
       label: bucket.pathoma.label,
-      timeLabel: '~30 min',
-      instruction: `${focusClause} Watch the sections covering these specific concepts — Hussain is dense, so pause frequently and annotate.${skipClause}`,
-      links: [], // Paid platform — student accesses via their own Pathoma subscription. No YouTube link.
+      action: 'WATCH', resource: 'Pathoma', topic: pathomaLabel,
+      timeLabel: gapType === 'knowledge' ? '~25 min' : '~15 min',
+      focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : 'Cell injury, inflammation, neoplasia principles',
+      skip: null,
+      instruction: topSubNames.length > 0
+        ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}. Hussain is dense — pause and annotate as you go.`
+        : 'Cover the core concepts. Hussain is dense — pause and annotate as you go.',
+      links: [],
     };
   } else if (hasSketchy) {
-    // Sketchy is ONLY valid for Pharmacology and Microbiology & Immunology.
-    // It is a paid platform — never generate a YouTube link. Text-only recommendation.
+    // Sketchy ONLY for Pharmacology and Microbiology & Immunology (paid platform, no YouTube link)
     const isPharm = category === 'Pharmacology';
     const sketchyType = isPharm ? 'Pharm' : 'Micro';
     const topSubTopic = subTopics?.[0]?.topic?.split('(')[0]?.trim() || '';
-    const sketchyLabel = topSubTopic
-      ? `Sketchy ${sketchyType}: ${topSubTopic}`
-      : bucket.sketchy.label;
     primaryVideoStep = {
-      type: 'video',
-      emoji: '🎨',
-      label: sketchyLabel,
-      timeLabel: '~30 min',
-      instruction: `Open Sketchy ${sketchyType}${topSubNames.length > 0 ? ` — scenes for: ${topSubNames.slice(0, 2).join(', ')}` : ''}. Build the memory palace as you watch. After finishing, close the video and draw the scene from memory to test encoding.${skipClause}`,
-      links: [], // Paid platform — student accesses via their own subscription. No YouTube link.
+      type: 'video', emoji: '🎨',
+      label: topSubTopic ? `Sketchy ${sketchyType}: ${topSubTopic}` : bucket.sketchy.label,
+      action: 'WATCH', resource: `Sketchy ${sketchyType}`, topic: topSubTopic || category,
+      timeLabel: gapType === 'knowledge' ? '~25 min' : '~15 min',
+      focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : 'Key scenes and mnemonics',
+      skip: null,
+      instruction: `Open Sketchy ${sketchyType}${topSubNames.length > 0 ? ` — scenes for: ${topSubNames.slice(0, 2).join(', ')}` : ''}. Build the memory palace as you watch. After finishing, close and draw the scene from memory to test encoding.`,
+      links: [],
     };
   } else {
-    // Build YouTube video list: sub-topic matches first, then fallback to main videos
+    // YouTube video list: sub-topic matches first, then fallback to main videos
     const subTopicMatches = matchSubTopicVideos(category, subTopics);
     const videoList = subTopicMatches.length > 0
-      ? [...subTopicMatches, ...bucket.mainVideos].slice(0, 3)
-      : bucket.mainVideos.slice(0, 3);
+      ? [...subTopicMatches, ...bucket.mainVideos].slice(0, 4)
+      : bucket.mainVideos.slice(0, 4);
 
-    // Filter preferred channels if student has B&B or Physeo
-    const preferred = videoList.filter(v =>
-      (hasBnb     && v.channel.toLowerCase().includes('boards')) ||
-      (hasPhyseo  && v.channel.toLowerCase().includes('physeo'))
-    );
-    const finalList = preferred.length > 0
-      ? [...preferred, ...videoList.filter(v => !preferred.includes(v))].slice(0, 3)
-      : videoList.slice(0, 3);
+    // Application gap → prefer Dirty Medicine (recall/mnemonics)
+    // Knowledge gap → prefer B&B or Physeo if student has them, then Ninja Nerd
+    let finalList;
+    if (gapType === 'application') {
+      const dm = videoList.find(v => v.channel === 'Dirty Medicine');
+      finalList = dm
+        ? [dm, ...videoList.filter(v => v !== dm)].slice(0, 3)
+        : videoList.slice(0, 3);
+    } else {
+      const preferred = videoList.filter(v =>
+        (hasBnb    && v.channel.toLowerCase().includes('boards')) ||
+        (hasPhyseo && v.channel.toLowerCase().includes('physeo'))
+      );
+      finalList = preferred.length > 0
+        ? [...preferred, ...videoList.filter(v => !preferred.includes(v))].slice(0, 3)
+        : videoList.slice(0, 3);
+    }
 
+    const primaryChannel = finalList[0]?.channel || 'Ninja Nerd';
     primaryVideoStep = {
-      type: 'video',
-      emoji: '▶️',
-      label: `Video review: ${category}`,
-      timeLabel: '~30 min',
-      instruction: `${focusClause} Watch 1 of these — pick the channel whose style clicks for you. Jump to the sections on your focus sub-topics; you don't need to watch the full video. Take notes, not screenshots.${skipClause}`,
-      links: finalList.map(v => ({
-        channel: v.channel,
-        url: ytLink(v.query),
-        label: v.channel,
-      })),
+      type: 'video', emoji: '▶️',
+      label: `Video: ${topSubNames[0] || category}`,
+      action: 'WATCH', resource: primaryChannel, topic: topSubNames[0] || category,
+      timeLabel: gapType === 'knowledge' ? '~20 min' : '~15 min',
+      focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : category,
+      skip: gapType === 'knowledge'
+        ? 'Detailed treatment protocols — learn those from questions'
+        : 'Deep mechanism explanations — focus on recall patterns',
+      instruction: topSubNames.length > 0
+        ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}. Jump to those sections — you don't need to watch the full video. Take notes, not screenshots.`
+        : 'Jump to the most relevant section — you don\'t need to watch the full video. Take notes, not screenshots.',
+      links: finalList.map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
     };
   }
 
   // First Aid read step — section-specific reference
   const faRef = getFirstAidRef(category, subTopics);
-  const subFocusNote = topSubNames.length > 0
-    ? ` Focus specifically on the content relating to ${topSubNames.slice(0, 2).join(' and ')}.`
-    : '';
   const firstAidStep = hasFirstAid ? {
-    type: 'read',
-    emoji: '📕',
+    type: 'read', emoji: '📕',
     label: `First Aid: ${faRef.section}`,
-    timeLabel: '~20–25 min',
-    instruction: `${faRef.focus}${subFocusNote} Annotate anything from today's video that isn't already in the book — margin notes and arrows connecting concepts are more useful than highlighting.`,
+    action: 'READ', resource: 'First Aid', topic: faRef.section,
+    timeLabel: gapType === 'knowledge' ? '~15–20 min' : '~10–15 min',
+    focus: shortFocus(faRef.focus),
+    skip: null,
+    instruction: `${faRef.focus}${topSubNames.length > 0 ? ` Focus on: ${topSubNames.slice(0, 2).join(' and ')}.` : ''} Annotate anything from today's video not already in the book.`,
     links: [],
   } : null;
 
-  // Practice step (always present)
+  // Practice step — always last, references Block 3
   const practiceStep = {
-    type: 'practice',
-    emoji: '🎯',
-    label: 'Question practice',
-    timeLabel: '~40–50 min',
+    type: 'practice', emoji: '🎯',
+    label: `40 Qs — ${category}, timed`,
+    action: 'PRACTICE', resource: 'UWorld', topic: `40 Qs — ${category}, timed`,
+    timeLabel: '~2–2.5 hrs',
+    focus: 'Review every question — annotate First Aid for wrong answers',
+    skip: null,
     instruction: gapType === 'knowledge'
-      ? 'Do 20–30 focused questions on this topic now that you\'ve built the framework. Read every explanation — both right and wrong answers.'
-      : 'Do 20–30 focused questions. When you miss one, go back to the concept immediately — annotate your notes with the clinical reasoning.',
+      ? 'Now apply what you learned — 40 timed Qs on this system. Read every explanation thoroughly.'
+      : '40 timed Qs on this system. When you miss one, go back immediately — annotate First Aid with the clinical reasoning.',
     links: [],
   };
 
-  // Annotate step (for application gaps)
+  // Annotate step (application gaps without First Aid)
   const annotateStep = {
-    type: 'annotate',
-    emoji: '✏️',
-    label: 'Annotate & consolidate',
-    timeLabel: '~20–25 min',
-    instruction: 'Go through every wrong answer from today\'s questions. For each one: find the concept in First Aid and annotate it. If you use AnKing, search the deck browser by keyword and unsuspend the existing card — do NOT make your own cards.',
+    type: 'annotate', emoji: '✏️',
+    label: 'Wrong answer review',
+    action: 'REVIEW', resource: 'Notes', topic: 'Wrong answer review',
+    timeLabel: '~10 min',
+    focus: 'Every wrong answer → annotate your notes or unsuspend the AnKing card',
+    skip: null,
+    instruction: 'Go through every wrong answer. Find the concept and annotate it. If you use AnKing, search the deck browser by keyword and unsuspend the existing card — do NOT make your own cards.',
     links: [],
   };
 
-  // Build sequence based on gap type
-  let sequence;
-  if (gapType === 'knowledge') {
-    // Knowledge gap: Watch → Read → Practice
-    sequence = [
-      primaryVideoStep,
-      firstAidStep,
-      { ...practiceStep, timeLabel: '~50 min', instruction: 'Now apply what you learned — do 20–30 focused Qs on this topic. Read every explanation thoroughly.' },
-    ].filter(Boolean);
-  } else {
-    // Application gap: Practice → Targeted Watch → Annotate
-    sequence = [
-      { ...practiceStep, timeLabel: '~50 min', instruction: 'Start with questions — identify exactly which concepts are tripping you up before you review.' },
-      { ...primaryVideoStep, timeLabel: '~25 min', instruction: hasPathoma || hasSketchy
-          ? 'Watch the specific sections that match what you got wrong. Don\'t re-watch things you already know.'
-          : 'Watch 1 targeted video for the concepts you missed. Don\'t re-watch material you already know.' },
-      firstAidStep
-        ? { ...annotateStep, instruction: 'Annotate First Aid with what you learned. Every wrong answer = an annotation or an Anki card.' }
-        : annotateStep,
-    ].filter(Boolean);
-  }
+  // Unified sequence: WATCH → READ → PRACTICE (practice always last)
+  // Gap type affects video resource choice and time allocations, not step order.
+  const sequence = [
+    primaryVideoStep,
+    firstAidStep || (gapType === 'application' ? annotateStep : null),
+    practiceStep,
+  ].filter(Boolean);
 
   return { gapType, sequence };
 }
