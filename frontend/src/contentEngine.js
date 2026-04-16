@@ -892,6 +892,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
 
   // Build the primary video recommendation (Pathoma Ch.1-3 / Sketchy override first)
   let primaryVideoStep;
+  let secondaryVideoStep = null; // Second WATCH step for YouTube knowledge gaps with 2+ sub-topics
   if (hasPathoma) {
     // Pathoma ONLY for Ch. 1-3 topics (cell injury, inflammation, neoplasia)
     const pathomaLabel = bucket.pathoma.label.replace('Pathoma — ', '');
@@ -960,8 +961,25 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       instruction: topSubNames.length > 0
         ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}. Jump to those sections — you don't need to watch the full video. Take notes, not screenshots.`
         : 'Jump to the most relevant section — you don\'t need to watch the full video. Take notes, not screenshots.',
-      links: finalList.map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
+      links: finalList.slice(0, 2).map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
     };
+
+    // Knowledge gap with 2+ sub-topics: add a second WATCH step (~15 min) for the next sub-topic
+    // With primary WATCH (~20 min) + secondary WATCH (~15 min) + READ (~15-20 min) ≈ 50-55 min → 1 hr block
+    // Application gaps stay at a single shorter video — no secondary step needed
+    if (gapType === 'knowledge' && topSubNames.length >= 2 && finalList.length >= 2) {
+      const secChannel = finalList[1].channel;
+      secondaryVideoStep = {
+        type: 'video', emoji: '▶️',
+        label: `Video: ${topSubNames[1]}`,
+        action: 'WATCH', resource: secChannel, topic: topSubNames[1],
+        timeLabel: '~15 min',
+        focus: topSubNames[1],
+        skip: 'Skip overlap with the previous video — jump to this sub-topic only',
+        instruction: `Focus on: ${topSubNames[1]}. Jump directly to this section — skip any content already covered above.`,
+        links: finalList.slice(1, 2).map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
+      };
+    }
   }
 
   // First Aid read step — section-specific reference
@@ -1003,12 +1021,13 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     links: [],
   };
 
-  // Sequence: WATCH → READ (or REVIEW for no-FA application gaps)
+  // Sequence: WATCH → (WATCH for KG with 2+ sub-topics) → READ
   // PRACTICE is NOT included here — it belongs to the dedicated Targeted Questions
   // block that appears as a separate daily block directly below Content Review.
   // Including PRACTICE here would create a visible duplicate.
   const sequence = [
     primaryVideoStep,
+    secondaryVideoStep,                                                   // null for Pathoma/Sketchy or <2 sub-topics
     firstAidStep || (gapType === 'application' ? annotateStep : null),
   ].filter(Boolean);
 

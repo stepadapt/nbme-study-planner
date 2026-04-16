@@ -24,6 +24,18 @@ export function roundToQuarterHour(hours) {
   return Math.round(hours * 4) / 4;
 }
 
+// Parses a step timeLabel string to minutes.
+// Handles: "~20 min", "~15–20 min", "~15 min", "~10–15 min"
+// For ranges (e.g. "15–20 min"), returns the higher end.
+function parseStepMinutes(timeLabel) {
+  const cleaned = (timeLabel || '').replace(/~/g, '').replace(/\s*min\s*/gi, '').trim();
+  if (cleaned.includes('–') || cleaned.includes('-')) {
+    const parts = cleaned.split(/[–\-]/);
+    return parseInt(parts[parts.length - 1].trim(), 10) || 15;
+  }
+  return parseInt(cleaned, 10) || 15;
+}
+
 // Format a duration in hours as "X hr Y min", never as a decimal
 export function formatDuration(hours) {
   hours = roundToQuarterHour(hours || 0);
@@ -1080,13 +1092,23 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const qbankFilterTip = getQbankFilterTip(primaryQBank, focusTopic?.category, focusSubTopics);
 
       // BLOCK 2 — Content review: gap-fill on high-yield sub-topics (MORNING, brain fresh)
-      // NEVER placed after questions. Maximum 1.5h. Targets 2–3 highest-yield sub-topics only.
+      // NEVER placed after questions. Duration is derived from actual WATCH + READ step times.
+      let b3ReviewHrs = params.b3ReviewHrs; // may grow if content review is shorter than params expected
       if (focusTopic) {
-        const b2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75); // ~45 min for application gaps
-        const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
-        // Build content sequence — PRACTICE is the final step in the sequence
+        // Build content sequence first — duration is computed from its steps, not hardcoded
         const contentSeqFull = getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs);
         const contentSeqB2 = contentSeqFull || null;
+        // Sum step timecodes → round up to nearest 15 min → convert to hours
+        const seqMins = (contentSeqFull?.sequence || []).reduce(
+          (sum, s) => sum + parseStepMinutes(s.timeLabel), 0
+        );
+        const b2Hrs = seqMins > 0
+          ? Math.ceil(seqMins / 15) * 15 / 60  // e.g. 50 min → 1.0 hr, 30 min → 0.5 hr
+          : (isKG ? 0.75 : 0.5);               // fallback if sequence is somehow empty
+        // Redistribute freed time (removed PRACTICE step was ~30-45 min) → targeted Q review
+        const prevB2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75);
+        b3ReviewHrs = roundToQuarterHour(params.b3ReviewHrs + Math.max(0, prevB2Hrs - b2Hrs));
+        const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
         const b2Resource = "Content review";
         // Identify the weakest discipline in today's focus sub-topics for targeted advice
         const weakestDisc = getWeakestDisciplineInSubTopics(topSubs, scores);
@@ -1121,7 +1143,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         qbankFilterTip,
         tasks: [
           { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode${prioritizeStr ? " · " + prioritizeStr : ""}`, hours: params.b3QHrs },
-          { resource: "Review", activity: "Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · Annotate First Aid for each missed concept", hours: params.b3ReviewHrs },
+          { resource: "Review", activity: "Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · Annotate First Aid for each missed concept", hours: b3ReviewHrs },
         ],
       });
 
@@ -1155,6 +1177,19 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
     // Validate block order — content must always precede questions
     validateDayStructure(blocks);
+
+    // Timing sanity check — total block hours should be within 30 min of the student's target
+    if (sched.type === 'study') {
+      const dayTotalHrs = blocks.reduce(
+        (sum, b) => sum + (b.tasks?.reduce((s, t) => s + (t.hours || 0), 0) || 0), 0
+      );
+      if (Math.abs(dayTotalHrs - availHrs) > 0.5) {
+        console.warn(
+          `⚠ Day ${sched.calendarDay} timing: blocks total ${dayTotalHrs.toFixed(2)}hr, ` +
+          `target ${availHrs}hr (diff: ${(dayTotalHrs - availHrs).toFixed(2)}hr)`
+        );
+      }
+    }
 
     if (focusTopic && !currentWeek.focusTopics.includes(focusTopic.category)) currentWeek.focusTopics.push(focusTopic.category);
     currentWeek.days.push({
