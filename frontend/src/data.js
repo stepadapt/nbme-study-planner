@@ -46,27 +46,42 @@ export const RESOURCES = [
   { id: "anking", name: "AnKing Deck", type: "practice", icon: "🃏" },
 ];
 
-// HIGH_YIELD_WEIGHTS — based on midpoint of % of questions on actual NBME report (1-10 scale)
+// HIGH_YIELD_WEIGHTS — midpoint of official USMLE Step 1 content specification %, normalized 1-10
 export const HIGH_YIELD_WEIGHTS = {
-  // System — weights reflect % of exam
-  "Reproductive & Endocrine Systems": 7,
-  "Respiratory and Renal/Urinary Systems": 7,
-  "Behavioral Health & Nervous Systems/Special Senses": 7,
-  "Blood & Lymphoreticular/Immune Systems": 6,
-  "Multisystem Processes & Disorders": 6,
-  "Musculoskeletal, Skin & Subcutaneous Tissue": 6,
-  "Cardiovascular System": 6,
-  "Gastrointestinal System": 5,
-  // Discipline — Pathology/Physiology dominate Step 1
-  "Pathology": 10,
-  "Physiology": 9,
-  "Microbiology & Immunology": 8,
-  "Pharmacology": 7,
-  "Gross Anatomy & Embryology": 6,
-  "Behavioral Sciences": 6,
-  "Biochemistry & Nutrition": 5,
-  "Histology & Cell Biology": 5,
-  "Genetics": 4,
+  // System — calibrated to official USMLE content spec midpoints
+  "Reproductive & Endocrine Systems":                  9, // 12-16%, midpoint 14 — highest-weighted system
+  "Respiratory and Renal/Urinary Systems":             9, // 11-15%, midpoint 13
+  "Behavioral Health & Nervous Systems/Special Senses":8, // 10-14%, midpoint 12
+  "Blood & Lymphoreticular/Immune Systems":            8, // 9-13%,  midpoint 11
+  "Multisystem Processes & Disorders":                 7, // 8-12%,  midpoint 10
+  "Musculoskeletal, Skin & Subcutaneous Tissue":       7, // 8-12%,  midpoint 10
+  "Cardiovascular System":                             7, // 7-11%,  midpoint 9
+  "Gastrointestinal System":                           6, // 6-10%,  midpoint 8
+  // Discipline — Pathology dominates at 45-55%; Physiology at 30-40%
+  "Pathology":                  10, // 45-55%
+  "Physiology":                  9, // 30-40%
+  "Microbiology & Immunology":   7, // 10-20% (combined)
+  "Pharmacology":                7, // 10-20%
+  "Gross Anatomy & Embryology":  7, // 10-20%
+  "Behavioral Sciences":         6, // 10-15%
+  "Biochemistry & Nutrition":    5, // 5-15%
+  "Histology & Cell Biology":    5, // 5-15%
+  "Genetics":                    4, // 5-10%
+};
+
+// DISCIPLINE_YIELD_WEIGHTS — official USMLE content spec for discipline categories
+// Used by the priority crossover bonus: if a student is weak in both a system
+// AND the dominant disciplines for that system, priority amplifies.
+export const DISCIPLINE_YIELD_WEIGHTS = {
+  "Pathology":                  { yield: 10, examPercent: "45-55%", midpoint: 50 },
+  "Physiology":                 { yield: 9,  examPercent: "30-40%", midpoint: 35 },
+  "Microbiology & Immunology":  { yield: 7,  examPercent: "10-20%", midpoint: 15 },
+  "Pharmacology":               { yield: 7,  examPercent: "10-20%", midpoint: 15 },
+  "Gross Anatomy & Embryology": { yield: 7,  examPercent: "10-20%", midpoint: 15 },
+  "Behavioral Sciences":        { yield: 6,  examPercent: "10-15%", midpoint: 12.5 },
+  "Biochemistry & Nutrition":   { yield: 5,  examPercent: "5-15%",  midpoint: 10 },
+  "Histology & Cell Biology":   { yield: 5,  examPercent: "5-15%",  midpoint: 10 },
+  "Genetics":                   { yield: 4,  examPercent: "5-10%",  midpoint: 7.5 },
 };
 
 export const RESOURCE_MAP = {
@@ -113,117 +128,122 @@ export const PRACTICE_TESTS = [
 ];
 
 export const SUB_TOPICS = {
-  // ── System ──
+  // ── System — enriched with discipline tags for crossover bonus calculation ──
   "Reproductive & Endocrine Systems": [
-    { topic: "Diabetes mellitus (Type 1 vs 2, DKA vs HHS, insulin)", yield: 10 },
-    { topic: "Thyroid disorders (Graves', Hashimoto's, hyper/hypo)", yield: 9 },
-    { topic: "Adrenal disorders (Cushing's, Addison's, Conn's, pheo)", yield: 9 },
-    { topic: "Female reproductive pathology (PCOS, fibroids, endometriosis, cancers)", yield: 8 },
-    { topic: "Pituitary disorders (prolactinoma, acromegaly, SIADH, DI)", yield: 8 },
-    { topic: "Pregnancy complications (ectopic, pre-eclampsia, gestational DM)", yield: 8 },
-    { topic: "Calcium & parathyroid disorders", yield: 7 },
-    { topic: "Male reproductive pathology (BPH, prostate cancer, testicular tumors)", yield: 7 },
-    { topic: "Adrenal steroid synthesis pathway", yield: 7 },
-    { topic: "Hormonal contraception & reproductive pharmacology", yield: 6 },
-    { topic: "MEN syndromes", yield: 6 },
-    { topic: "Sexual differentiation & embryology", yield: 5 },
+    // Exam weight 12-16% — most-tested system; students chronically underprepare it
+    { topic: "Diabetes mellitus (Type 1 vs 2, DKA vs HHS, insulin)", yield: 10, disciplines: ["Pathology", "Pharmacology", "Physiology"] },
+    { topic: "Thyroid disorders (Graves', Hashimoto's, thyroid cancer)", yield: 10, disciplines: ["Pathology", "Pharmacology", "Physiology"] },
+    { topic: "Adrenal disorders (Cushing's, Addison's, Conn's, CAH)", yield: 9,  disciplines: ["Pathology", "Physiology", "Biochemistry & Nutrition"] },
+    { topic: "Pituitary disorders (prolactinoma, acromegaly, SIADH, DI)", yield: 8, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Calcium & parathyroid disorders", yield: 8, disciplines: ["Physiology", "Pathology"] },
+    { topic: "Pregnancy complications (ectopic, pre-eclampsia, gestational DM)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Ovarian & uterine pathology (cancers, endometriosis, fibroids)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Breast pathology (carcinoma, fibroadenoma, BRCA)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Menstrual cycle & hormones", yield: 7, disciplines: ["Physiology"] },
+    { topic: "Testicular & prostate pathology (seminoma, BPH)", yield: 6, disciplines: ["Pathology"] },
+    { topic: "MEN syndromes", yield: 6, disciplines: ["Pathology", "Genetics"] },
+    { topic: "Disorders of sexual development", yield: 4, disciplines: ["Genetics", "Pathology"] },
   ],
   "Respiratory and Renal/Urinary Systems": [
-    { topic: "Acid-base disorders (metabolic/respiratory, compensation, ABGs)", yield: 10 },
-    { topic: "Obstructive lung diseases (COPD, asthma, bronchiectasis)", yield: 10 },
-    { topic: "Glomerulonephritis (nephrotic vs nephritic syndrome)", yield: 9 },
-    { topic: "Diuretics (mechanism, site of action, side effects)", yield: 9 },
-    { topic: "Electrolyte disorders (Na, K, Ca — causes & management)", yield: 9 },
-    { topic: "Pulmonary embolism & DVT", yield: 8 },
-    { topic: "Acute kidney injury (pre-renal, intrinsic, post-renal)", yield: 8 },
-    { topic: "Lung cancer (types, location, paraneoplastic)", yield: 8 },
-    { topic: "RAAS system & blood pressure regulation", yield: 7 },
-    { topic: "Chronic kidney disease (stages, complications)", yield: 7 },
-    { topic: "Pulmonary function tests (FEV1/FVC, compliance)", yield: 7 },
-    { topic: "TB (primary, secondary, PPD, treatment)", yield: 7 },
-    { topic: "Renal tubular acidosis (types I, II, IV)", yield: 6 },
-    { topic: "Oxygen-hemoglobin dissociation curve", yield: 6 },
-    { topic: "Restrictive lung diseases (fibrosis, sarcoidosis)", yield: 6 },
+    // Exam weight 11-15% — second-highest system; ABGs and diuretics are free points
+    { topic: "Acid-base disorders (ABGs, metabolic, respiratory, mixed)", yield: 10, disciplines: ["Physiology", "Pathology"] },
+    { topic: "Obstructive lung diseases (COPD, asthma, bronchiectasis)", yield: 10, disciplines: ["Pathology", "Pharmacology"] },
+    { topic: "Glomerulonephritis (nephrotic vs nephritic, histology)", yield: 9,  disciplines: ["Pathology", "Histology & Cell Biology"] },
+    { topic: "Electrolyte disorders (Na, K, Ca — SIADH, DI, causes)", yield: 9,  disciplines: ["Physiology", "Pathology"] },
+    { topic: "Diuretics (mechanism, nephron site, side effects)", yield: 9,  disciplines: ["Pharmacology"] },
+    { topic: "Restrictive lung diseases (IPF, sarcoidosis, pneumoconioses)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Lung cancer (types, location, paraneoplastic syndromes)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Pulmonary embolism & DVT (Virchow's, workup, treatment)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Nephron physiology (GFR, clearance, tubuloglomerular feedback)", yield: 8, disciplines: ["Physiology"] },
+    { topic: "AKI vs CKD (BUN/Cr, FENa, urinalysis, complications)", yield: 7,  disciplines: ["Pathology"] },
+    { topic: "Oxygen-hemoglobin dissociation curve (shifts, CO, MetHb)", yield: 7, disciplines: ["Physiology"] },
+    { topic: "Pulmonary function tests (FEV1/FVC, compliance)", yield: 6,  disciplines: ["Physiology"] },
+    { topic: "TB (primary, secondary, PPD, treatment)", yield: 6,  disciplines: ["Microbiology & Immunology"] },
+    { topic: "Renal tubular acidosis (types I, II, IV)", yield: 5,  disciplines: ["Pathology"] },
+    { topic: "Pulmonary hypertension", yield: 5,  disciplines: ["Pathology"] },
   ],
   "Behavioral Health & Nervous Systems/Special Senses": [
-    { topic: "Stroke syndromes (vascular territories, deficits)", yield: 10 },
-    { topic: "Ethics (autonomy, beneficence, informed consent, capacity)", yield: 9 },
-    { topic: "Neurotransmitters & receptor pharmacology", yield: 9 },
-    { topic: "Mood disorders (MDD, bipolar — diagnosis, treatment)", yield: 9 },
-    { topic: "Cranial nerves (pathways, lesions, deficits)", yield: 8 },
-    { topic: "Seizure disorders & antiepileptic drugs", yield: 8 },
-    { topic: "Psychotic disorders (schizophrenia, antipsychotics)", yield: 8 },
-    { topic: "Anxiety disorders (GAD, panic, OCD, PTSD)", yield: 7 },
-    { topic: "Neurodegenerative diseases (Alzheimer's, Parkinson's, ALS)", yield: 7 },
-    { topic: "Spinal cord lesions (Brown-Séquard, syringomyelia)", yield: 7 },
-    { topic: "Brain tumors (types, location, age)", yield: 6 },
-    { topic: "Substance use disorders", yield: 6 },
-    { topic: "Demyelinating diseases (MS, Guillain-Barré)", yield: 6 },
-    { topic: "Meningitis (bacterial vs viral, CSF findings)", yield: 6 },
-    { topic: "Biostatistics (sensitivity, specificity, study design, PPV/NPV)", yield: 6 },
+    // Exam weight 10-14%; biostatistics here because it appears on every form
+    { topic: "Stroke syndromes (vascular territories, tPA, hemorrhagic vs ischemic)", yield: 10, disciplines: ["Pathology", "Gross Anatomy & Embryology"] },
+    { topic: "Neurotransmitters & receptor pharmacology (dopamine pathways, GABA)", yield: 9, disciplines: ["Pharmacology", "Physiology"] },
+    { topic: "Biostatistics (sensitivity, specificity, PPV/NPV, study design, NNT)", yield: 9, disciplines: ["Behavioral Sciences"] },
+    { topic: "Ethics (autonomy, informed consent, capacity, HIPAA, mandatory reporting)", yield: 8, disciplines: ["Behavioral Sciences"] },
+    { topic: "Seizure disorders & antiepileptic drugs", yield: 8, disciplines: ["Pathology", "Pharmacology"] },
+    { topic: "Demyelinating diseases (MS, Guillain-Barré, CIDP)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Psychiatric disorders (MDD, bipolar, schizophrenia, antidepressants)", yield: 7, disciplines: ["Behavioral Sciences", "Pharmacology"] },
+    { topic: "Neurodegenerative diseases (Alzheimer's, Parkinson's, ALS, Huntington's)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Spinal cord lesions (Brown-Séquard, anterior cord, subacute combined)", yield: 7, disciplines: ["Pathology", "Gross Anatomy & Embryology"] },
+    { topic: "CNS tumors (glioblastoma, meningioma, medulloblastoma — location & age)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Bias & confounding (selection, recall, lead-time, Hawthorne)", yield: 7, disciplines: ["Behavioral Sciences"] },
+    { topic: "Substance use disorders (opioids, alcohol, stimulants — withdrawal)", yield: 6, disciplines: ["Behavioral Sciences"] },
+    { topic: "Meningitis (bacterial vs viral, CSF findings)", yield: 6, disciplines: ["Microbiology & Immunology"] },
+    { topic: "Cranial nerve palsies (anatomy, lesion localization)", yield: 5, disciplines: ["Gross Anatomy & Embryology"] },
+    { topic: "Sleep disorders & stages", yield: 4, disciplines: ["Behavioral Sciences"] },
   ],
   "Blood & Lymphoreticular/Immune Systems": [
-    { topic: "Anemias (iron deficiency, B12/folate, sickle cell, thalassemia, hemolytic)", yield: 10 },
-    { topic: "Leukemias & lymphomas (ALL, AML, CLL, CML, Hodgkin's, NHL)", yield: 9 },
-    { topic: "Hypersensitivity reactions (Types I–IV)", yield: 9 },
-    { topic: "Coagulation cascade & bleeding disorders", yield: 8 },
-    { topic: "Immunodeficiency disorders (SCID, DiGeorge, Bruton's)", yield: 8 },
-    { topic: "Platelet disorders (ITP, TTP, HUS, DIC)", yield: 8 },
-    { topic: "Anticoagulants & antiplatelets (heparin, warfarin, DOACs)", yield: 7 },
-    { topic: "Autoimmune diseases (SLE, RA, Sjögren's)", yield: 7 },
-    { topic: "Complement system & cytokines", yield: 7 },
-    { topic: "Transplant rejection (hyperacute, acute, chronic)", yield: 6 },
-    { topic: "Blood transfusion reactions", yield: 6 },
-    { topic: "Myeloproliferative disorders", yield: 5 },
+    // Exam weight 9-13%; anemias and coagulopathies on nearly every form
+    { topic: "Anemias (iron, B12/folate, sickle cell, thalassemia, hemolytic — blood smear)", yield: 10, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Coagulation cascade & bleeding disorders (PT/PTT, hemophilia, vWD, DIC)", yield: 9, disciplines: ["Pathology", "Pharmacology"] },
+    { topic: "Leukemias & lymphomas (ALL, AML, CLL, CML, Hodgkin's, Burkitt's)", yield: 9, disciplines: ["Pathology"] },
+    { topic: "Hypersensitivity reactions (Types I–IV, anaphylaxis, serum sickness)", yield: 8, disciplines: ["Microbiology & Immunology", "Pathology"] },
+    { topic: "Immunodeficiency disorders (SCID, DiGeorge, Bruton's, CGD)", yield: 8, disciplines: ["Microbiology & Immunology", "Pathology"] },
+    { topic: "Platelet disorders (ITP, TTP, HUS, Bernard-Soulier, Glanzmann's)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Autoimmune diseases (SLE, RA, Sjögren's — antibodies, organ involvement)", yield: 7, disciplines: ["Microbiology & Immunology", "Pathology"] },
+    { topic: "Transplant immunology (rejection types, immunosuppressants)", yield: 7, disciplines: ["Microbiology & Immunology"] },
+    { topic: "Complement system & cytokines (pathways, deficiencies)", yield: 6, disciplines: ["Microbiology & Immunology"] },
+    { topic: "Myeloproliferative disorders (PV, ET, MF)", yield: 5, disciplines: ["Pathology"] },
+    { topic: "Blood transfusion reactions", yield: 4, disciplines: ["Pathology"] },
   ],
   "Multisystem Processes & Disorders": [
-    { topic: "Neoplasia (benign vs malignant, grading, staging, tumor markers)", yield: 10 },
-    { topic: "Inflammation (acute vs chronic, mediators)", yield: 9 },
-    { topic: "Hemodynamics (thrombosis, embolism, infarction, edema, shock)", yield: 9 },
-    { topic: "Cell injury & death (apoptosis vs necrosis types)", yield: 8 },
-    { topic: "Paraneoplastic syndromes", yield: 7 },
-    { topic: "Granulomatous diseases (sarcoidosis, TB)", yield: 7 },
-    { topic: "Wound healing & repair", yield: 6 },
-    { topic: "Vitamin deficiencies & toxicities", yield: 6 },
-    { topic: "Amyloidosis", yield: 5 },
-    { topic: "Systemic infections & sepsis", yield: 5 },
+    // Exam weight 8-12%; general pathology mechanisms underlie every other system
+    { topic: "Neoplasia (benign vs malignant, grading/staging, tumor markers, oncogenes)", yield: 10, disciplines: ["Pathology"] },
+    { topic: "Inflammation (acute vs chronic, mediators, granulomas, wound healing)", yield: 10, disciplines: ["Pathology"] },
+    { topic: "Cell injury & death (necrosis types, apoptosis pathways, free radicals)", yield: 9,  disciplines: ["Pathology"] },
+    { topic: "Hemodynamics (thrombosis, embolism, infarction, edema, shock types)", yield: 8,  disciplines: ["Pathology"] },
+    { topic: "Paraneoplastic syndromes", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Granulomatous diseases (sarcoidosis, TB, Crohn's)", yield: 7, disciplines: ["Pathology"] },
+    { topic: "Amyloidosis (AL vs AA, Congo red, apple-green birefringence)", yield: 6, disciplines: ["Pathology"] },
+    { topic: "Vitamin deficiencies & toxicities (A, B1, B3, B6, B12, C, D, E, K)", yield: 6, disciplines: ["Biochemistry & Nutrition"] },
+    { topic: "Systemic infections & sepsis", yield: 5, disciplines: ["Pathology", "Microbiology & Immunology"] },
+    { topic: "Environmental & occupational pathology", yield: 3, disciplines: ["Pathology"] },
   ],
   "Musculoskeletal, Skin & Subcutaneous Tissue": [
-    { topic: "Autoimmune joint disease (RA, SLE, gout, pseudogout)", yield: 9 },
-    { topic: "Skin pathology (melanoma, SCC, BCC, dermatitis, psoriasis)", yield: 8 },
-    { topic: "Bone disorders (osteoporosis, Paget's, osteomalacia, rickets)", yield: 8 },
-    { topic: "Muscle diseases (muscular dystrophies, myasthenia gravis)", yield: 7 },
-    { topic: "Peripheral nerve anatomy & injury patterns", yield: 7 },
-    { topic: "Bone tumors (osteosarcoma, Ewing's, giant cell tumor)", yield: 6 },
-    { topic: "MSK pharmacology (DMARDs, biologics, gout drugs)", yield: 6 },
-    { topic: "Compartment syndrome", yield: 4 },
+    // Exam weight 8-12%; nerve injuries and joint diseases appear on almost every form
+    { topic: "Autoimmune joint disease (RA, gout, pseudogout, ankylosing spondylitis)", yield: 9, disciplines: ["Pathology", "Microbiology & Immunology"] },
+    { topic: "Bone disorders (osteoporosis, Paget's, rickets, osteosarcoma, Ewing's)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Skin pathology (melanoma, BCC, SCC, pemphigus vs bullous pemphigoid, psoriasis)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Nerve injuries & brachial plexus (Erb-Duchenne, Klumpke, median/ulnar/radial)", yield: 7, disciplines: ["Gross Anatomy & Embryology"] },
+    { topic: "Muscle disorders (Duchenne, myasthenia gravis, Lambert-Eaton, polymyositis)", yield: 6, disciplines: ["Pathology"] },
+    { topic: "MSK pharmacology (DMARDs, biologics, colchicine, allopurinol)", yield: 6, disciplines: ["Pharmacology"] },
+    { topic: "Connective tissue disorders (Marfan's, Ehlers-Danlos, OI)", yield: 6, disciplines: ["Pathology", "Genetics"] },
+    { topic: "Compartment syndrome", yield: 4, disciplines: ["Pathology"] },
   ],
   "Cardiovascular System": [
-    { topic: "Heart failure (systolic vs diastolic, Frank-Starling)", yield: 10 },
-    { topic: "Ischemic heart disease / MI (pathophysiology, ECG, enzymes)", yield: 10 },
-    { topic: "Valvular heart disease (murmurs, rheumatic fever)", yield: 9 },
-    { topic: "Cardiac pharmacology (antiarrhythmics, antihypertensives)", yield: 9 },
-    { topic: "Arrhythmias & ECG interpretation", yield: 9 },
-    { topic: "Congenital heart defects (shunts, cyanotic vs acyanotic)", yield: 8 },
-    { topic: "Hypertension (primary, secondary causes)", yield: 7 },
-    { topic: "Shock (cardiogenic, hypovolemic, septic, neurogenic)", yield: 7 },
-    { topic: "Atherosclerosis pathogenesis", yield: 7 },
-    { topic: "Cardiac cycle & pressure-volume loops", yield: 6 },
-    { topic: "Aortic dissection / aneurysm", yield: 6 },
-    { topic: "Pericardial disease (tamponade, constrictive pericarditis)", yield: 5 },
+    // Exam weight 7-11%; cardiac pharm (antiarrhythmics, ACE-I) consistently high-yield
+    { topic: "Heart failure pathophysiology (HFrEF vs HFpEF, Frank-Starling, RAAS)", yield: 10, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Ischemic heart disease & MI (atherosclerosis, troponin, ECG, complications)", yield: 10, disciplines: ["Pathology"] },
+    { topic: "Valvular heart disease (murmurs, maneuvers, rheumatic fever, endocarditis)", yield: 9, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Cardiac pharmacology (antiarrhythmics, ACE-I/ARBs, beta-blockers, digoxin)", yield: 9, disciplines: ["Pharmacology"] },
+    { topic: "Hypertension (primary vs secondary, end-organ damage, drug selection)", yield: 9, disciplines: ["Pathology", "Pharmacology"] },
+    { topic: "Arrhythmias & ECG interpretation (AF, heart blocks, long QT, WPW)", yield: 8, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Congenital heart defects (VSD, ASD, Tetralogy, TGA, coarctation, PDA)", yield: 7, disciplines: ["Pathology", "Gross Anatomy & Embryology"] },
+    { topic: "Shock (hemodynamic parameters, cardiogenic vs distributive vs obstructive)", yield: 7, disciplines: ["Pathology", "Physiology"] },
+    { topic: "Cardiac cycle & pressure-volume loops", yield: 7, disciplines: ["Physiology"] },
+    { topic: "Pericardial disease (tamponade — Beck's triad, constrictive pericarditis)", yield: 5, disciplines: ["Pathology"] },
+    { topic: "Cardiac tumors (myxoma, rhabdomyoma)", yield: 4, disciplines: ["Pathology"] },
   ],
   "Gastrointestinal System": [
-    { topic: "Liver pathology (viral hepatitis, cirrhosis, liver failure)", yield: 10 },
-    { topic: "Inflammatory bowel disease (Crohn's vs UC)", yield: 9 },
-    { topic: "GI cancers (colorectal, pancreatic, esophageal, gastric)", yield: 9 },
-    { topic: "Pancreatic pathology (pancreatitis, pancreatic cancer)", yield: 8 },
-    { topic: "Bilirubin metabolism & jaundice (pre/intra/post-hepatic)", yield: 8 },
-    { topic: "Peptic ulcer disease / H. pylori", yield: 7 },
-    { topic: "GI pharmacology (PPIs, H2 blockers, antiemetics)", yield: 7 },
-    { topic: "Esophageal disorders (achalasia, Barrett's, GERD)", yield: 7 },
-    { topic: "Malabsorption syndromes (celiac, Whipple's)", yield: 6 },
-    { topic: "Gallbladder disease (cholelithiasis, cholecystitis)", yield: 6 },
-    { topic: "GI embryology (midgut rotation, atresias)", yield: 5 },
+    // Exam weight 6-10%; liver pathology dominates; IBD and GI cancers every exam
+    { topic: "Liver pathology (hepatitis A-E, cirrhosis complications, Wilson's, hemochromatosis)", yield: 10, disciplines: ["Pathology"] },
+    { topic: "GI cancers (colorectal — FAP/Lynch, gastric, esophageal, pancreatic)", yield: 9, disciplines: ["Pathology"] },
+    { topic: "Inflammatory bowel disease (Crohn's vs UC — location, depth, complications)", yield: 8, disciplines: ["Pathology"] },
+    { topic: "Bilirubin metabolism & jaundice (conjugated vs unconjugated, Gilbert's)", yield: 8, disciplines: ["Physiology", "Pathology", "Biochemistry & Nutrition"] },
+    { topic: "Peptic ulcer disease & H. pylori (triple therapy, PPIs, Zollinger-Ellison)", yield: 7, disciplines: ["Pathology", "Pharmacology"] },
+    { topic: "GI pharmacology (PPIs, H2 blockers, antiemetics, laxatives)", yield: 7, disciplines: ["Pharmacology"] },
+    { topic: "Malabsorption syndromes (celiac — anti-tTG, tropical sprue, Whipple's)", yield: 6, disciplines: ["Pathology"] },
+    { topic: "Gallbladder disease (cholelithiasis, cholecystitis, cholangitis)", yield: 5, disciplines: ["Pathology"] },
+    { topic: "Esophageal disorders (achalasia, Barrett's, GERD)", yield: 5, disciplines: ["Pathology"] },
+    { topic: "GI embryology (midgut rotation, atresias, Meckel's)", yield: 4, disciplines: ["Gross Anatomy & Embryology"] },
   ],
 
   // ── Discipline ──

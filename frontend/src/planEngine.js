@@ -1,4 +1,4 @@
-import { STEP1_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS } from './data.js';
+import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS } from './data.js';
 import { getContentSequence } from './contentEngine.js';
 
 // ── Time-block helpers ────────────────────────────────────────────────
@@ -622,6 +622,24 @@ export function getPerformanceLevel(score) {
   return { label: "Strong", color: "#27ae60" };
 }
 
+// Returns the top dominant disciplines for a system category, weighted by
+// the total yield of sub-topics that belong to each discipline.
+// Used by the priority crossover bonus to amplify system priority when
+// the student is also weak in the disciplines that dominate that system.
+function getDominantDisciplinesForSystem(category) {
+  const subs = SUB_TOPICS[category] || [];
+  const discWeight = {};
+  for (const sub of subs) {
+    for (const d of (sub.disciplines || [])) {
+      discWeight[d] = (discWeight[d] || 0) + (sub.yield || 5);
+    }
+  }
+  return Object.entries(discWeight)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([d]) => d);
+}
+
 export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
@@ -638,7 +656,17 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const flagged = stickingPoints.includes(cat);
     // Auto-derive gap type: knowledge gap when score < 50, application gap otherwise
     const gapType = score < 50 ? "knowledge" : "application";
-    const compositeScore = (weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0);
+    // Discipline crossover bonus: amplify system priority when the student is
+    // also weak (< 60%) in the disciplines that dominate that system.
+    // This ensures Cardiovascular + weak Pharmacology outranks GI + strong Pathology.
+    // Only applies to system categories (not discipline categories themselves).
+    let crossoverBonus = 1.0;
+    if (!STEP1_DISCIPLINE_CATEGORIES.includes(cat)) {
+      for (const disc of getDominantDisciplinesForSystem(cat)) {
+        if ((scores[disc] ?? 50) < 60) crossoverBonus = Math.min(crossoverBonus + 0.15, 1.5);
+      }
+    }
+    const compositeScore = ((weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0)) * crossoverBonus;
     priorities.push({ category: cat, score, weakness, yield: yld, flagged, compositeScore, gapType });
   }
   priorities.sort((a, b) => b.compositeScore - a.compositeScore);
