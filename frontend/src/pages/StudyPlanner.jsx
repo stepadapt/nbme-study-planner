@@ -90,6 +90,26 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
 
 const defaultHistDraft = () => ({ formName: '', takenAt: '', totalScore: '', hasBreakdown: false, scores: {} });
 
+// Calculates study window end time from start time + study hours.
+// Students with ≥5 study hours get a 1-hour lunch break added automatically.
+// Returns "HH:MM" string (24-hour, for the time input).
+function calcEndTime(startTime, studyHours) {
+  const [h, m] = (startTime || "07:00").split(':').map(Number);
+  const lunchHrs = studyHours >= 5 ? 1 : 0;
+  const endMins = h * 60 + m + (studyHours + lunchHrs) * 60;
+  const endH = Math.floor(endMins / 60) % 24;
+  const endM = endMins % 60;
+  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+}
+
+// Formats a "HH:MM" string as "H:MM AM/PM" for display.
+function fmt12hDisplay(t) {
+  const [h, m] = (t || "07:00").split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return m ? `${h12}:${String(m).padStart(2, '0')} ${ampm}` : `${h12}:00 ${ampm}`;
+}
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -97,7 +117,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: "17:00", takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", ankiDeck: "anking", rest_days: [] });
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: calcEndTime("07:00", 8), takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", ankiDeck: "anking", rest_days: [] });
   const [showZeroRestNudge, setShowZeroRestNudge] = useState(false);
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt }
   const [scores, setScores] = useState({});
@@ -1569,25 +1589,39 @@ export default function StudyPlanner({ onShowTerms }) {
             <hr style={S.hr} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div><label style={S.label}>Exam date</label><input type="date" style={S.input} value={profile.examDate} onChange={e => setProfile(p => ({ ...p, examDate: e.target.value }))} /></div>
-              <div><label style={S.label}>Hours / day</label><input type="number" min={1} max={16} style={S.input} value={profile.hoursPerDay} onChange={e => setProfile(p => ({ ...p, hoursPerDay: Number(e.target.value) }))} /></div>
+              <div><label style={S.label}>Hours / day</label><input type="number" min={1} max={16} style={S.input} value={profile.hoursPerDay} onChange={e => { const hrs = Math.min(16, Math.max(1, Number(e.target.value))); setProfile(p => ({ ...p, hoursPerDay: hrs, studyEndTime: calcEndTime(p.studyStartTime || "07:00", hrs) })); }} /></div>
             </div>
             <hr style={{ ...S.hr, margin: "20px 0 16px" }} />
             <label style={S.label}>Daily study window</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 8 }}>
               <div>
                 <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>Start time</label>
-                <input type="time" style={S.input} value={profile.studyStartTime || "07:00"} onChange={e => setProfile(p => ({ ...p, studyStartTime: e.target.value }))} />
+                <input type="time" style={S.input} value={profile.studyStartTime || "07:00"}
+                  onChange={e => setProfile(p => ({ ...p, studyStartTime: e.target.value, studyEndTime: calcEndTime(e.target.value, p.hoursPerDay || 8) }))} />
               </div>
               <div>
-                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>End time</label>
-                <input type="time" style={S.input} value={profile.studyEndTime || "17:00"} onChange={e => setProfile(p => ({ ...p, studyEndTime: e.target.value }))} />
+                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>
+                  End time <span style={{ fontSize: 10, color: '#b0a99e', fontStyle: 'italic' }}>(auto)</span>
+                </label>
+                <input type="time" style={{ ...S.input, background: '#f5f3f0', color: '#8a857e', cursor: 'default' }}
+                  value={profile.studyEndTime || calcEndTime(profile.studyStartTime || "07:00", profile.hoursPerDay || 8)}
+                  readOnly tabIndex={-1}
+                  title="Calculated from start time + hours/day — adjust Hours/Day or Start Time to change this" />
               </div>
             </div>
             {(() => {
-              const [sh, sm] = (profile.studyStartTime || "07:00").split(':').map(Number);
-              const [eh, em] = (profile.studyEndTime || "17:00").split(':').map(Number);
-              const hrs = Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
-              return hrs > 0 ? <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>{formatDuration(roundToQuarterHour(hrs))} available for study — blocks will be scheduled with automatic breaks.</p> : null;
+              const hrs = profile.hoursPerDay || 8;
+              const startT = profile.studyStartTime || "07:00";
+              const endT = profile.studyEndTime || calcEndTime(startT, hrs);
+              const lunchHrs = hrs >= 5 ? 1 : 0;
+              const totalHrs = hrs + lunchHrs;
+              const longDay = hrs >= 12;
+              return (
+                <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>
+                  {hrs} hr of study{lunchHrs ? ` + ${lunchHrs} hr lunch` : ''} = {totalHrs} hr window ({fmt12hDisplay(startT)} – {fmt12hDisplay(endT)})
+                  {longDay && <span style={{ color: '#c0392b', marginLeft: 6 }}>That's a long day — schedule at least one rest day per week.</span>}
+                </p>
+              );
             })()}
           </div>
           {profile.examDate && (() => { const d = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)); const mode = d >= 42 ? "full dedicated" : d >= 21 ? "standard" : d >= 10 ? "compressed" : "triage"; return <p style={{ ...S.muted, textAlign: "center", marginTop: 8 }}><strong style={{ color: "#1a1816" }}>{d} days</strong> — <strong style={{ color: d < 14 ? "#c0392b" : "#1a1816" }}>{mode}</strong> plan{d < 14 ? ". Every hour counts." : "."}</p>; })()}
