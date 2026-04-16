@@ -2328,7 +2328,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const isRetake = assessments.length > 0;
     return (
       <div style={S.app}>
-        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(isRetake ? "plan" : "onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
+        <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate(isRetake ? (plan ? "plan" : "dashboard") : "onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
         <div style={S.wrap}>
           <h1 style={S.h1}>{isRetake ? `Assessment #${assessments.length + 1}` : "Enter NBME scores"}</h1>
           <p style={S.sub}>{isRetake ? "Enter your new scores — I'll compare them to your previous results." : "Rate each category 0–100 from your most recent report."}</p>
@@ -2717,12 +2717,21 @@ export default function StudyPlanner({ onShowTerms }) {
             const key = `${day.calendarDay}-${bi}`;
             const isOpen = expandedBlocks.has(key);
 
-            // Lunch / break → thin muted divider line
-            if (block.type === 'lunch') {
+            // Lunch / break → thin muted divider line (non-expandable)
+            // Handles both explicit lunch blocks (type 'lunch') AND auto-injected
+            // break markers from assignBlockTimes (type 'break'). Break markers have
+            // no `tasks` array, so they must never fall through to the expandable path.
+            if (block.type === 'lunch' || block.type === 'break') {
+              const isLunch = block.type === 'lunch' || (block.label || '').toLowerCase().includes('lunch');
               return (
                 <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0', color: '#b45309', fontSize: 12, fontFamily: S.f }}>
                   <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
-                  <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>☕ {block.label || 'Lunch break'} · {block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(block.tasks?.[0]?.hours || 0)}</span>
+                  <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>
+                    {isLunch ? '☕' : '⏸'} {block.label || (isLunch ? 'Lunch break' : 'Short break')}
+                    {block.startTime && block.endTime
+                      ? ` · ${formatTimeRange(block.startTime, block.endTime)}`
+                      : block.tasks?.[0]?.hours ? ` · ${formatDuration(block.tasks[0].hours)}` : ''}
+                  </span>
                   <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
                 </div>
               );
@@ -2740,7 +2749,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   <span style={{ fontSize: 13 }}>🧠</span>
                   <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#166534', flex: 1 }}>Morning Anki — due cards + yesterday's misses</span>
                   <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(totalHours)}</span>
-                  <button onClick={() => navigate('anki')} style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, padding: '2px 8px', borderRadius: 10, background: '#27ae6015', border: '1px solid #27ae6030', cursor: 'pointer', whiteSpace: 'nowrap' }}>Setup guide →</button>
+                  <button onClick={() => window.open('/anki', '_blank')} style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, padding: '2px 8px', borderRadius: 10, background: '#27ae6015', border: '1px solid #27ae6030', cursor: 'pointer', whiteSpace: 'nowrap' }}>Setup guide →</button>
                 </div>
               );
             }
@@ -2763,8 +2772,8 @@ export default function StudyPlanner({ onShowTerms }) {
                 {header}
                 <div style={{ background: bc.bg, borderLeft: `3px solid ${bc.border}`, border: `1px solid ${bc.border}30`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px' }}>
                   <div style={{ display: 'grid', gap: 2 }}>
-                    {block.tasks.map((task, ti) => (
-                      <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 13, fontFamily: S.f, borderBottom: ti < block.tasks.length - 1 ? '1px solid #00000008' : 'none' }}>
+                    {(block.tasks || []).map((task, ti) => (
+                      <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 13, fontFamily: S.f, borderBottom: ti < (block.tasks || []).length - 1 ? '1px solid #00000008' : 'none' }}>
                         <span style={{ fontWeight: 600, color: '#1a1816', minWidth: 85, flexShrink: 0 }}>{task.resource}</span>
                         <span style={{ color: '#6b6560', flex: 1, lineHeight: 1.4 }}>{task.activity}</span>
                         <span style={{ color: '#8a857e', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatDuration(task.hours)}</span>

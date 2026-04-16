@@ -55,9 +55,9 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
   // If blocks already contain an explicit lunch block, skip auto-insertion
   const hasExplicitLunch = blocks.some(b => b.type === 'lunch');
 
-  // Compute study minutes — exclude fixed lunch blocks from scaling
+  // Compute study minutes — exclude fixed lunch blocks and taskless break markers from scaling
   const totalStudyMins = blocks.reduce((sum, b) => {
-    if (b.type === 'lunch') return sum;
+    if (b.type === 'lunch' || b.type === 'break' || !b.tasks) return sum;
     return sum + b.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0);
   }, 0);
   const explicitLunchMins = hasExplicitLunch
@@ -95,7 +95,7 @@ export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00')
       continue;
     }
 
-    const blockMins = Math.round(Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) * scale) / 15) * 15;
+    const blockMins = Math.round(Math.round((block.tasks || []).reduce((s, t) => s + t.hours * 60, 0) * scale) / 15) * 15;
 
     // Auto-insert lunch at midpoint (only when no explicit lunch block present)
     if (needsAutoLunch && !lunchInserted && cursor + blockMins > midpoint) {
