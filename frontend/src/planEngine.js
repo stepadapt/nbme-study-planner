@@ -189,6 +189,45 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 }
 
 // ── Practice test scheduler ───────────────────────────────────────────
+// Selects which NBME form to schedule next based on dedicated period length.
+// Newer forms (30-33) are more representative of current Step 1 content.
+// Short dedicated periods prioritize newer forms; long dedicated starts older and ends newer.
+//
+// availableNBMEs: filtered PRACTICE_TESTS objects (untaken, not yet placed this run)
+// daysRemaining:  total calendar days in the dedicated period
+// isLastSlot:     true if this is the final NBME slot in the schedule
+function selectNextNBME(availableNBMEs, daysRemaining, isLastSlot) {
+  const sorted = [...availableNBMEs].sort((a, b) => a.number - b.number);
+  const newerForms = sorted.filter(f => f.number >= 30); // NBME 30-33: most representative
+  const olderForms = sorted.filter(f => f.number < 30);  // NBME 26-29: older content
+
+  if (daysRemaining <= 21) {
+    // SHORT dedicated (≤3 weeks): only newer forms; skip older entirely unless all newer taken.
+    // Final slot → highest numbered newer form available (most predictive).
+    if (isLastSlot) {
+      return newerForms.length > 0 ? newerForms[newerForms.length - 1]
+           : olderForms.length > 0 ? olderForms[olderForms.length - 1] : null;
+    }
+    return newerForms.length > 0 ? newerForms[0]
+         : olderForms.length > 0 ? olderForms[0] : null;
+
+  } else if (daysRemaining <= 42) {
+    // MEDIUM dedicated (3-6 weeks): newer forms first; once only 1 newer form remains,
+    // switch to older forms (preserving the highest newer for the final slot).
+    if (isLastSlot) return sorted[sorted.length - 1] || null;
+    if (newerForms.length > 1) return newerForms[0]; // use lowest newer, save highest
+    if (olderForms.length > 0) return olderForms[0]; // fill with older when few newer left
+    return sorted[0] || null;
+
+  } else {
+    // LONG dedicated (6+ weeks): older forms early, newer forms late.
+    // Gives the most representative data closest to exam day.
+    if (isLastSlot) return sorted[sorted.length - 1] || null;
+    return olderForms.length > 0 ? olderForms[0]
+         : newerForms.length > 0 ? newerForms[0] : null;
+  }
+}
+
 // Builds the optimal assessment sequence based on dedicated period length.
 // takenAssessments = [{ id, takenDate? }] — tests done in this study period
 // hasExistingScores = true if the student already has NBME data in the app
@@ -196,7 +235,7 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 // SCHEDULING RULES:
 // 1. Exhaust ALL 8 NBME forms (26-33) before recommending UWSA1, UWSA2, or AMBOSS.
 // 2. Free 120 (2024) is MANDATORY exactly 2 days before exam — locked, non-moveable.
-// 3. Final NBME = highest numbered untaken form. Earlier slots = ascending order.
+// 3. Final NBME = highest numbered form per selectNextNBME tier logic.
 // 4. Buffer: no other assessment within 3 days of Free 120 (→ last NBME ≤ T-5).
 
 export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false) {
@@ -336,16 +375,18 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 
   // ════════════════════════════════════════════════════════════════════
   // STEP 4 — Baseline NBME (only if student has no existing scores yet)
-  // Use LOWEST numbered untaken NBME — older forms are fine for baseline.
+  // Form selection is tier-aware: short dedicated uses newer forms for maximum
+  // relevance; longer dedicated can start with older forms.
   // ════════════════════════════════════════════════════════════════════
   if (!hasBaseline && untakenNBMEs.length > 0 && LAST_ASSESSMENT_DAY >= 1) {
-    const baseNbme = pickLowestNbme();
+    const baseNbme = selectNextNBME(untakenNBMEs, totalCalendarDays, false);
     if (baseNbme) {
       const baseDay = findFree(Math.min(2, LAST_ASSESSMENT_DAY), 1);
       if (baseDay) {
-        place(baseDay, baseNbme, 'Baseline diagnostic',
-          `Your first NBME before dedicated study truly kicks in. Most students feel underprepared at this stage — that's expected and irrelevant. The score right now doesn't define where you'll land. What matters is which systems are dragging you down. That breakdown becomes the blueprint for everything that follows.`,
-          2.0);
+        const baseReason = baseNbme.number >= 30
+          ? `Your first NBME — a newer form chosen because it's more representative of current Step 1 content. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for your entire plan.`
+          : `Your first NBME before dedicated study truly kicks in. Most students feel underprepared at this stage — that's expected and irrelevant. The score right now doesn't define where you'll land. What matters is which systems are dragging you down. That breakdown becomes the blueprint for everything that follows.`;
+        place(baseDay, baseNbme, 'Baseline diagnostic', baseReason, 2.0);
       }
     }
   }
@@ -365,7 +406,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 
   // ════════════════════════════════════════════════════════════════════
   // STEP 6 — Progress checks
-  // Priority: untaken NBMEs 26-33 (ascending, highest saved for final slot)
+  // Priority: untaken NBMEs (order determined by selectNextNBME tier logic)
   // Only if allNBMEsDone: then UWSA/AMBOSS, then NBME retakes
   // ════════════════════════════════════════════════════════════════════
   // Spacing scales with dedicated period length — tighter data = faster plan adaptation
@@ -399,14 +440,24 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 
       if (availableNBMEs.length > 0) {
         // ── Untaken NBMEs available — always schedule them first ──
-        // Final slot → highest numbered form (most representative of current Step 1)
-        // Earlier slots → lowest numbered form (ascending order)
-        const nbme = isLastSlot ? pickHighestNbme() : pickLowestNbme();
+        // selectNextNBME determines form order based on dedicated period length:
+        //   short (≤3w) → newer forms first; long (6w+) → older early, newer late.
+        //   Final slot always gets the highest numbered untaken form.
+        const nbme = selectNextNBME(availableNBMEs, totalCalendarDays, isLastSlot);
         testToPlace = nbme;
-        const isNewest = nbme.number >= 32;
-        reason = isNewest
-          ? `NBME ${nbme.number} is one of the newest forms — most representative of current Step 1 content. You haven't taken this form yet. Your score here is a strong prediction signal for your actual exam.`
-          : `NBME ${nbme.number} — you haven't taken this form yet. Check whether your weak areas are actually improving. The total score matters less than the system breakdown movement.`;
+        if (nbme.number >= 32) {
+          label = `Progress check — NBME ${nbme.number}`;
+          reason = `NBME ${nbme.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`;
+        } else if (nbme.number >= 30) {
+          label = `Progress check — NBME ${nbme.number}`;
+          reason = `NBME ${nbme.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`;
+        } else if (isLastSlot) {
+          label = `Final NBME — NBME ${nbme.number}`;
+          reason = `NBME ${nbme.number} — additional progress data. Use the system breakdown to confirm whether your targeted weak areas have moved.`;
+        } else {
+          label = `Progress check — NBME ${nbme.number}`;
+          reason = `NBME ${nbme.number} — progress check. The total score matters less than the direction of movement in your weak systems since your last assessment.`;
+        }
       } else if (allNBMEsDone) {
         // ── All 8 NBMEs taken — now consider UWSA/AMBOSS/retakes ──
         const uwsa2Placed = result.some(r => r.test?.id === 'uwsa2');
