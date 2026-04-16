@@ -1112,7 +1112,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       // BLOCK 3 — Targeted question block on the SAME system as Block 2
       // Immediately tests whether the morning's content review stuck.
-      const prioritizeStr = top3Short.length > 0 ? ` Prioritize: ${top3Short.join(", ")}.` : "";
+      const prioritizeStr = top3Short.length > 0 ? `Prioritize: ${top3Short.join(", ")}` : "";
       blocks.push({
         type: "questions-focus",
         label: `Targeted questions: ${focusTopic?.category || "focus system"}`,
@@ -1120,15 +1120,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         primaryQBank,
         qbankFilterTip,
         tasks: [
-          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode.${qbankFilterTip ? " " + qbankFilterTip : ""}${prioritizeStr}`, hours: params.b3QHrs },
-          { resource: "Self-review", activity: (() => {
-              const focusDisc = getWeakestDisciplineInSubTopics(focusSubTopics, scores);
-              const strategy = focusDisc ? DISCIPLINE_ATTACK_STRATEGIES[focusDisc] : null;
-              const base = "Thorough review of EVERY question — right and wrong. Track which sub-topics you're still missing.";
-              return strategy
-                ? `${base} ${strategy.wrongAnswerReview}`
-                : `${base} Annotate First Aid for wrong answers.`;
-            })(), hours: params.b3ReviewHrs },
+          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode${prioritizeStr ? " · " + prioritizeStr : ""}`, hours: params.b3QHrs },
+          { resource: "Review", activity: "Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · Annotate First Aid for each missed concept", hours: params.b3ReviewHrs },
         ],
       });
 

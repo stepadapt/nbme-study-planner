@@ -1003,12 +1003,13 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     links: [],
   };
 
-  // Unified sequence: WATCH → READ → PRACTICE (practice always last)
-  // Gap type affects video resource choice and time allocations, not step order.
+  // Sequence: WATCH → READ (or REVIEW for no-FA application gaps)
+  // PRACTICE is NOT included here — it belongs to the dedicated Targeted Questions
+  // block that appears as a separate daily block directly below Content Review.
+  // Including PRACTICE here would create a visible duplicate.
   const sequence = [
     primaryVideoStep,
     firstAidStep || (gapType === 'application' ? annotateStep : null),
-    practiceStep,
   ].filter(Boolean);
 
   return { gapType, sequence };
