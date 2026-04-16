@@ -110,6 +110,107 @@ function fmt12hDisplay(t) {
   return m ? `${h12}:${String(m).padStart(2, '0')} ${ampm}` : `${h12}:00 ${ampm}`;
 }
 
+// Formats a time range for block headers. Omits repeated AM/PM: "7:00 – 8:00 AM", "11:30 AM – 12:30 PM"
+function formatTimeRange(start, end) {
+  if (!start || !end) return null;
+  const sParts = start.split(' ');
+  const eParts = end.split(' ');
+  if (sParts.length === 2 && eParts.length === 2 && sParts[1] === eParts[1]) {
+    return `${sParts[0]} – ${end}`; // "7:00 – 8:00 AM"
+  }
+  return `${start} – ${end}`; // "11:30 AM – 12:30 PM"
+}
+
+// ── ICS Calendar Export ───────────────────────────────────────────────────
+function combineICSDateTime(date, timeStr) {
+  const [time, period] = (timeStr || '').split(' ');
+  if (!time) return date;
+  let [h, m] = time.split(':').map(Number);
+  if (period === 'PM' && h !== 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  const dt = new Date(date);
+  dt.setHours(h, m || 0, 0, 0);
+  return dt;
+}
+function formatICSDate(d) {
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatICSDateTime(d) {
+  return `${formatICSDate(d)}T${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}00`;
+}
+function escapeICS(t) {
+  return (t||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+}
+function getICSEventSummary(block, day) {
+  const focus = day.focusTopic ? ' — ' + day.focusTopic : '';
+  switch (block.type) {
+    case 'anki': return '🧠 StepAdapt: Morning Retention';
+    case 'content': case 'content-reactive': return `📚 StepAdapt: Content Review${focus}`;
+    case 'questions-focus': return `🔥 StepAdapt: Targeted Qs${focus}`;
+    case 'questions-random': return '🎲 StepAdapt: Random Questions';
+    case 'end-review': return '✅ StepAdapt: End-of-Day Review';
+    case 'nbme': case 'nbme-review': return `📋 StepAdapt: ${block.label || 'Assessment'}`;
+    default: return `StepAdapt: ${block.label || 'Study Block'}`;
+  }
+}
+function getICSEventDescription(block) {
+  switch (block.type) {
+    case 'anki': return 'Anki due cards + yesterday\'s misses. 1 hour max.';
+    case 'content': case 'content-reactive': {
+      const subs = (block.highYield || []).slice(0,3).map(h => h.topic).join(', ');
+      return subs ? `Focus: ${subs}` : 'See StepAdapt app for details.';
+    }
+    case 'questions-focus': return '40 UWorld Qs, timed, test mode. Review every question after.';
+    case 'questions-random': return 'Random, all systems, timed. Exam simulation.';
+    case 'end-review': return 'Review wrong answers from today\'s random blocks.';
+    case 'nbme': return 'Full-length, timed, test conditions. No interruptions.';
+    default: return 'See StepAdapt app for details.';
+  }
+}
+function generateICSContent(plan, planCreatedAt, studyStartTime, studyEndTime) {
+  const lines = [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//StepAdapt//Study Plan//EN',
+    'CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:StepAdapt Study Plan',
+  ];
+  const allDays = (plan.weeks || []).flatMap(w => w.days || []);
+  for (const day of allDays) {
+    const dayDate = new Date(planCreatedAt);
+    dayDate.setHours(0,0,0,0);
+    dayDate.setDate(dayDate.getDate() + (day.calendarDay || 1) - 1);
+    if (day.dayType === 'rest' || day.dayType === 'student-rest') {
+      const next = new Date(dayDate); next.setDate(next.getDate()+1);
+      lines.push('BEGIN:VEVENT',`DTSTART;VALUE=DATE:${formatICSDate(dayDate)}`,`DTEND;VALUE=DATE:${formatICSDate(next)}`,
+        'SUMMARY:🌿 StepAdapt: Rest Day — Anki reviews only (30-45 min AM)',
+        `UID:stepadapt-day${day.calendarDay}-rest@stepadapt.com`,'END:VEVENT');
+      continue;
+    }
+    const timedBl = assignBlockTimes(day.blocks || [], studyStartTime, studyEndTime);
+    timedBl.forEach((block, bi) => {
+      if (block.type === 'break' || block.type === 'lunch') return;
+      if (!block.startTime || !block.endTime) return;
+      const startDT = combineICSDateTime(dayDate, block.startTime);
+      const endDT   = combineICSDateTime(dayDate, block.endTime);
+      lines.push('BEGIN:VEVENT',
+        `DTSTART:${formatICSDateTime(startDT)}`,`DTEND:${formatICSDateTime(endDT)}`,
+        `SUMMARY:${escapeICS(getICSEventSummary(block, day))}`,
+        `DESCRIPTION:${escapeICS(getICSEventDescription(block))}`,
+        `UID:stepadapt-day${day.calendarDay}-block${bi}@stepadapt.com`,
+        'END:VEVENT');
+    });
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+function downloadICSFile(plan, planCreatedAt, studyStartTime, studyEndTime) {
+  const content = generateICSContent(plan, planCreatedAt, studyStartTime, studyEndTime);
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'StepAdapt-Study-Plan.ics';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
 export default function StudyPlanner({ onShowTerms }) {
   const { user, logout, resendVerification } = useAuth();
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
@@ -135,6 +236,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [planViewMode, setPlanViewMode] = useState('day'); // 'day' | 'week' | 'full'
   const [planViewDay, setPlanViewDay] = useState(1);
   const [expandedBlocks, setExpandedBlocks] = useState(new Set());
+  const [showCalExport, setShowCalExport] = useState(false);
   const [showAssessmentSched, setShowAssessmentSched] = useState(false);
   const [showPriorityRanking, setShowPriorityRanking] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -2620,7 +2722,7 @@ export default function StudyPlanner({ onShowTerms }) {
               return (
                 <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0', color: '#b45309', fontSize: 12, fontFamily: S.f }}>
                   <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
-                  <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>☕ {block.label || 'Lunch break'} · {formatDuration(block.tasks?.[0]?.hours || 0)}</span>
+                  <span style={{ whiteSpace: 'nowrap', opacity: 0.8 }}>☕ {block.label || 'Lunch break'} · {block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(block.tasks?.[0]?.hours || 0)}</span>
                   <div style={{ flex: 1, height: 1, background: '#e8dcc8' }} />
                 </div>
               );
@@ -2637,7 +2739,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: bc.bg, borderLeft: `3px solid ${bc.border}` }}>
                   <span style={{ fontSize: 13 }}>🧠</span>
                   <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#166534', flex: 1 }}>Morning Anki — due cards + yesterday's misses</span>
-                  <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                  <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(totalHours)}</span>
                   <button onClick={() => navigate('anki')} style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, padding: '2px 8px', borderRadius: 10, background: '#27ae6015', border: '1px solid #27ae6030', cursor: 'pointer', whiteSpace: 'nowrap' }}>Setup guide →</button>
                 </div>
               );
@@ -2649,7 +2751,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 <span style={{ fontSize: 13 }}>{bc.icon}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: bc.border, fontFamily: S.f, flex: 1 }}>{block.label}</span>
                 {qCount && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{qCount} Qs ·&nbsp;</span>}
-                <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(totalHours)}</span>
                 <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>{isOpen ? '▲' : '▶'}</span>
               </div>
             );
@@ -2679,21 +2781,29 @@ export default function StudyPlanner({ onShowTerms }) {
           const renderDayContent = (day) => {
             const special = day.dayType === 'nbme' || day.dayType === 'rest' || day.dayType === 'student-rest';
 
+            // Assign actual start/end times to every block from the student's configured start time
+            const endFallback = calcEndTime(profile.studyStartTime || '07:00', profile.hoursPerDay || 8);
+            const timedBlocks = assignBlockTimes(
+              day.blocks || [],
+              profile.studyStartTime || '07:00',
+              profile.studyEndTime || endFallback
+            );
+
             // Deduplicate sub-topics across all blocks → show once at top of day
             const seenTopics = new Set();
-            const allHighYield = (day.blocks || []).flatMap(b =>
+            const allHighYield = timedBlocks.flatMap(b =>
               (b.highYield || []).filter(hy => { if (seenTopics.has(hy.topic)) return false; seenTopics.add(hy.topic); return true; })
             );
-            const dayQbankTip = day.blocks?.find(b => b.qbankFilterTip)?.qbankFilterTip;
+            const dayQbankTip = timedBlocks.find(b => b.qbankFilterTip)?.qbankFilterTip;
 
             // Group consecutive questions-random blocks into a single collapsible card
             const processedBlocks = [];
             let pi = 0;
-            while (pi < (day.blocks || []).length) {
-              const b = day.blocks[pi];
+            while (pi < timedBlocks.length) {
+              const b = timedBlocks[pi];
               if (b.type === 'questions-random') {
                 const grp = [b];
-                while (pi + 1 < day.blocks.length && day.blocks[pi + 1].type === 'questions-random') { pi++; grp.push(day.blocks[pi]); }
+                while (pi + 1 < timedBlocks.length && timedBlocks[pi + 1].type === 'questions-random') { pi++; grp.push(timedBlocks[pi]); }
                 processedBlocks.push({ _isRandomGroup: true, blocks: grp, _pi: pi });
               } else {
                 processedBlocks.push(b);
@@ -2745,7 +2855,7 @@ export default function StudyPlanner({ onShowTerms }) {
                               Random Questions{grp.length > 1 ? ` · ${grp.length} blocks` : ''}
                             </span>
                             {totalQs > 0 && <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{totalQs} Qs ·&nbsp;</span>}
-                            <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{formatDuration(totalHours)}</span>
+                            <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{grp[0]?.startTime && grp[grp.length-1]?.endTime ? formatTimeRange(grp[0].startTime, grp[grp.length-1].endTime) : formatDuration(totalHours)}</span>
                             <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6 }}>{isOpen ? '▲' : '▶'}</span>
                           </div>
                           {isOpen && (
@@ -3030,7 +3140,37 @@ export default function StudyPlanner({ onShowTerms }) {
             >
               {exporting === 'docx' ? 'Exporting…' : '📝 Export as Word (.docx)'}
             </button>
+            <button
+              style={{ ...S.btn, ...S.sec, padding: "10px 18px", fontSize: 13 }}
+              onClick={() => setShowCalExport(v => !v)}
+            >
+              📅 Add to Calendar
+            </button>
           </div>
+          {showCalExport && (
+            <div style={{ marginTop: 12, padding: '12px 14px', background: '#f5f3f0', borderRadius: 8, border: '1px solid #e0d9cf' }}>
+              <p style={{ ...S.muted, fontSize: 12, marginBottom: 10 }}>
+                Download a calendar file with all study blocks — correct dates, times, and titles.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <button
+                  style={{ ...S.btn, ...S.sec, padding: "8px 14px", fontSize: 12 }}
+                  onClick={() => downloadICSFile(plan, latestPlanMeta?.createdAt, profile.studyStartTime || '07:00', profile.studyEndTime || calcEndTime(profile.studyStartTime || '07:00', profile.hoursPerDay || 8))}
+                >
+                  🍎 Apple Calendar / Outlook (.ics)
+                </button>
+                <button
+                  style={{ ...S.btn, ...S.sec, padding: "8px 14px", fontSize: 12 }}
+                  onClick={() => downloadICSFile(plan, latestPlanMeta?.createdAt, profile.studyStartTime || '07:00', profile.studyEndTime || calcEndTime(profile.studyStartTime || '07:00', profile.hoursPerDay || 8))}
+                >
+                  📅 Google Calendar (.ics)
+                </button>
+              </div>
+              <p style={{ ...S.muted, fontSize: 11, color: '#aaa', marginBottom: 0 }}>
+                Google Calendar: after downloading, go to calendar.google.com → Settings → Import &amp; Export → Import.
+              </p>
+            </div>
+          )}
         </div>
 
         <div style={{ ...S.card, background: "#fefcf8", border: "1.5px solid #e8dcc8", textAlign: "center", marginTop: 12 }}>
