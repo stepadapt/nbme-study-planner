@@ -608,7 +608,7 @@ function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, 
   if (ankiDeck === 'mehlman') {
     if (ankiLevel === 'none' && isFirstStudyDay) {
       return { type: 'anki', label: 'Morning retention — Mehlman setup', tasks: [
-        { resource: 'Mehlman Medical', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n→ See our full setup guide (/anki)\n\nAfter setup: do your due reviews, then learn 20–30 new cards. Focus on Rapid Review and HY Arrows cards first.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
+        { resource: 'Mehlman Medical', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n\nAfter setup: do your due reviews, then learn 20–30 new cards. Focus on Rapid Review and HY Arrows cards first.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
       ]};
     }
     if (ankiLevel === 'none' || ankiLevel === 'beginner') {
@@ -638,7 +638,7 @@ function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, 
   if (ankiLevel === 'none' && isFirstStudyDay) {
     // Brand-new user: show a one-time setup pointer to the /anki guide page
     return { type: 'anki', label: 'Morning retention — AnKing setup', tasks: [
-      { resource: 'AnKing Deck', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n→ See our full setup guide (/anki)\n\nAfter setup: do your due reviews, then unsuspend 20–30 AnKing cards for today\'s focus system.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
+      { resource: 'AnKing Deck', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n\nAfter setup: do your due reviews, then unsuspend 20–30 AnKing cards for today\'s focus system.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
     ]};
   }
 

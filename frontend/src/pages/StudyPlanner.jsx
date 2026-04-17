@@ -1180,6 +1180,9 @@ export default function StudyPlanner({ onShowTerms }) {
                         {block.tasks?.map((task, j) => (
                           <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
                             <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
+                            {task.setupLink && (
+                              <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1242,6 +1245,9 @@ export default function StudyPlanner({ onShowTerms }) {
                       {block.tasks?.map((task, j) => (
                         <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
                           <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
+                          {task.setupLink && (
+                            <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                          )}
                         </div>
                       ))}
 
@@ -2846,7 +2852,12 @@ export default function StudyPlanner({ onShowTerms }) {
                     {(block.tasks || []).map((task, ti) => (
                       <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 13, fontFamily: S.f, borderBottom: ti < (block.tasks || []).length - 1 ? '1px solid #00000008' : 'none' }}>
                         <span style={{ fontWeight: 600, color: '#1a1816', minWidth: 85, flexShrink: 0 }}>{task.resource}</span>
-                        <span style={{ color: '#6b6560', flex: 1, lineHeight: 1.4 }}>{task.activity}</span>
+                        <span style={{ color: '#6b6560', flex: 1, lineHeight: 1.4 }}>
+                          {task.activity}
+                          {task.setupLink && (
+                            <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                          )}
+                        </span>
                         <span style={{ color: '#8a857e', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatDuration(task.hours)}</span>
                       </div>
                     ))}
@@ -2946,7 +2957,12 @@ export default function StudyPlanner({ onShowTerms }) {
                                   {b.tasks.map((task, ti) => (
                                     <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0', fontSize: 13, fontFamily: S.f }}>
                                       <span style={{ fontWeight: 600, color: '#1a1816', minWidth: 85, flexShrink: 0 }}>{task.resource}</span>
-                                      <span style={{ color: '#6b6560', flex: 1 }}>{task.activity}</span>
+                                      <span style={{ color: '#6b6560', flex: 1 }}>
+                                        {task.activity}
+                                        {task.setupLink && (
+                                          <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                                        )}
+                                      </span>
                                       <span style={{ color: '#8a857e', fontWeight: 600 }}>{formatDuration(task.hours)}</span>
                                     </div>
                                   ))}
