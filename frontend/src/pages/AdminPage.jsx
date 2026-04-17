@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { PLAN_ENGINE_VERSION } from '../planEngine.js';
 
 const G = '#1D9E75';
 const G2 = '#0F6E56';
@@ -185,6 +186,7 @@ export default function AdminPage() {
   const [sortDir, setSortDir] = useState('desc');
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'feedback'
+  const [planStats,      setPlanStats]      = useState(null);
   const [feedbackData,   setFeedbackData]   = useState(null);
   const [fbkLoading,     setFbkLoading]     = useState(false);
   const [fbkError,       setFbkError]       = useState('');
@@ -198,12 +200,14 @@ export default function AdminPage() {
     setLoading(true);
     setError('');
     try {
-      const [statsData, usersData] = await Promise.all([
+      const [statsData, usersData, planStatsData] = await Promise.all([
         adminFetch('/stats', key),
         adminFetch('/users', key),
+        adminFetch(`/plan-stats?version=${PLAN_ENGINE_VERSION}`, key),
       ]);
       setStats(statsData);
       setUsers(usersData.users);
+      setPlanStats(planStatsData);
       setAuthed(true);
       sessionStorage.setItem('sa_admin_key', key);
     } catch (e) {
@@ -396,6 +400,39 @@ export default function AdminPage() {
                 }
               </div>
             </div>
+
+            {/* Plan Engine stats */}
+            {planStats && (
+              <div style={{ background: WHITE, borderRadius: 14, padding: '22px 24px', border: '1px solid rgba(0,0,0,0.07)', marginBottom: 28 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 16 }}>Plan Engine</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 16 }}>
+                  <StatCard label="Current Version" value={`v${planStats.currentVersion}`} color={G} />
+                  <StatCard label="Active Plans" value={planStats.totalActivePlans} />
+                  <StatCard
+                    label="At Current Version"
+                    value={planStats.plansAtCurrentVersion}
+                    sub={planStats.totalActivePlans > 0 ? `${Math.round((planStats.plansAtCurrentVersion / planStats.totalActivePlans) * 100)}% of active` : '—'}
+                    color={G}
+                  />
+                  <StatCard
+                    label="Outdated Plans"
+                    value={planStats.plansOutdated}
+                    sub={planStats.plansOutdated > 0 ? `${planStats.usersWithOutdatedPlans} user${planStats.usersWithOutdatedPlans !== 1 ? 's' : ''} affected` : 'All up to date'}
+                    color={planStats.plansOutdated > 0 ? O : DARK}
+                  />
+                </div>
+                {planStats.plansOutdated > 0 && (
+                  <div style={{ fontSize: 12, color: O, background: `${O}0d`, border: `1px solid ${O}40`, borderRadius: 8, padding: '8px 12px' }}>
+                    ⚠️ {planStats.usersWithOutdatedPlans} user{planStats.usersWithOutdatedPlans !== 1 ? 's' : ''} will have their plan silently regenerated on next login.
+                  </div>
+                )}
+                {planStats.plansOutdated === 0 && (
+                  <div style={{ fontSize: 12, color: G, background: `${G}0d`, border: `1px solid ${G}40`, borderRadius: 8, padding: '8px 12px' }}>
+                    ✅ All active plans are at the current engine version.
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
