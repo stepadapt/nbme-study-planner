@@ -889,7 +889,11 @@ export default function StudyPlanner({ onShowTerms }) {
     const daysUntilExam = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
     const urgencyColor = daysUntilExam === null ? BRAND.green : daysUntilExam <= 14 ? '#c0392b' : daysUntilExam <= 30 ? '#D85A30' : BRAND.green;
     const todayData = plan && latestPlanMeta ? findTodayInPlan(plan, latestPlanMeta.createdAt) : null;
-    const todayBlocksWithTimes = todayData ? assignBlockTimes(todayData.day.blocks, todayData.day.startTime || profile.studyStartTime || '07:00', profile.studyEndTime || '17:00') : [];
+    const todayBlocksWithTimes = todayData ? (() => {
+      const tStart = todayData.day.startTime || profile.studyStartTime || '07:00';
+      const tHours = todayData.day.dayHours ?? profile.hoursPerDay ?? 8;
+      return assignBlockTimes(todayData.day.blocks, tStart, calcEndTime(tStart, tHours));
+    })() : [];
     const progress = plan && latestPlanMeta ? calcPlanProgress(plan, latestPlanMeta.createdAt, profile.examDate) : null;
     const examPassed = daysUntilExam !== null && daysUntilExam === 0 && examDate && today >= examDate;
 
@@ -2941,14 +2945,16 @@ export default function StudyPlanner({ onShowTerms }) {
           const renderDayContent = (day) => {
             const special = day.dayType === 'nbme' || day.dayType === 'rest' || day.dayType === 'student-rest';
 
-            // Assign actual start/end times to every block from the day's configured start time
+            // Assign actual start/end times to every block from the day's configured start time.
+            // Use endFallback (computed from per-day hours) — NOT profile.studyEndTime, which
+            // reflects only the weekday config and would be wrong for other days (e.g. Saturday NBME).
             const dayStartT = day.startTime || profile.studyStartTime || '07:00';
             const dayHoursForBlock = day.dayHours ?? profile.hoursPerDay ?? 8;
             const endFallback = calcEndTime(dayStartT, dayHoursForBlock);
             const timedBlocks = assignBlockTimes(
               day.blocks || [],
               dayStartT,
-              profile.studyEndTime || endFallback
+              endFallback
             );
 
             // Deduplicate sub-topics across all blocks → show once at top of day

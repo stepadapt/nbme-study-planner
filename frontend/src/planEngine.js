@@ -994,6 +994,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const reviewHrs = ai?.reviewHours || 2.0;
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "nbme",
+        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+        dayHours: sched.dayHours ?? hrs,
         assessmentLabel: ai?.label, assessmentReason: ai?.reason,
         assessmentTest: ai?.test, overpredictWarning: ai?.overpredictWarning,
         predictorNote: ai?.predictorNote,
