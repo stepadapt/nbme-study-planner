@@ -225,6 +225,60 @@ export function getVideosForTopic(query, options = {}) {
 
 // ─────────────────────────────────────────────────────────────────────────
 /**
+ * Parse a normalized video object's duration to whole minutes (rounded up).
+ *
+ * Handles all three formats found in video-library.json:
+ *   durationMin (number)          → Ninja Nerd style, return directly
+ *   duration (string "MM:SS")     → parse and convert to minutes
+ *   duration (string "H:MM:SS")   → parse and convert to minutes
+ *   neither present               → return 20 (D4 default)
+ *
+ * @param {object} video - Normalized video object from getVideosForTopic()
+ * @returns {number} Duration in whole minutes
+ */
+export function parseVideoDurationToMinutes(video) {
+  if (!video) return 20;
+  // durationMin is already in minutes (Ninja Nerd entries)
+  if (video.durationMin != null) return Math.round(video.durationMin);
+  // duration is a "MM:SS" or "H:MM:SS" string (all other channels)
+  if (video.duration) {
+    const parts = video.duration.split(':').map(Number);
+    let totalSec;
+    if (parts.length === 3) {
+      totalSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      totalSec = parts[0] * 60 + parts[1];
+    } else {
+      return 20;
+    }
+    return Math.ceil(totalSec / 60);
+  }
+  return 20; // D4 default for entries with no duration data
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+/**
+ * Calculate total content review block time in minutes.
+ *
+ * Applies approved decisions:
+ *   D1: Use the longest video in the list (safe buffer — student never runs over)
+ *   D2: Budget at 1x speed (1.5x tip is encouragement, not an assumption)
+ *   D3: Add firstAidMinutes if First Aid is part of the block (pass 0 if not)
+ *   D4: 20 min default for videos with no duration
+ *
+ * @param {Array}  videos          - Array of normalized video objects (from getVideosForTopic)
+ * @param {number} firstAidMinutes - Time to add for FA read step (default 0; pass 20 if hasFirstAid)
+ * @returns {number} Total block time in minutes
+ */
+export function calculateContentReviewMinutes(videos, firstAidMinutes = 0) {
+  if (!videos || videos.length === 0) return 20 + firstAidMinutes;
+  const durations = videos.map(v => parseVideoDurationToMinutes(v));
+  const longestVideoMin = Math.max(...durations); // D1: longest
+  return longestVideoMin + firstAidMinutes;        // D2: 1x, D3: add FA time
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+/**
  * Given a contentEngine channel display name and a sub-topic query,
  * return the best verified URL for that channel, or null if not found.
  *
