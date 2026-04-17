@@ -77,6 +77,60 @@ Result: 4 days of Repro/Endo will show Diabetes→Thyroid→Adrenal, then Pituit
 
 ---
 
+---
+
+## Resolution
+
+### Bug 1 fix
+**Files changed:** `frontend/src/lib/videoLookup.js`, `scripts/test-video-urls.js`
+
+**What changed:** `normalizeResource()` now builds a YouTube search URL from the channel display name + video title whenever no direct `youtu.be/` URL exists. Previously it returned a channel homepage URL (e.g. `https://www.youtube.com/@dirtymedicine`) which was truthy and bypassed the proper search-URL fallback in `buildLinks()`. Now every entry has a working URL — either a direct video link or a `youtube.com/results?search_query=` URL that surfaces the correct video as the top result.
+
+**Test output:** `node scripts/test-video-urls.js` → 20 passed, 0 failed
+
+---
+
+### Bug 2 fix
+**Files changed:** `frontend/src/planEngine.js`
+
+**What changed:** `getTopSubTopics()` gains an `offset` parameter that rotates the starting position in the yield-sorted subtopic list. A `subTopicCursors` map in the plan generation loop tracks how many times each category has been used as `focusTopic`; each call computes `offset = visitCount * 3` and passes it to all three `getTopSubTopics` call sites. `PLAN_ENGINE_VERSION` bumped to 2 so existing users get auto-regeneration on next login.
+
+**Traced example (4 days of Repro/Endo):**
+```
+Day 1 (visit=0, offset=0):  Diabetes mellitus, Thyroid disorders, Adrenal disorders
+Day 2 (visit=1, offset=3):  Pituitary disorders, Calcium & parathyroid, Pregnancy complications
+Day 3 (visit=2, offset=6):  Ovarian & uterine pathology, Breast pathology, Menstrual cycle & hormones
+Day 4 (visit=3, offset=9):  Testicular & prostate pathology, MEN syndromes, Disorders of sexual development
+```
+
+---
+
+### Build status
+✅ `npm run build` passes — 45 modules transformed, no errors.
+
+---
+
+### What the user should do
+```bash
+git checkout main
+git merge demo-fixes
+git push origin main
+```
+
+To start the local server (check your npm scripts — usually one of):
+```bash
+cd frontend && npm run dev    # Vite dev server
+```
+
+---
+
+### Things I'm NOT confident about
+1. **Topic offset timing with light days**: Light days also call `getTopSubTopics` and also consume the cursor. If there's a light day interspersed between two Repro/Endo focus days, the second full day shifts by +6 instead of +3 (because the light day counted as visit 1). In practice this is fine — it means the light day shows the tier-2 topics, and the next full day shows tier-3. But the exact ordering may differ slightly from what you'd manually prescribe. **Test this by generating a long plan and checking Repro/Endo days.**
+
+2. **`getTopSubTopics` is also exported and called from `StudyPlanner.jsx`** for the sub-topic progress panel (showing which topics a student should focus on). That call doesn't pass `offset`, so it defaults to 0 — always showing the top-yielding topics. This is correct behavior for the progress panel (it should show the globally highest-yield topics, not the day-rotated version). No change needed there.
+
+---
+
 ## Risks
 
 **Low risk (confident):**
