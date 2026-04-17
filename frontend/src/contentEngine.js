@@ -6,6 +6,32 @@
 export const ytLink = (query) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
 
+// ── Verified video library (additive enrichment only) ─────────────────────
+// getVerifiedLink() is called when building link arrays for video steps.
+// If a verified direct URL exists for a channel + sub-topic pair, it replaces
+// the YouTube search query fallback. All other behaviour is unchanged.
+import { getVerifiedLink } from './lib/videoLookup.js';
+
+/**
+ * Build enriched link objects for a video step.
+ * Tries to find a verified URL for each channel; falls back to ytLink(query).
+ * @param {Array<{channel,query}>} items - up to 2 items from finalList
+ * @param {string} subTopicQuery - primary sub-topic string for lookup
+ */
+function buildLinks(items, subTopicQuery) {
+  return items.map(v => {
+    const verified = getVerifiedLink(v.channel, subTopicQuery);
+    return {
+      channel:  v.channel,
+      url:      verified.url || ytLink(v.query),
+      label:    v.channel,
+      // Pass through enrichment metadata so the UI can display them if desired
+      verified: verified.verified || false,
+      duration: verified.duration  || null,
+    };
+  });
+}
+
 // ── Per-category content map ───────────────────────────────────────────────
 // mainVideos: shown for the category as a whole (ordered by priority)
 // pathoma:    shown when student has Pathoma selected (overrides mainVideos for video step)
@@ -961,7 +987,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       instruction: topSubNames.length > 0
         ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}. Jump to those sections — you don't need to watch the full video. Take notes, not screenshots.`
         : 'Jump to the most relevant section — you don\'t need to watch the full video. Take notes, not screenshots.',
-      links: finalList.slice(0, 2).map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
+      links: buildLinks(finalList.slice(0, 2), topSubNames[0] || category),
     };
 
     // Knowledge gap with 2+ sub-topics: add a second WATCH step (~15 min) for the next sub-topic
@@ -977,7 +1003,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
         focus: topSubNames[1],
         skip: 'Skip overlap with the previous video — jump to this sub-topic only',
         instruction: `Focus on: ${topSubNames[1]}. Jump directly to this section — skip any content already covered above.`,
-        links: finalList.slice(1, 2).map(v => ({ channel: v.channel, url: ytLink(v.query), label: v.channel })),
+        links: buildLinks(finalList.slice(1, 2), topSubNames[1]),
       };
     }
   }
