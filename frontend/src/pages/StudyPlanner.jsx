@@ -67,9 +67,15 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
                 <span style={{ fontWeight: 600 }}>Skip:</span> {skipStr}
               </div>
             )}
+            {/* 1.5x speed tip — shown once above video buttons for WATCH steps only (D5) */}
+            {act === 'WATCH' && step.links && step.links.length > 0 && (
+              <div style={{ fontSize: compact ? 9 : 11, color: '#8a857e', fontStyle: 'italic', fontFamily: 'Georgia, "Times New Roman", serif', paddingLeft: compact ? 18 : 20, marginBottom: 3, marginTop: compact ? 2 : 4 }}>
+                💡 Watch at 1.5x speed to stay on schedule
+              </div>
+            )}
             {/* YouTube search links */}
             {step.links && step.links.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: compact ? 18 : 20, marginTop: compact ? 3 : 5 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: compact ? 18 : 20, marginTop: act === 'WATCH' ? 0 : (compact ? 3 : 5) }}>
                 {step.links.slice(0, 2).map((link, li) => (
                   <a key={li} href={link.url} target="_blank" rel="noopener noreferrer"
                     style={{ fontSize: compact ? 10 : 11, fontWeight: 600, color: '#c0392b', fontFamily: 'Georgia, "Times New Roman", serif', padding: '2px 8px', borderRadius: 10, background: '#c0392b10', border: '1px solid #c0392b30', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
