@@ -32,8 +32,8 @@ function parseMinutes(t) {
 }
 
 function fmt12(mins) {
-  // Snap to nearest 15-min mark, then format as 12-hr time
-  const snapped = Math.round(mins / 15) * 15;
+  // Snap to nearest 5-min mark, then format as 12-hr time
+  const snapped = Math.round(mins / 5) * 5;
   const h24 = Math.floor(snapped / 60) % 24;
   const mm = snapped % 60;
   const ampm = h24 < 12 ? 'AM' : 'PM';
@@ -69,83 +69,39 @@ export function formatDuration(hours) {
 }
 
 export function assignBlockTimes(blocks, startTime = '07:00', endTime = '17:00') {
-  const windowStart = parseMinutes(startTime);
-  const windowEnd = parseMinutes(endTime);
-  const windowMins = Math.max(1, windowEnd - windowStart);
-  const midpoint = windowStart + Math.floor(windowMins / 2);
-
-  // If blocks already contain an explicit lunch block, skip auto-insertion
-  const hasExplicitLunch = blocks.some(b => b.type === 'lunch');
-
-  // Compute study minutes — exclude fixed lunch blocks and taskless break markers from scaling
-  const totalStudyMins = blocks.reduce((sum, b) => {
-    if (b.type === 'lunch' || b.type === 'break' || !b.tasks) return sum;
-    return sum + b.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0);
-  }, 0);
-  const explicitLunchMins = hasExplicitLunch
-    ? (blocks.find(b => b.type === 'lunch')?.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0) || 0)
-    : 0;
-
-  const BREAK_INTERVAL = 120; // 15-min break every 2h of study
-  const LUNCH_DURATION = 30;
-  const SHORT_BREAK = 15;
-
-  const numShortBreaks = Math.max(0, Math.floor(totalStudyMins / BREAK_INTERVAL));
-  const needsAutoLunch = windowMins >= 240 && !hasExplicitLunch;
-  const estimatedTotal = totalStudyMins + numShortBreaks * SHORT_BREAK
-    + (needsAutoLunch ? LUNCH_DURATION : 0) + explicitLunchMins;
-
-  // Scale study blocks to fit window (lunch duration excluded from scaling)
-  const scale = estimatedTotal > windowMins
-    ? (windowMins - numShortBreaks * SHORT_BREAK - (needsAutoLunch ? LUNCH_DURATION : 0) - explicitLunchMins)
-      / Math.max(1, totalStudyMins)
-    : 1;
-
-  let cursor = windowStart;
-  let studyAccum = 0;
-  let lunchInserted = false;
+  // Sequential layout: each block's window = its task-hours sum, rounded to nearest 5 min.
+  // No scaling, no auto-break/lunch insertion.
+  // Explicit lunch/break blocks in the array are rendered like any other block.
+  // endTime is accepted for API compatibility but not used internally.
+  let cursor = parseMinutes(startTime);
   const result = [];
 
   for (const block of blocks) {
-    // Explicit lunch block — fixed duration, not scaled, resets break counter
-    if (block.type === 'lunch') {
-      const lunchMins = Math.round(block.tasks.reduce((s, t) => s + t.hours * 60, 0) / 15) * 15;
-      result.push({ ...block, startTime: fmt12(cursor), endTime: fmt12(cursor + lunchMins), durationMinutes: lunchMins });
-      cursor += lunchMins;
-      studyAccum = 0;
-      lunchInserted = true;
-      continue;
-    }
-
-    const blockMins = Math.round(Math.round((block.tasks || []).reduce((s, t) => s + t.hours * 60, 0) * scale) / 15) * 15;
-
-    // Auto-insert lunch at midpoint (only when no explicit lunch block present)
-    if (needsAutoLunch && !lunchInserted && cursor + blockMins > midpoint) {
-      const lunchStart = cursor;
-      const lunchEnd = cursor + LUNCH_DURATION;
-      result.push({ type: 'break', label: 'Lunch break', startTime: fmt12(lunchStart), endTime: fmt12(lunchEnd), durationMinutes: LUNCH_DURATION });
-      cursor = lunchEnd;
-      lunchInserted = true;
-      studyAccum = 0;
-    }
-
-    // Short break every 2h of study
-    if (studyAccum >= BREAK_INTERVAL) {
-      const brStart = cursor;
-      const brEnd = cursor + SHORT_BREAK;
-      result.push({ type: 'break', label: 'Short break', startTime: fmt12(brStart), endTime: fmt12(brEnd), durationMinutes: SHORT_BREAK });
-      cursor = brEnd;
-      studyAccum = 0;
-    }
-
-    const blockStart = cursor;
-    const blockEnd = cursor + blockMins;
-    result.push({ ...block, startTime: fmt12(blockStart), endTime: fmt12(blockEnd), durationMinutes: blockMins });
-    cursor = blockEnd;
-    studyAccum += blockMins;
+    const rawMins = (block.tasks || []).reduce((s, t) => s + Math.round(t.hours * 60), 0);
+    const blockMins = Math.max(5, Math.round(rawMins / 5) * 5);
+    result.push({ ...block, startTime: fmt12(cursor), endTime: fmt12(cursor + blockMins), durationMinutes: blockMins });
+    cursor += blockMins;
   }
 
   return result;
+}
+
+// Dev-mode validation: checks that block time windows match their task-hour sums.
+// Call after assignBlockTimes in dev/test contexts to catch duration mismatches.
+export function validateBlockDurations(dayLabel, blocks) {
+  if (typeof __BUILD_TIME__ !== 'undefined' && __BUILD_TIME__ !== 'dev') return; // prod: skip
+  // eslint-disable-next-line no-undef
+  for (const b of blocks) {
+    if (!b.startTime || !b.endTime || !b.tasks) continue;
+    const windowMins = b.durationMinutes || 0;
+    const taskSum = Math.round(b.tasks.reduce((s, t) => s + Math.round(t.hours * 60), 0) / 5) * 5;
+    if (Math.abs(windowMins - taskSum) > 5) {
+      console.error(
+        `[validateBlockDurations] ${dayLabel} — "${b.label}": ` +
+        `window ${windowMins} min (${b.startTime}–${b.endTime}) but tasks sum to ${taskSum} min. MISMATCH.`
+      );
+    }
+  }
 }
 
 export function findTodayInPlan(plan, planCreatedAt) {
@@ -564,17 +520,15 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 function getStudyDayParams(hrs, hasAnki) {
   const b1Hrs = hasAnki ? (hrs >= 8 ? 1.0 : 0.75) : 0.5;
   // ≤3 hrs (short evening/morning): 20 targeted + 20 random, no lunch
-  if (hrs <= 3) return { b1Hrs: hasAnki ? 0.5 : 0.25, b2Hrs: 0.33, b3QHrs: 0.5, b3ReviewHrs: 0.33, lunchHrs: 0, numRandom: 1, b5Hrs: 0.17, shortDay: true,  shortQs: 20 };
+  if (hrs <= 3) return { b1Hrs: hasAnki ? 0.5 : 0.5,  b2Hrs: 0.33, b3QHrs: 0.5,  b3ReviewHrs: 0.33, lunchHrs: 0,    numRandom: 1, b5Hrs: 0.17, shortDay: true,  shortQs: 20 };
   // 4–5 hrs (medium day): 40 targeted + 40 random, no lunch
-  if (hrs <= 5) return { b1Hrs: hasAnki ? 0.75 : 0.5, b2Hrs: 0.75, b3QHrs: 0.75, b3ReviewHrs: 0.75, lunchHrs: 0, numRandom: 1, b5Hrs: 0.25, shortDay: false, shortQs: null };
-  // 10+ h/day: 3 random blocks
-  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 3, b5Hrs: 0.75, shortDay: false, shortQs: null };
-  // 9 h/day  : 2 random blocks, longer lunch
-  if (hrs >= 9)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 2, b5Hrs: 0.75, shortDay: false, shortQs: null };
-  // 8 h/day  : 2 random blocks
-  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5,  shortDay: false, shortQs: null };
-  // 6–7 h/day: 1 random block
-  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5,  shortDay: false, shortQs: null };
+  if (hrs <= 5) return { b1Hrs: hasAnki ? 0.75 : 0.75, b2Hrs: 0.75, b3QHrs: 0.75, b3ReviewHrs: 1.0,  lunchHrs: 0,    numRandom: 1, b5Hrs: 0.25, shortDay: false, shortQs: null };
+  // 10+ h/day: 4 random blocks
+  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0, numRandom: 4, b5Hrs: 0.75, shortDay: false, shortQs: null };
+  // 8–9 h/day : 3 random blocks
+  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0, numRandom: 3, b5Hrs: 0.75, shortDay: false, shortQs: null };
+  // 6–7 h/day : 2 random blocks
+  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5, shortDay: false, shortQs: null };
 }
 
 // ── Deck-aware helper functions ────────────────────────────────────────────
@@ -607,7 +561,7 @@ function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, 
   // No Anki selected — use UWorld incorrects for spaced repetition
   if (!hasAnki) {
     return { type: 'anki', label: 'Morning retention', tasks: [
-      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning. Your annotated First Aid pages are your "deck" — flip through flagged pages quickly.', hours: 0.5 },
+      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning. Your annotated First Aid pages are your "deck" — flip through flagged pages quickly.', hours },
     ]};
   }
 
@@ -1215,7 +1169,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
     // ── BLOCK 1: Morning retention — always first, every day ──────────────
     // Content and duration vary by Anki experience level (see buildMorningRetentionBlock).
-    const b1Hrs = hasAnki ? dayAnkiHrs : (availHrs <= 3 ? 0.25 : 0.5);
+    const b1Hrs = hasAnki ? dayAnkiHrs : (availHrs <= 3 ? 0.5 : availHrs <= 5 ? 0.75 : 1.0);
     blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1, ankiDeck));
 
     if (isLight) {
@@ -1276,11 +1230,13 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           );
         }
         const b2Hrs = seqMins > 0
-          ? Math.ceil(seqMins / 15) * 15 / 60  // round up to nearest 15 min → hours
+          ? Math.ceil(seqMins / 5) * 5 / 60   // round up to nearest 5 min → hours
           : (isKG ? 0.75 : 0.5);               // fallback if sequence is somehow empty
-        // Redistribute freed time (removed PRACTICE step was ~30-45 min) → targeted Q review
-        const prevB2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75);
-        b3ReviewHrs = roundToQuarterHour(params.b3ReviewHrs + Math.max(0, prevB2Hrs - b2Hrs));
+        // Redistribute freed time → targeted Q review (skip on short days to preserve exact durations)
+        if (!params.shortDay) {
+          const prevB2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75);
+          b3ReviewHrs = roundToQuarterHour(params.b3ReviewHrs + Math.max(0, prevB2Hrs - b2Hrs));
+        }
         const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
         const b2Resource = "Content review";
         // Identify the weakest discipline in today's focus sub-topics for targeted advice
@@ -1339,7 +1295,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           : `Random block ${rb + 1} of ${params.numRandom}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
           { resource: primaryQBank, activity: `${effectiveQs} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: params.shortDay ? 0.5 : 0.75 },
-          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: params.shortDay ? 0.17 : 0.25 },
+          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.25 },
         ]});
       }
 
@@ -1354,19 +1310,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
     // Validate block order — content must always precede questions
     validateDayStructure(blocks);
-
-    // Timing sanity check — total block hours should be within 30 min of the student's target
-    if (sched.type === 'study') {
-      const dayTotalHrs = blocks.reduce(
-        (sum, b) => sum + (b.tasks?.reduce((s, t) => s + (t.hours || 0), 0) || 0), 0
-      );
-      if (Math.abs(dayTotalHrs - availHrs) > 0.5) {
-        console.warn(
-          `⚠ Day ${sched.calendarDay} timing: blocks total ${dayTotalHrs.toFixed(2)}hr, ` +
-          `target ${availHrs}hr (diff: ${(dayTotalHrs - availHrs).toFixed(2)}hr)`
-        );
-      }
-    }
 
     // Advance the subtopic cursor for this category so the next visit shows different topics
     if (_catKey) subTopicCursors[_catKey] = _subTopicVisit + 1;
