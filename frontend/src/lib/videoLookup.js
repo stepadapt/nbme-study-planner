@@ -22,21 +22,60 @@ const CHANNEL_NAME_TO_KEY = Object.fromEntries(
   Object.entries(CHANNEL_NAMES).map(([k, v]) => [v.toLowerCase(), k])
 );
 
+// ── Channel key → search display name (for constructing YouTube search URLs) ──
+// Used when the library has a title but no direct video URL.
+const CHANNEL_SEARCH_NAME = {
+  ninja_nerd:         'Ninja Nerd',
+  dirty_medicine:     'Dirty Medicine',
+  armando_hasudungan: 'Armando Hasudungan',
+  randy_neil_md:      'Randy Neil MD',
+  hyguru:             'HyGuru',
+  pathoma:            'Pathoma',
+  sketchy:            'Sketchy',
+};
+
+/** Build a YouTube search URL for a channel + title query. */
+function buildSearchUrl(channelKey, title) {
+  const chName = CHANNEL_SEARCH_NAME[channelKey] || channelKey;
+  const query  = title ? `${chName} ${title}` : chName;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
 // ── Normalize a resource entry → standard video object ────────────────────
-// Returns null for channel_reference entries (no specific video).
+// Returns null for channel_reference entries without a usable search string.
 function normalizeResource(resource) {
-  if (resource.type === 'channel_reference') return null;
   const channelKey  = resource.channel;
   const channelName = CHANNEL_NAMES[channelKey] || channelKey;
-  const directUrl   = resource.url && resource.url.includes('youtu') ? resource.url : null;
-  const fallbackUrl = resource.channel_url || null;
+
+  // channel_reference: only usable if it carries a pre-built search string
+  if (resource.type === 'channel_reference') {
+    if (!resource.search) return null;
+    return {
+      channel:     channelKey,
+      channelName,
+      title:       resource.search,
+      url:         `https://www.youtube.com/results?search_query=${encodeURIComponent(resource.search)}`,
+      directUrl:   false,
+      durationMin: null,
+      duration:    null,
+      verified:    false,
+      note:        resource.note || null,
+    };
+  }
+
+  const directUrl = resource.url && resource.url.includes('youtu') ? resource.url : null;
+  const title     = resource.title || channelName;
+
+  // When no direct video URL exists, build a YouTube search URL from channel + title.
+  // This is always better than a channel homepage (which the library stores in channel_url).
+  const url = directUrl || buildSearchUrl(channelKey, title);
+
   return {
     channel:     channelKey,
     channelName,
-    title:       resource.title || channelName,
-    // Prefer direct video URL (youtu.be/...) over channel URL
-    url:         directUrl || fallbackUrl,
-    directUrl:   !!directUrl,             // true = links to specific video
+    title,
+    url,
+    directUrl:   !!directUrl,
     durationMin: resource.duration_min || null,
     duration:    resource.duration || (resource.duration_min ? `${resource.duration_min} min` : null),
     verified:    !!(resource.verified || resource.verified_title),
