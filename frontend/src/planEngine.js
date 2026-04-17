@@ -1,5 +1,6 @@
 import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS, DISCIPLINE_ATTACK_STRATEGIES } from './data.js';
 import { getContentSequence } from './contentEngine.js';
+import { getVideosForTopic, calculateContentReviewMinutes } from './lib/videoLookup.js';
 
 // ── Plan Engine Version ───────────────────────────────────────────────────
 // Increment PLAN_ENGINE_VERSION whenever ANY of the following change:
@@ -11,13 +12,14 @@ import { getContentSequence } from './contentEngine.js';
 //
 // DO NOT increment for UI-only changes, backend-only changes, or new features
 // that don't affect the generated plan structure (exports, auth, etc.).
-export const PLAN_ENGINE_VERSION = 4;
+export const PLAN_ENGINE_VERSION = 5;
 
 export const PLAN_ENGINE_CHANGELOG = {
   1: 'Initial plan engine — personalized schedule with verified video library resources',
   2: 'Bug fix: topics now progress through high-yield subtopics across multi-day blocks; video links corrected',
   3: 'Morning retention blocks simplified — setup instructions replaced with link to /anki guide',
   4: 'Per-day schedule: block allocation adapts to each day\'s configured hours; assessments placed on long days only',
+  5: 'Content review block time now reflects actual video durations from the library, not fixed estimates',
 };
 
 /**
@@ -1265,12 +1267,25 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           contentSeqFull.sequence = [contentSeqFull.sequence[0]];
         }
         const contentSeqB2 = contentSeqFull || null;
-        // Sum step timecodes → round up to nearest 15 min → convert to hours
-        const seqMins = (contentSeqFull?.sequence || []).reduce(
-          (sum, s) => sum + parseStepMinutes(s.timeLabel), 0
-        );
+        // Compute block duration from actual video library durations.
+        // D1: longest video in results; D2: budget at 1x; D3: +20 min FA if included.
+        // Fallback to summing hardcoded timelabels when no videos are found in the library.
+        const topSubQuery = topSubs?.[0]?.topic || focusTopic.category;
+        const libraryVideos = getVideosForTopic(topSubQuery, { maxResults: 5 });
+        const hasFirstAidStep = (contentSeqFull?.sequence || []).some(s => s.resource === 'First Aid');
+        const firstAidMins = hasFirstAidStep ? 20 : 0; // D3: upper bound of "~15-20 min" FA step
+        let seqMins;
+        if (libraryVideos.length > 0) {
+          // Real durations available — use them (D1+D2+D3)
+          seqMins = calculateContentReviewMinutes(libraryVideos, firstAidMins);
+        } else {
+          // Fallback: sum hardcoded timelabels (preserves existing behavior for unmapped topics)
+          seqMins = (contentSeqFull?.sequence || []).reduce(
+            (sum, s) => sum + parseStepMinutes(s.timeLabel), 0
+          );
+        }
         const b2Hrs = seqMins > 0
-          ? Math.ceil(seqMins / 15) * 15 / 60  // e.g. 50 min → 1.0 hr, 30 min → 0.5 hr
+          ? Math.ceil(seqMins / 15) * 15 / 60  // round up to nearest 15 min → hours
           : (isKG ? 0.75 : 0.5);               // fallback if sequence is somehow empty
         // Redistribute freed time (removed PRACTICE step was ~30-45 min) → targeted Q review
         const prevB2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75);
