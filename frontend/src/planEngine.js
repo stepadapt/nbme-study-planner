@@ -11,10 +11,11 @@ import { getContentSequence } from './contentEngine.js';
 //
 // DO NOT increment for UI-only changes, backend-only changes, or new features
 // that don't affect the generated plan structure (exports, auth, etc.).
-export const PLAN_ENGINE_VERSION = 1;
+export const PLAN_ENGINE_VERSION = 2;
 
 export const PLAN_ENGINE_CHANGELOG = {
   1: 'Initial plan engine — personalized schedule with verified video library resources',
+  2: 'Bug fix: topics now progress through high-yield subtopics across multi-day blocks; video links corrected',
 };
 
 /**
@@ -187,16 +188,24 @@ export function calcPlanProgress(plan, planCreatedAt, examDate) {
   return { completedDays, totalDays, percent };
 }
 
-export function getTopSubTopics(category, count = 5, subTopicProgress = {}) {
+export function getTopSubTopics(category, count = 5, subTopicProgress = {}, offset = 0) {
   const subs = SUB_TOPICS[category];
   if (!subs) return [];
   // Improving sub-topics are de-prioritized to the bottom — struggling/untouched stay at top
-  return [...subs].sort((a, b) => {
+  const sorted = [...subs].sort((a, b) => {
     const aImproving = subTopicProgress[a.topic] === 'improving';
     const bImproving = subTopicProgress[b.topic] === 'improving';
     if (aImproving !== bImproving) return aImproving ? 1 : -1;
     return b.yield - a.yield;
-  }).slice(0, count);
+  });
+  if (!offset || sorted.length === 0) return sorted.slice(0, count);
+  // Rotate through subtopics across multi-day blocks so the same category doesn't
+  // repeat the same topics when it appears on consecutive days.
+  const result = [];
+  for (let i = 0; i < count && i < sorted.length; i++) {
+    result.push(sorted[(offset + i) % sorted.length]);
+  }
+  return result;
 }
 
 // ── QBank-specific filter tip ─────────────────────────────────────────────
@@ -876,6 +885,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const MAX_CONTENT_HRS = 1.5;
 
   let focusCursor = 0, maintCursor = 0, studyDayNum = 0;
+  // Tracks how many times each category has been used as focusTopic,
+  // so getTopSubTopics can advance through the subtopic list on repeat days.
+  const subTopicCursors = {};
   let weeks = [];
   let currentWeek = { week: 1, days: [], phase: "", focusTopics: [] };
 
@@ -1081,6 +1093,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     if (studyDayNum % 2 === 0) focusCursor++;
     maintCursor += 2;
 
+    // Subtopic offset: each visit to the same category shifts 3 positions in the
+    // sorted subtopic list, so consecutive days on the same system show new topics.
+    const _catKey = focusTopic?.category;
+    const _subTopicVisit = _catKey ? (subTopicCursors[_catKey] || 0) : 0;
+    const subTopicOffset = _subTopicVisit * 3;
+
     let blocks = [];
     const res1 = focusTopic ? getRes(focusTopic.category) : { learning: [], practice: [] };
     const primaryQBank = res1.practice.length > 0 ? rn(res1.practice[0]) : "Question bank";
@@ -1093,7 +1111,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     if (isLight) {
       // ── LIGHT DAY: Block 1 + shortened targeted Qs + 1 random block ──────
       // No Block 2 content review. Recovery pace — keep the habit, don't push.
-      const lightFocusSubs = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}) : [];
+      const lightFocusSubs = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}, subTopicOffset) : [];
       blocks.push({
         type: "questions-focus",
         label: `Targeted questions: ${focusTopic?.category || "focus system"} — 20 Qs`,
@@ -1114,8 +1132,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       // Lunch → Block 4 (random Qs, afternoon) → Block 5 (end-of-day review)
       const params = getStudyDayParams(availHrs, hasAnki);
       const isKG = focusTopic?.gapType === "knowledge";
-      const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3, profile.subTopicProgress || {}) : [];
-      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}) : [];
+      const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3, profile.subTopicProgress || {}, subTopicOffset) : [];
+      const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}, subTopicOffset) : [];
       const top3Short = topSubs.map(s => s.topic.split("(")[0].trim());
       const qbankFilterTip = getQbankFilterTip(primaryQBank, focusTopic?.category, focusSubTopics);
 
@@ -1219,6 +1237,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       }
     }
 
+    // Advance the subtopic cursor for this category so the next visit shows different topics
+    if (_catKey) subTopicCursors[_catKey] = _subTopicVisit + 1;
     if (focusTopic && !currentWeek.focusTopics.includes(focusTopic.category)) currentWeek.focusTopics.push(focusTopic.category);
     currentWeek.days.push({
       calendarDay: sched.calendarDay, dayType: sched.type, focusTopic: focusTopic?.category,
