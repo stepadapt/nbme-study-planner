@@ -1,6 +1,34 @@
 import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS, DISCIPLINE_ATTACK_STRATEGIES } from './data.js';
 import { getContentSequence } from './contentEngine.js';
 
+// ── Plan Engine Version ───────────────────────────────────────────────────
+// Increment PLAN_ENGINE_VERSION whenever ANY of the following change:
+//   • Yield weights or sub-topic data (data.js)
+//   • Block structure or time allocation logic (planEngine.js)
+//   • Content review recommendation logic (contentEngine.js)
+//   • NBME scheduling rules, resource recommendation rules, discipline strategies
+//   • Any fix that changes what a generated plan looks like
+//
+// DO NOT increment for UI-only changes, backend-only changes, or new features
+// that don't affect the generated plan structure (exports, auth, etc.).
+export const PLAN_ENGINE_VERSION = 1;
+
+export const PLAN_ENGINE_CHANGELOG = {
+  1: 'Initial plan engine — personalized schedule with verified video library resources',
+};
+
+/**
+ * Returns an array of changelog strings for all versions after `oldVersion`.
+ * Used to populate the "Your plan was updated" notification banner.
+ */
+export function getChangesSince(oldVersion) {
+  const changes = [];
+  for (let v = (oldVersion || 0) + 1; v <= PLAN_ENGINE_VERSION; v++) {
+    if (PLAN_ENGINE_CHANGELOG[v]) changes.push(PLAN_ENGINE_CHANGELOG[v]);
+  }
+  return changes;
+}
+
 // ── Time-block helpers ────────────────────────────────────────────────
 
 function parseMinutes(t) {

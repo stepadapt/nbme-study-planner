@@ -353,4 +353,45 @@ router.get('/feedback', (req, res) => {
   }
 });
 
+// ── GET /api/admin/plan-stats ─────────────────────────────────────────────
+// Returns plan engine versioning stats for the admin panel.
+// The CURRENT_VERSION query param lets the frontend tell us what version the
+// running engine is at without hardcoding it in the backend.
+router.get('/plan-stats', (req, res) => {
+  try {
+    const currentVersion = parseInt(req.query.version, 10) || 0;
+
+    const totalActive = db.prepare(`
+      SELECT COUNT(*) AS n FROM study_plans
+      WHERE is_archived = 0 OR is_archived IS NULL
+    `).get().n;
+
+    const atCurrent = db.prepare(`
+      SELECT COUNT(*) AS n FROM study_plans
+      WHERE (is_archived = 0 OR is_archived IS NULL)
+        AND engine_version = ?
+    `).get(currentVersion).n;
+
+    const outdated = totalActive - atCurrent;
+
+    // Count distinct users who have at least one outdated active plan
+    const usersOutdated = db.prepare(`
+      SELECT COUNT(DISTINCT user_id) AS n FROM study_plans
+      WHERE (is_archived = 0 OR is_archived IS NULL)
+        AND (engine_version IS NULL OR engine_version < ?)
+    `).get(currentVersion).n;
+
+    res.json({
+      currentVersion,
+      totalActivePlans: totalActive,
+      plansAtCurrentVersion: atCurrent,
+      plansOutdated: outdated,
+      usersWithOutdatedPlans: usersOutdated,
+    });
+  } catch (err) {
+    console.error('[admin/plan-stats]', err);
+    res.status(500).json({ error: 'Failed to load plan stats.' });
+  }
+});
+
 module.exports = router;

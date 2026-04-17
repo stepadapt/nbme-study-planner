@@ -45,25 +45,27 @@ router.get('/latest', (req, res) => {
       planData: JSON.parse(row.plan_data),
       profileSnapshot: JSON.parse(row.profile_snapshot),
       createdAt: row.created_at,
+      engineVersion: row.engine_version || 0,
     }
   });
 });
 
 // POST /api/plans — save a generated plan
 router.post('/', (req, res) => {
-  const { planData, profileSnapshot, assessmentId } = req.body;
+  const { planData, profileSnapshot, assessmentId, engineVersion } = req.body;
   if (!planData || !profileSnapshot) {
     return res.status(400).json({ error: 'planData and profileSnapshot required' });
   }
 
   const result = db.prepare(`
-    INSERT INTO study_plans (user_id, assessment_id, plan_data, profile_snapshot)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO study_plans (user_id, assessment_id, plan_data, profile_snapshot, engine_version)
+    VALUES (?, ?, ?, ?, ?)
   `).run(
     req.user.userId,
     assessmentId || null,
     JSON.stringify(planData),
-    JSON.stringify(profileSnapshot)
+    JSON.stringify(profileSnapshot),
+    engineVersion || 0
   );
 
   res.status(201).json({ id: result.lastInsertRowid, createdAt: new Date().toISOString() });
