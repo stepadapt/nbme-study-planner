@@ -11,11 +11,12 @@ import { getContentSequence } from './contentEngine.js';
 //
 // DO NOT increment for UI-only changes, backend-only changes, or new features
 // that don't affect the generated plan structure (exports, auth, etc.).
-export const PLAN_ENGINE_VERSION = 2;
+export const PLAN_ENGINE_VERSION = 3;
 
 export const PLAN_ENGINE_CHANGELOG = {
   1: 'Initial plan engine — personalized schedule with verified video library resources',
   2: 'Bug fix: topics now progress through high-yield subtopics across multi-day blocks; video links corrected',
+  3: 'Morning retention blocks simplified — setup instructions replaced with link to /anki guide',
 };
 
 /**
@@ -605,57 +606,45 @@ function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, 
 
   // ── Mehlman deck ────────────────────────────────────────────────────────
   if (ankiDeck === 'mehlman') {
-    if (ankiLevel === 'none' || (ankiLevel === 'beginner' && isFirstStudyDay)) {
-      return { type: 'anki', label: ankiLevel === 'none' ? 'Morning retention — Mehlman setup' : 'Morning retention', tasks: [
-        { resource: 'Mehlman Medical', activity: 'Do all due reviews first. Then learn 20–30 new cards. The Mehlman deck is small enough to get through entirely during dedicated — aim to see all cards within your first 2–3 weeks. Focus on the Rapid Review and HY Arrows cards first — these are the most frequently tested concepts.\n\nDo NOT make your own cards. The deck already covers the highest-yield material.', hours },
+    if (ankiLevel === 'none' && isFirstStudyDay) {
+      return { type: 'anki', label: 'Morning retention — Mehlman setup', tasks: [
+        { resource: 'Mehlman Medical', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n→ See our full setup guide (/anki)\n\nAfter setup: do your due reviews, then learn 20–30 new cards. Focus on Rapid Review and HY Arrows cards first.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
       ]};
     }
-    if (ankiLevel === 'beginner') {
+    if (ankiLevel === 'none' || ankiLevel === 'beginner') {
       return { type: 'anki', label: 'Morning retention', tasks: [
-        { resource: 'Mehlman Medical', activity: 'Do all due reviews first. Then learn 20–30 new cards. The Mehlman deck is small enough to get through entirely during dedicated — aim to see all cards within your first 2–3 weeks. Focus on the Rapid Review and HY Arrows cards first.\n\nDo NOT make your own cards.', hours },
+        { resource: 'Mehlman Medical', activity: 'Mehlman Deck — all due reviews, then 20–30 new cards for today\'s focus system. 1 hour max.', hours },
       ]};
     }
     if (ankiLevel === 'intermediate') {
       return { type: 'anki', label: 'Morning retention', tasks: [
-        { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. The Mehlman deck is lean enough that reviews should stay manageable (usually 100–300 cards daily). If you\'ve finished all new cards, use the remaining time to review your most-missed UWorld concepts in First Aid.\n\nDo NOT make your own cards.', hours },
+        { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. If reviews stay under 30 min, use the remaining time reviewing UWorld incorrects in First Aid.\n\nDo NOT make your own cards.', hours },
       ]};
     }
     // veteran
     return { type: 'anki', label: 'Morning retention', tasks: [
-      { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. Your Mehlman deck should be mostly mature at this point with manageable daily reviews. If you finish in under 30 minutes, use the remaining time reviewing UWorld incorrects from yesterday.\n\nDo NOT make your own cards.', hours },
+      { resource: 'Mehlman Medical', activity: 'All due reviews — 1 hour max. Deck should be mostly mature now. Remaining time → UWorld incorrects from yesterday.\n\nDo NOT make your own cards.', hours },
     ]};
   }
 
   // ── Other / custom deck ─────────────────────────────────────────────────
   if (ankiDeck === 'other') {
     return { type: 'anki', label: 'Morning retention', tasks: [
-      { resource: 'Anki (your deck)', activity: 'Do all due reviews — 1 hour max. Stop at 1 hour even if cards remain. Questions are more important than clearing your queue. Add new cards only if reviews are comfortably under 30 minutes.\n\nDo NOT make your own cards during dedicated.', hours },
+      { resource: 'Anki (your deck)', activity: 'All due reviews — 1 hour max. Stop at 1 hour even if cards remain. Add new cards only if reviews finish comfortably under 30 minutes.\n\nDo NOT make your own cards during dedicated.', hours },
     ]};
   }
 
   // ── AnKing (default) ────────────────────────────────────────────────────
-  // Never used before (level "none" with hasAnki) — show setup guide on day 1
-  if (ankiLevel === 'none' || (ankiLevel === 'beginner' && isFirstStudyDay)) {
-    const setupGuide = ankiLevel === 'none' ? `ANKI SETUP (one-time — do this today before anything else):
-1. Download Anki — free on desktop (apps.ankiweb.net), free on Android, $25 on iOS
-2. Download the AnKing Step 1 deck — search "AnKingMed" on YouTube for the current install tutorial (the process changes periodically)
-3. Install the deck with ALL cards SUSPENDED — this is the default; do not unsuspend anything yet
-4. Watch "AnKing How to Use Anki for Step 1 Beginners" on YouTube (15 min) — essential before you start
-5. Set your daily new card limit to 20–30 cards in deck settings
-6. Only unsuspend cards for topics you have ALREADY studied — never unsuspend topics you haven't learned yet
-
-KEY RULE: Do NOT make your own Anki cards. The AnKing deck covers every testable concept on Step 1. Making your own cards during dedicated is a time trap that will cost you hours. If you missed a concept, search the AnKing deck browser by keyword — the card already exists. Unsuspend it.
-
-After setup: do your due reviews (there won't be many yet), then unsuspend 20–30 AnKing cards for today's focus system.` : null;
-
-    return { type: 'anki', label: ankiLevel === 'none' ? 'Morning retention — AnKing setup' : 'Morning retention', tasks: [
-      { resource: 'AnKing Deck', activity: setupGuide || 'Do ALL due reviews first (probably 50–150 cards at this stage). Then unsuspend and learn new cards ONLY for today\'s focus system — 20–30 new cards max. If reviews start exceeding 45 minutes, stop adding new cards until reviews come back down. Do NOT make your own cards — if you missed a concept, search the AnKing deck by keyword and unsuspend the existing card.', hours },
+  if (ankiLevel === 'none' && isFirstStudyDay) {
+    // Brand-new user: show a one-time setup pointer to the /anki guide page
+    return { type: 'anki', label: 'Morning retention — AnKing setup', tasks: [
+      { resource: 'AnKing Deck', activity: 'First time? Complete the one-time Anki setup before starting reviews.\n→ See our full setup guide (/anki)\n\nAfter setup: do your due reviews, then unsuspend 20–30 AnKing cards for today\'s focus system.\n\nDo NOT make your own cards.', hours, setupLink: '/anki' },
     ]};
   }
 
-  if (ankiLevel === 'beginner') {
+  if (ankiLevel === 'none' || ankiLevel === 'beginner') {
     return { type: 'anki', label: 'Morning retention', tasks: [
-      { resource: 'AnKing Deck', activity: 'Do ALL due reviews first (probably 50–150 cards at your stage). Then unsuspend and learn new cards ONLY for today\'s focus system — 20–30 new cards max. If reviews start exceeding 45 minutes, stop adding new cards until reviews come back down. Do NOT make your own cards — if you missed a concept, search the AnKing deck by keyword and unsuspend the existing card.', hours },
+      { resource: 'AnKing Deck', activity: 'AnKing Deck — all due reviews first, then unsuspend 20–30 new cards for today\'s focus system. 1 hour max.', hours },
     ]};
   }
 
