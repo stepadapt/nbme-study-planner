@@ -20,21 +20,22 @@ router.get('/', (req, res) => {
       takenAssessments: JSON.parse(profile.taken_assessments || '[]'),
       subTopicProgress: JSON.parse(profile.sub_topic_progress || '{}'),
       rest_days: JSON.parse(profile.rest_days || '[]'),
+      weeklySchedule: profile.weekly_schedule ? JSON.parse(profile.weekly_schedule) : null,
     }
   });
 });
 
 // PUT /api/profile
 router.put('/', (req, res) => {
-  const { exam, resources, examDate, hoursPerDay, studyStartTime, studyEndTime, takenAssessments, subTopicProgress, rest_days } = req.body;
+  const { exam, resources, examDate, hoursPerDay, studyStartTime, studyEndTime, takenAssessments, subTopicProgress, rest_days, weeklySchedule } = req.body;
   const existing = db.prepare('SELECT id FROM user_profiles WHERE user_id = ?').get(req.user.userId);
 
   if (existing) {
-    db.prepare(`UPDATE user_profiles SET exam=?, resources=?, exam_date=?, hours_per_day=?, study_start_time=?, study_end_time=?, taken_assessments=?, sub_topic_progress=?, rest_days=?, updated_at=datetime('now') WHERE user_id=?`)
-      .run(exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), req.user.userId);
+    db.prepare(`UPDATE user_profiles SET exam=?, resources=?, exam_date=?, hours_per_day=?, study_start_time=?, study_end_time=?, taken_assessments=?, sub_topic_progress=?, rest_days=?, weekly_schedule=?, updated_at=datetime('now') WHERE user_id=?`)
+      .run(exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null, req.user.userId);
   } else {
-    db.prepare('INSERT INTO user_profiles (user_id, exam, resources, exam_date, hours_per_day, study_start_time, study_end_time, taken_assessments, sub_topic_progress, rest_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.user.userId, exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []));
+    db.prepare('INSERT INTO user_profiles (user_id, exam, resources, exam_date, hours_per_day, study_start_time, study_end_time, taken_assessments, sub_topic_progress, rest_days, weekly_schedule) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(req.user.userId, exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null);
   }
 
   res.json({ success: true });

@@ -11,12 +11,13 @@ import { getContentSequence } from './contentEngine.js';
 //
 // DO NOT increment for UI-only changes, backend-only changes, or new features
 // that don't affect the generated plan structure (exports, auth, etc.).
-export const PLAN_ENGINE_VERSION = 3;
+export const PLAN_ENGINE_VERSION = 4;
 
 export const PLAN_ENGINE_CHANGELOG = {
   1: 'Initial plan engine — personalized schedule with verified video library resources',
   2: 'Bug fix: topics now progress through high-yield subtopics across multi-day blocks; video links corrected',
   3: 'Morning retention blocks simplified — setup instructions replaced with link to /anki guide',
+  4: 'Per-day schedule: block allocation adapts to each day\'s configured hours; assessments placed on long days only',
 };
 
 /**
@@ -288,7 +289,7 @@ function selectNextNBME(availableNBMEs, daysRemaining, isLastSlot) {
 // 3. Final NBME = highest numbered form per selectNextNBME tier logic.
 // 4. Buffer: no other assessment within 3 days of Free 120 (→ last NBME ≤ T-5).
 
-export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false) {
+export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null) {
   const takenList = profile.takenAssessments || [];
   const SIX_WEEKS_MS = 42 * 24 * 60 * 60 * 1000;
   const now = new Date();
@@ -366,6 +367,19 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     if (test?.type === 'nbme') usedForms.add(test.id);
   };
 
+  // Snap a target day to the nearest eligible calendar day (±7 days).
+  // Only applies when eligibleCalendarDays is set; otherwise returns targetDay unchanged.
+  // Free 120 is NEVER snapped — it must stay at T-2.
+  const snapToEligible = (targetDay) => {
+    if (!eligibleCalendarDays || eligibleCalendarDays.has(targetDay)) return targetDay;
+    for (let delta = 1; delta <= 7; delta++) {
+      // Prefer earlier (less disruption to plan)
+      if (targetDay - delta >= 1 && eligibleCalendarDays.has(targetDay - delta)) return targetDay - delta;
+      if (targetDay + delta <= LAST_ASSESSMENT_DAY && eligibleCalendarDays.has(targetDay + delta)) return targetDay + delta;
+    }
+    return targetDay; // fallback: use original if no eligible day found within ±7
+  };
+
   // Pick lowest-numbered unused NBME (for baseline + early progress checks)
   const pickLowestNbme = () => untakenNBMEs.find(t => !usedForms.has(t.id)) || null;
   // Pick highest-numbered unused NBME (for final pre-exam slot — most representative)
@@ -401,7 +415,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   // STEP 2 — UWSA2 (only when ALL 8 NBMEs done) at 7-9 days before exam
   // ════════════════════════════════════════════════════════════════════
   if (uwsa2 && LAST_ASSESSMENT_DAY >= 3 && tier !== '2w') {
-    const target = Math.min(LAST_ASSESSMENT_DAY, totalCalendarDays - 9);
+    const target = snapToEligible(Math.min(LAST_ASSESSMENT_DAY, totalCalendarDays - 9));
     const uwsa2Day = findFree(Math.max(1, target), 2);
     if (uwsa2Day) {
       place(uwsa2Day, uwsa2, 'Score predictor',
@@ -414,7 +428,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   // STEP 3 — UWSA1 (only when ALL 8 NBMEs done, 8w+5w tiers) near midpoint
   // ════════════════════════════════════════════════════════════════════
   if (uwsa1 && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
-    const target = Math.floor(totalCalendarDays / 2);
+    const target = snapToEligible(Math.floor(totalCalendarDays / 2));
     const uwsa1Day = findFree(Math.min(target, LAST_ASSESSMENT_DAY - 5), 3);
     if (uwsa1Day) {
       place(uwsa1Day, uwsa1, 'Midpoint learning tool',
@@ -431,7 +445,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   if (!hasBaseline && untakenNBMEs.length > 0 && LAST_ASSESSMENT_DAY >= 1) {
     const baseNbme = selectNextNBME(untakenNBMEs, totalCalendarDays, false);
     if (baseNbme) {
-      const baseDay = findFree(Math.min(2, LAST_ASSESSMENT_DAY), 1);
+      const baseDay = findFree(snapToEligible(Math.min(2, LAST_ASSESSMENT_DAY)), 1);
       if (baseDay) {
         const baseReason = baseNbme.number >= 30
           ? `Your first NBME — a newer form chosen because it's more representative of current Step 1 content. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for your entire plan.`
@@ -445,7 +459,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   // STEP 5 — AMBOSS substitute (only when ALL 8 NBMEs done, no UWSA1)
   // ════════════════════════════════════════════════════════════════════
   if (!uwsa1 && amboss && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
-    const target = Math.min(Math.floor(totalCalendarDays / 2), LAST_ASSESSMENT_DAY - 5);
+    const target = snapToEligible(Math.min(Math.floor(totalCalendarDays / 2), LAST_ASSESSMENT_DAY - 5));
     const ambossDay = findFree(Math.max(1, target), 3);
     if (ambossDay) {
       place(ambossDay, amboss, 'Midpoint check (AMBOSS)',
@@ -475,7 +489,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 
     while (progressCount < maxProgress) {
       if (cursor > LAST_ASSESSMENT_DAY) break;
-      const slot = findFree(cursor, 3);
+      const slot = findFree(snapToEligible(cursor), 3);
       if (!slot || slot > LAST_ASSESSMENT_DAY) break;
 
       // Determine if this is the final slot (no room for another after this)
@@ -558,14 +572,18 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 // All numbers in hours. Sums match the student's declared hours/day.
 function getStudyDayParams(hrs, hasAnki) {
   const b1Hrs = hasAnki ? (hrs >= 8 ? 1.0 : 0.75) : 0.5;
+  // ≤3 hrs (short evening/morning): 20 targeted + 20 random, no lunch
+  if (hrs <= 3) return { b1Hrs: hasAnki ? 0.5 : 0.25, b2Hrs: 0.33, b3QHrs: 0.5, b3ReviewHrs: 0.33, lunchHrs: 0, numRandom: 1, b5Hrs: 0.17, shortDay: true,  shortQs: 20 };
+  // 4–5 hrs (medium day): 40 targeted + 40 random, no lunch
+  if (hrs <= 5) return { b1Hrs: hasAnki ? 0.75 : 0.5, b2Hrs: 0.75, b3QHrs: 0.75, b3ReviewHrs: 0.75, lunchHrs: 0, numRandom: 1, b5Hrs: 0.25, shortDay: false, shortQs: null };
   // 10+ h/day: 3 random blocks
-  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 3, b5Hrs: 0.75 };
+  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 3, b5Hrs: 0.75, shortDay: false, shortQs: null };
   // 9 h/day  : 2 random blocks, longer lunch
-  if (hrs >= 9)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 2, b5Hrs: 0.75 };
+  if (hrs >= 9)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0,  numRandom: 2, b5Hrs: 0.75, shortDay: false, shortQs: null };
   // 8 h/day  : 2 random blocks
-  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5  };
+  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5,  shortDay: false, shortQs: null };
   // 6–7 h/day: 1 random block
-  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5  };
+  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.5, numRandom: 1, b5Hrs: 0.5,  shortDay: false, shortQs: null };
 }
 
 // ── Deck-aware helper functions ────────────────────────────────────────────
@@ -763,13 +781,79 @@ function getDisciplineAwareActivity(discipline, system, subLabel, gapType, resou
   return `${system}  ·  ${gapLabel}`;
 }
 
+// ── Per-day schedule helpers ──────────────────────────────────────────────
+
+/**
+ * Migrate old single-hrs profile to weeklySchedule format.
+ * Called when profile.weeklySchedule is absent (existing users).
+ */
+function migrateToWeeklySchedule(profile) {
+  if (profile.weeklySchedule) return profile.weeklySchedule;
+  const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const s = {};
+  for (let d = 0; d <= 6; d++) {
+    const isRest = (profile.rest_days || []).includes(d);
+    s[d] = {
+      dayName: names[d],
+      studyHours: isRest ? 0 : (profile.hoursPerDay || 8),
+      startTime: profile.studyStartTime || '07:00',
+    };
+  }
+  return s;
+}
+
+/**
+ * Returns { hours, startTime } for a specific calendar date from weeklySchedule.
+ * Returns { hours: 0, startTime: null } when day is configured as rest.
+ */
+function getStudyHoursForDay(weeklySchedule, dayDate) {
+  const cfg = weeklySchedule[dayDate.getDay()];
+  if (!cfg || cfg.studyHours === 0) return { hours: 0, startTime: null };
+  return { hours: cfg.studyHours, startTime: cfg.startTime || '07:00' };
+}
+
+/**
+ * Returns a Set of weekday numbers (0–6) that have ≥6 study hours configured
+ * (i.e., days long enough for a full-length practice NBME).
+ */
+function getAssessmentEligibleDows(weeklySchedule) {
+  const s = new Set();
+  for (const [d, cfg] of Object.entries(weeklySchedule)) {
+    if ((cfg.studyHours || 0) >= 6) s.add(parseInt(d, 10));
+  }
+  return s;
+}
+
+/**
+ * Returns a display label for a day header based on hours + start time.
+ * Used to show "Evening", "Morning", "Full day", "Rest", etc.
+ */
+function getDayLabel(hours, startTime) {
+  if (!hours || hours === 0) return 'Rest';
+  if (hours >= 6) return 'Full day';
+  if (!startTime) return hours <= 3 ? 'Short' : null;
+  const h = parseInt(startTime.split(':')[0], 10);
+  return h >= 12 ? 'Evening' : 'Morning';
+}
+
 export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
   const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
-  const hrs = profile.hoursPerDay || 8;
+  const hrs = profile.hoursPerDay || 8; // global fallback; per-day overrides used in loop
   const planStartDate = new Date();
   planStartDate.setHours(0, 0, 0, 0);
-  const studentRestDaySet = new Set(profile.rest_days || []);
+
+  // Per-day schedule — migrate from old single-hrs model if needed
+  const weeklySchedule = migrateToWeeklySchedule(profile);
+  const eligibleAssessmentDows = getAssessmentEligibleDows(weeklySchedule);
+  const hasAssessmentEligibleDay = eligibleAssessmentDows.size > 0;
+
+  // Rest days are derived from weeklySchedule (studyHours === 0)
+  const studentRestDaySet = new Set(
+    Object.entries(weeklySchedule)
+      .filter(([, c]) => (c.studyHours || 0) === 0)
+      .map(([d]) => parseInt(d, 10))
+  );
 
   let priorities = [];
   for (const cat of STEP1_CATEGORIES) {
@@ -802,7 +886,18 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
   // ── Assessment scheduler ──────────────────────────────────────────────
   const hasExistingScores = options.hasExistingScores ?? Object.keys(scores).length > 0;
-  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores);
+
+  // Build set of calendar days that fall on assessment-eligible weekdays (≥6 hrs)
+  const eligibleCalendarDaySet = new Set();
+  for (let d = 0; d < totalCalendarDays; d++) {
+    const dd = new Date(planStartDate);
+    dd.setDate(planStartDate.getDate() + d);
+    if (eligibleAssessmentDows.has(dd.getDay())) eligibleCalendarDaySet.add(d + 1);
+  }
+  // If no eligible days exist, pass null so scheduleAssessments falls back to unrestricted placement
+  const effectiveEligible = eligibleCalendarDaySet.size > 0 ? eligibleCalendarDaySet : null;
+
+  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
   // Review days = day after each assessment (unless that day is also an assessment day or exam day).
   // Review days are FULL study days — they take priority over student-selected rest days.
@@ -824,28 +919,30 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const isInLockdown = totalCalendarDays >= 14 && calendarDay >= totalCalendarDays - 8 && !isLastDay;
     const isExamEve = isInLockdown && calendarDay === totalCalendarDays - 1;
     const isExamWeekDay = isInLockdown && !isExamEve;
-    // Student-selected rest day: check actual weekday for this calendar date
+    // Per-day hours and start time from weeklySchedule
     const dayDate = new Date(planStartDate);
     dayDate.setDate(planStartDate.getDate() + d);
-    const isStudentRest = studentRestDaySet.size > 0 && studentRestDaySet.has(dayDate.getDay());
+    const { hours: dayHours, startTime: dayStartTime } = getStudyHoursForDay(weeklySchedule, dayDate);
+    // Student rest: weeklySchedule marks this day as 0 hours (and it's not an assessment or review day)
+    const isStudentRest = dayHours === 0 && !assessmentDayMap.has(calendarDay) && !reviewDayMap.has(calendarDay);
     if (isLastDay) {
-      daySchedule.push({ calendarDay, type: "rest" });
+      daySchedule.push({ calendarDay, type: "rest", dayHours, dayStartTime });
     } else if (assessmentDayMap.has(calendarDay)) {
       // Assessments always override rest days — NBME/Free120 takes priority
-      daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay) });
+      daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay), dayHours, dayStartTime });
     } else if (reviewDayMap.has(calendarDay)) {
       // Review day wins over student rest — exam data is time-sensitive
-      daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay) });
+      daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay), dayHours, dayStartTime });
     } else if (isExamEve) {
-      daySchedule.push({ calendarDay, type: "exam-eve" });
+      daySchedule.push({ calendarDay, type: "exam-eve", dayHours, dayStartTime });
     } else if (isExamWeekDay) {
-      daySchedule.push({ calendarDay, type: "exam-week" });
+      daySchedule.push({ calendarDay, type: "exam-week", dayHours, dayStartTime });
     } else if (isStudentRest) {
-      daySchedule.push({ calendarDay, type: "student-rest" });
+      daySchedule.push({ calendarDay, type: "student-rest", dayHours: 0, dayStartTime: null });
     } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
-      daySchedule.push({ calendarDay, type: "light" });
+      daySchedule.push({ calendarDay, type: "light", dayHours, dayStartTime });
     } else {
-      daySchedule.push({ calendarDay, type: "study" });
+      daySchedule.push({ calendarDay, type: "study", dayHours, dayStartTime });
     }
   }
 
@@ -912,7 +1009,26 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     if (sched.type === "review") {
       const ai = sched.prevAssessItem;
       const testName = ai?.test?.name || 'assessment';
+      const reviewDayHrs = sched.dayHours ?? hrs;
       const reviewBlocks = [];
+
+      // ── Short review day (≤3 hrs) — compressed structure ──────────────
+      if (reviewDayHrs <= 3) {
+        reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, Math.min(0.5, reviewDayHrs * 0.15), false, ankiDeck));
+        reviewBlocks.push({ type: "questions-focus", label: `${testName} — deep wrong-answer review`,
+          tasks: [{ resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each: identify the concept, look it up in First Aid, annotate the margin.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed.` : ''}`, hours: Math.max(0.5, reviewDayHrs - 0.75) }],
+        });
+        reviewBlocks.push({ type: "end-review", label: "Flag patterns for tomorrow",
+          tasks: [{ resource: "Notes", activity: "Flag any recurring patterns for tomorrow's morning retention session.", hours: 0.25 }],
+        });
+        currentWeek.days.push({
+          calendarDay: sched.calendarDay, dayType: "review", triageFor: testName,
+          startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+          dayLabel: 'Review day',
+          blocks: reviewBlocks, totalQuestions: 0,
+        });
+        continue;
+      }
 
       // Block 1: Morning retention (Anki due reviews / UWorld incorrects)
       reviewBlocks.push({ type: "anki", label: "Morning retention", tasks: [
@@ -958,6 +1074,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "review", triageFor: testName,
+        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+        dayLabel: 'Review day',
         blocks: reviewBlocks, totalQuestions: qBlockSize * 2, // 40 targeted + 40 random
       });
       continue;
@@ -974,7 +1092,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       restBlocks.push({ type: "rest", label: "Pre-exam rest", tasks: [
         { resource: "Self", activity: "Rest. No new content. Light review of your own notes if needed. Early bedtime.", hours: 1 },
       ]});
-      currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", blocks: restBlocks });
+      currentWeek.days.push({ calendarDay: sched.calendarDay, dayType: "rest", startTime: null, dayLabel: 'Rest', blocks: restBlocks });
       continue;
     }
 
@@ -1002,6 +1120,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       ]});
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "exam-eve",
+        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+        dayLabel: 'Exam eve',
         blocks: eveBlocks, totalQuestions: 20,
       });
       continue;
@@ -1013,17 +1133,20 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const firstPri = priorities[0];
       const firstRes = firstPri ? getRes(firstPri.category) : { practice: [] };
       const examQBank = firstRes.practice.length > 0 ? rn(firstRes.practice[0]) : "Question bank";
+      // Per-day hours for exam-week block sizing
+      const lockdownDayHrs = sched.dayHours ?? hrs;
+      const lockdownAnkiHrs = hasAnki ? Math.min(1, roundToQuarterHour(lockdownDayHrs * 0.12)) : 0;
       const lockdownBlocks = [];
       if (hasAnki) {
         lockdownBlocks.push({ type: "anki", label: "Morning retention", tasks: [
-          { resource: getDeckName(ankiDeck), activity: "Due reviews only — quick streak maintenance.", hours: ankiHrs },
+          { resource: getDeckName(ankiDeck), activity: "Due reviews only — quick streak maintenance.", hours: lockdownAnkiHrs },
         ]});
       }
       lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
         { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.5 },
       ]});
       // 2-3 random blocks based on available hours (targeting 80–120 Qs)
-      const lockdownHrsAvail = hrs - ankiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
+      const lockdownHrsAvail = lockdownDayHrs - lockdownAnkiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
       const lockdownRandomBlocks = Math.max(2, Math.min(3, Math.round(lockdownHrsAvail / 1.5)));
       for (let rb = 0; rb < lockdownRandomBlocks; rb++) {
         lockdownBlocks.push({ type: "questions-random", label: `Random block ${rb + 1} — all systems`, tasks: [
@@ -1037,6 +1160,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       const lockdownTotalQs = lockdownRandomBlocks * qBlockSize;
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "exam-week",
+        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+        dayLabel: getDayLabel(lockdownDayHrs, sched.dayStartTime),
         blocks: lockdownBlocks, totalQuestions: lockdownTotalQs,
       });
       continue;
@@ -1059,6 +1184,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       ]});
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "student-rest",
+        startTime: null, dayLabel: 'Rest',
         blocks: studentRestBlocks, totalQuestions: 0,
       });
       continue;
@@ -1068,7 +1194,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     studyDayNum++;
     const isLight = sched.type === "light";
     const isRamp = studyDayNum <= contentRampDays;
-    const availHrs = isLight ? Math.round(hrs * 0.6 * 10) / 10 : hrs;
+    const dayHrs = sched.dayHours ?? hrs;  // per-day hours, fallback to global
+    const availHrs = isLight ? Math.round(dayHrs * 0.6 * 10) / 10 : dayHrs;
+    const dayAnkiHrs = hasAnki ? Math.min(1, roundToQuarterHour(availHrs * 0.12)) : 0;
 
     const focusTopic = topPriorities.length > 0 ? topPriorities[focusCursor % topPriorities.length]
       : midPriorities.length > 0 ? midPriorities[focusCursor % midPriorities.length] : priorities[0];
@@ -1094,7 +1222,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
     // ── BLOCK 1: Morning retention — always first, every day ──────────────
     // Content and duration vary by Anki experience level (see buildMorningRetentionBlock).
-    const b1Hrs = hasAnki ? ankiHrs : 0.5;
+    const b1Hrs = hasAnki ? dayAnkiHrs : (availHrs <= 3 ? 0.25 : 0.5);
     blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1, ankiDeck));
 
     if (isLight) {
@@ -1132,6 +1260,10 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       if (focusTopic) {
         // Build content sequence first — duration is computed from its steps, not hardcoded
         const contentSeqFull = getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs);
+        // Short days (≤3 hrs): truncate to first WATCH step only — no READ step
+        if (params.shortDay && contentSeqFull?.sequence?.length > 1) {
+          contentSeqFull.sequence = [contentSeqFull.sequence[0]];
+        }
         const contentSeqB2 = contentSeqFull || null;
         // Sum step timecodes → round up to nearest 15 min → convert to hours
         const seqMins = (contentSeqFull?.sequence || []).reduce(
@@ -1169,6 +1301,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       // BLOCK 3 — Targeted question block on the SAME system as Block 2
       // Immediately tests whether the morning's content review stuck.
+      const effectiveQs = params.shortQs ?? qBlockSize; // 20 on short days, 40 on full days
       const prioritizeStr = top3Short.length > 0 ? `Prioritize: ${top3Short.join(", ")}` : "";
       blocks.push({
         type: "questions-focus",
@@ -1177,27 +1310,30 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         primaryQBank,
         qbankFilterTip,
         tasks: [
-          { resource: primaryQBank, activity: `${qBlockSize} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode${prioritizeStr ? " · " + prioritizeStr : ""}`, hours: params.b3QHrs },
+          { resource: primaryQBank, activity: `${effectiveQs} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode${prioritizeStr ? " · " + prioritizeStr : ""}`, hours: params.b3QHrs },
           { resource: "Review", activity: "Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · Annotate First Aid for each missed concept", hours: b3ReviewHrs },
         ],
       });
 
       // LUNCH — explicit break between Block 3 (targeted) and Block 4 (random)
-      blocks.push({
-        type: "lunch",
-        label: "Lunch break",
-        tasks: [{ resource: "Break", activity: "Step away completely — eat, move, decompress. Mental reset before afternoon execution mode.", hours: params.lunchHrs }],
-      });
+      // Short days (≤3 hrs, ≤5 hrs) skip the lunch break — session doesn't warrant it.
+      if (params.lunchHrs > 0) {
+        blocks.push({
+          type: "lunch",
+          label: "Lunch break",
+          tasks: [{ resource: "Break", activity: "Step away completely — eat, move, decompress. Mental reset before afternoon execution mode.", hours: params.lunchHrs }],
+        });
+      }
 
       // BLOCK 4 — Mixed random timed question blocks (afternoon execution mode)
-      // Two or three blocks of 40 Qs each. ALL systems, RANDOM. Context-switching is the point.
+      // Two or three blocks of 40 Qs each (or 20 on short days). ALL systems, RANDOM.
       for (let rb = 0; rb < params.numRandom; rb++) {
         const blockLabel = params.numRandom === 1
           ? "Random block: all systems"
           : `Random block ${rb + 1} of ${params.numRandom}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
-          { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: 0.75 },
-          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.25 },
+          { resource: primaryQBank, activity: `${effectiveQs} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: params.shortDay ? 0.5 : 0.75 },
+          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: params.shortDay ? 0.17 : 0.25 },
         ]});
       }
 
@@ -1229,12 +1365,18 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     // Advance the subtopic cursor for this category so the next visit shows different topics
     if (_catKey) subTopicCursors[_catKey] = _subTopicVisit + 1;
     if (focusTopic && !currentWeek.focusTopics.includes(focusTopic.category)) currentWeek.focusTopics.push(focusTopic.category);
+    const params2 = getStudyDayParams(availHrs, hasAnki); // re-fetch to get shortDay/shortQs
     currentWeek.days.push({
       calendarDay: sched.calendarDay, dayType: sched.type, focusTopic: focusTopic?.category,
       focusGapType: focusTopic?.gapType, maintainTopics: [maint1, maint2].filter(Boolean).map(t => t.category),
-      blocks, totalQuestions: isLight
+      startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+      dayLabel: getDayLabel(availHrs, sched.dayStartTime),
+      blocks,
+      totalQuestions: isLight
         ? (20 + qBlockSize)  // light day: 20 targeted + 40 random
-        : blocks.reduce((sum, b) => sum + (b.type.includes("questions") ? qBlockSize : 0), 0),
+        : params2.shortDay
+          ? ((params2.shortQs ?? 20) * 2)  // short day: 20 targeted + 20 random = 40
+          : blocks.reduce((sum, b) => sum + (b.type.includes("questions") ? qBlockSize : 0), 0),
     });
   }
   if (currentWeek.days.length > 0) weeks.push(currentWeek);
@@ -1281,5 +1423,5 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     + totalLightDays * (20 + qBlockSize);
   const nbmeDays = assessmentSchedule.length;
 
-  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule };
+  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay };
 }

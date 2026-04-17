@@ -107,5 +107,6 @@ addCol('ALTER TABLE assessments ADD COLUMN taken_at TEXT'); // actual exam date 
 addCol('ALTER TABLE study_plans ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
 addCol('ALTER TABLE user_profiles ADD COLUMN rest_days TEXT DEFAULT "[]"');
 addCol('ALTER TABLE study_plans ADD COLUMN engine_version INTEGER DEFAULT 0');
+addCol('ALTER TABLE user_profiles ADD COLUMN weekly_schedule TEXT DEFAULT NULL');
 
 module.exports = db;

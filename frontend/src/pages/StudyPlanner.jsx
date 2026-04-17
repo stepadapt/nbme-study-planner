@@ -218,8 +218,17 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Core state ────────────────────────────────────────────────────
   const [screen, setScreen] = useState("welcome");
-  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: calcEndTime("07:00", 8), takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", ankiDeck: "anking", rest_days: [] });
+  const DEFAULT_WEEKLY_SCHEDULE = Object.fromEntries([0,1,2,3,4,5,6].map(d => [d, { dayName: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d], studyHours: 8, startTime: '07:00' }]));
+  const [profile, setProfile] = useState({ resources: [], examDate: "", hoursPerDay: 8, studyStartTime: "07:00", studyEndTime: calcEndTime("07:00", 8), takenAssessments: [], subTopicProgress: {}, anki_experience_level: "none", ankiDeck: "anking", rest_days: [], weeklySchedule: Object.fromEntries([0,1,2,3,4,5,6].map(d => [d, { dayName: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d], studyHours: 8, startTime: '07:00' }])) });
   const [showZeroRestNudge, setShowZeroRestNudge] = useState(false);
+  // ── Weekly schedule quick-fill UI state ───────────────────────────
+  const [quickFill, setQuickFill] = useState('same');
+  const [qfSameHrs, setQfSameHrs] = useState(8);
+  const [qfSameStart, setQfSameStart] = useState('07:00');
+  const [qfWdHrs, setQfWdHrs] = useState(4);
+  const [qfWdStart, setQfWdStart] = useState('17:00');
+  const [qfWeHrs, setQfWeHrs] = useState(10);
+  const [qfWeStart, setQfWeStart] = useState('07:00');
   const [latestPlanMeta, setLatestPlanMeta] = useState(null); // { id, createdAt, engineVersion }
   const [planUpdateBanner, setPlanUpdateBanner] = useState(null); // null | string[] of changelog entries
   const [scores, setScores] = useState({});
@@ -323,7 +332,11 @@ export default function StudyPlanner({ onShowTerms }) {
       api.plans.latest().catch(() => ({ plan: null })),
       api.cycles.list().catch(() => ({ cycles: [] })),
     ]).then(([{ profile: savedProfile }, { assessments: savedAssessments }, { schedule: savedSchedule }, { plan: savedPlan }, { cycles: savedCycles }]) => {
-      if (savedProfile) setProfile(p => ({ ...p, ...savedProfile }));
+      if (savedProfile) setProfile(p => ({
+        ...p,
+        ...savedProfile,
+        weeklySchedule: savedProfile.weeklySchedule || p.weeklySchedule,
+      }));
       if (savedAssessments.length > 0) setAssessments(savedAssessments);
       if (savedSchedule) setSchedule(savedSchedule);
       if (savedPlan) {
@@ -870,7 +883,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const daysUntilExam = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
     const urgencyColor = daysUntilExam === null ? BRAND.green : daysUntilExam <= 14 ? '#c0392b' : daysUntilExam <= 30 ? '#D85A30' : BRAND.green;
     const todayData = plan && latestPlanMeta ? findTodayInPlan(plan, latestPlanMeta.createdAt) : null;
-    const todayBlocksWithTimes = todayData ? assignBlockTimes(todayData.day.blocks, profile.studyStartTime || '07:00', profile.studyEndTime || '17:00') : [];
+    const todayBlocksWithTimes = todayData ? assignBlockTimes(todayData.day.blocks, todayData.day.startTime || profile.studyStartTime || '07:00', profile.studyEndTime || '17:00') : [];
     const progress = plan && latestPlanMeta ? calcPlanProgress(plan, latestPlanMeta.createdAt, profile.examDate) : null;
     const examPassed = daysUntilExam !== null && daysUntilExam === 0 && examDate && today >= examDate;
 
@@ -1764,77 +1777,127 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
             )}
             <hr style={S.hr} />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div><label style={S.label}>Exam date</label><input type="date" style={S.input} value={profile.examDate} onChange={e => setProfile(p => ({ ...p, examDate: e.target.value }))} /></div>
-              <div><label style={S.label}>Hours / day</label><input type="number" min={1} max={16} style={S.input} value={profile.hoursPerDay} onChange={e => { const hrs = Math.min(16, Math.max(1, Number(e.target.value))); setProfile(p => ({ ...p, hoursPerDay: hrs, studyEndTime: calcEndTime(p.studyStartTime || "07:00", hrs) })); }} /></div>
+            <div>
+              <label style={S.label}>Exam date</label>
+              <input type="date" style={S.input} value={profile.examDate} onChange={e => setProfile(p => ({ ...p, examDate: e.target.value }))} />
             </div>
-            <hr style={{ ...S.hr, margin: "20px 0 16px" }} />
-            <label style={S.label}>Daily study window</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 8 }}>
-              <div>
-                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>Start time</label>
-                <input type="time" style={S.input} value={profile.studyStartTime || "07:00"}
-                  onChange={e => setProfile(p => ({ ...p, studyStartTime: e.target.value, studyEndTime: calcEndTime(e.target.value, p.hoursPerDay || 8) }))} />
-              </div>
-              <div>
-                <label style={{ ...S.muted, display: "block", marginBottom: 6 }}>
-                  End time <span style={{ fontSize: 10, color: '#b0a99e', fontStyle: 'italic' }}>(auto)</span>
-                </label>
-                <input type="time" style={{ ...S.input, background: '#f5f3f0', color: '#8a857e', cursor: 'default' }}
-                  value={profile.studyEndTime || calcEndTime(profile.studyStartTime || "07:00", profile.hoursPerDay || 8)}
-                  readOnly tabIndex={-1}
-                  title="Calculated from start time + hours/day — adjust Hours/Day or Start Time to change this" />
-              </div>
-            </div>
-            {(() => {
-              const hrs = profile.hoursPerDay || 8;
-              const startT = profile.studyStartTime || "07:00";
-              const endT = profile.studyEndTime || calcEndTime(startT, hrs);
-              const lunchHrs = hrs >= 5 ? 1 : 0;
-              const totalHrs = hrs + lunchHrs;
-              const longDay = hrs >= 12;
-              return (
-                <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>
-                  {hrs} hr of study{lunchHrs ? ` + ${lunchHrs} hr lunch` : ''} = {totalHrs} hr window ({fmt12hDisplay(startT)} – {fmt12hDisplay(endT)})
-                  {longDay && <span style={{ color: '#c0392b', marginLeft: 6 }}>That's a long day — schedule at least one rest day per week.</span>}
-                </p>
-              );
-            })()}
           </div>
           {profile.examDate && (() => { const d = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)); const mode = d >= 42 ? "full dedicated" : d >= 21 ? "standard" : d >= 10 ? "compressed" : "triage"; return <p style={{ ...S.muted, textAlign: "center", marginTop: 8 }}><strong style={{ color: "#1a1816" }}>{d} days</strong> — <strong style={{ color: d < 14 ? "#c0392b" : "#1a1816" }}>{mode}</strong> plan{d < 14 ? ". Every hour counts." : "."}</p>; })()}
 
-          {/* ── Rest days ── */}
-          <div style={{ ...S.card, marginTop: 0 }}>
-            <label style={S.label}>Rest days</label>
-            <p style={{ ...S.muted, marginBottom: 12, marginTop: -4, lineHeight: 1.5 }}>
-              Which days do you want off each week? We strongly recommend at least one rest day — burnout is real and your brain needs recovery time to consolidate what you've learned.
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: (profile.rest_days || []).length >= 3 ? 10 : 0 }}>
-              {DAY_FULL.map((day, i) => {
-                const selected = (profile.rest_days || []).includes(i);
-                return (
-                  <div key={i}
-                    style={{ ...S.chip, ...(selected ? S.chipOn : {}), fontSize: 13 }}
-                    onClick={() => setProfile(p => {
-                      const current = p.rest_days || [];
-                      return { ...p, rest_days: selected ? current.filter(d => d !== i) : [...current, i] };
-                    })}>
-                    {selected ? '✓ ' : ''}{day.slice(0, 3)}
-                  </div>
-                );
-              })}
-            </div>
-            {(profile.rest_days || []).length >= 3 && (() => {
-              const restCount = (profile.rest_days || []).length;
-              const studyDaysPerWeek = 7 - restCount;
-              const daysLeft = profile.examDate ? Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000)) : 0;
-              return (
-                <div style={{ padding: '10px 12px', background: '#e67e220d', borderRadius: 8, border: '1px solid #e67e2240', fontSize: 12, color: '#92600a', fontFamily: S.f, lineHeight: 1.5, marginTop: 10 }}>
-                  ⚠️ That's {restCount} rest days per week, which leaves only {studyDaysPerWeek} study days. With {daysLeft} days until your exam, this may not be enough time to cover all your weak areas. Consider reducing to 1–2 rest days.
+          {/* ── Weekly schedule grid (replaces Hours/Day + Study Window + Rest Days) ── */}
+          {(() => {
+            const ws = profile.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE;
+            const updateDay = (d, field, val) => setProfile(p => ({
+              ...p,
+              weeklySchedule: { ...(p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE), [d]: { ...(p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE)[d], [field]: val } },
+            }));
+            const applyAll = (hrs, startT) => setProfile(p => ({
+              ...p,
+              weeklySchedule: Object.fromEntries([0,1,2,3,4,5,6].map(d2 => [d2, { dayName: DAY_FULL[d2], studyHours: hrs, startTime: startT }])),
+              hoursPerDay: hrs, studyStartTime: startT, studyEndTime: calcEndTime(startT, hrs),
+            }));
+            const applyWeekdayWeekend = (wdHrs, wdStart, weHrs, weStart) => setProfile(p => ({
+              ...p,
+              weeklySchedule: Object.fromEntries([0,1,2,3,4,5,6].map(d2 => {
+                const isWD = d2 >= 1 && d2 <= 5;
+                return [d2, { dayName: DAY_FULL[d2], studyHours: isWD ? wdHrs : weHrs, startTime: isWD ? wdStart : weStart }];
+              })),
+              hoursPerDay: wdHrs, studyStartTime: wdStart, studyEndTime: calcEndTime(wdStart, wdHrs),
+            }));
+            const totalWeeklyHrs = Object.values(ws).reduce((s, c) => s + (Number(c.studyHours) || 0), 0);
+            const avgHrs = (totalWeeklyHrs / 7).toFixed(1);
+            const hasRestDay = Object.values(ws).some(c => (Number(c.studyHours) || 0) === 0);
+            const hasLongDay = Object.values(ws).some(c => (Number(c.studyHours) || 0) >= 6);
+            return (
+              <div style={{ ...S.card, marginTop: 0 }}>
+                <label style={S.label}>Your weekly study schedule</label>
+                <p style={{ ...S.muted, marginBottom: 12, marginTop: -4, lineHeight: 1.5 }}>Set how many hours you can study each day, and when you start. Days with 0 hours are rest days.</p>
+
+                {/* Quick-fill tabs */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+                  {[['same', 'Same every day'], ['weekday', 'Weekday / Weekend'], ['custom', 'Custom']].map(([k, lbl]) => (
+                    <button key={k} onClick={() => setQuickFill(k)} style={{ ...S.btn, ...(quickFill === k ? S.pri : S.sec), padding: '5px 12px', fontSize: 12 }}>{lbl}</button>
+                  ))}
                 </div>
-              );
-            })()}
-          </div>
+
+                {quickFill === 'same' && (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label style={{ ...S.muted, marginBottom: 0 }}>Hours:</label>
+                      <input type="number" min={0} max={16} value={qfSameHrs} onChange={e => setQfSameHrs(Number(e.target.value))} style={{ ...S.input, width: 60 }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label style={{ ...S.muted, marginBottom: 0 }}>Start:</label>
+                      <input type="time" value={qfSameStart} onChange={e => setQfSameStart(e.target.value)} style={{ ...S.input, width: 110 }} />
+                    </div>
+                    <button onClick={() => applyAll(qfSameHrs, qfSameStart)} style={{ ...S.btn, ...S.sec, padding: '5px 12px', fontSize: 12 }}>Apply to all days</button>
+                  </div>
+                )}
+
+                {quickFill === 'weekday' && (
+                  <div style={{ display: 'flex', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontFamily: S.f, color: '#1a1816', fontWeight: 600 }}>Mon–Fri:</span>
+                      <input type="number" min={0} max={16} value={qfWdHrs} onChange={e => setQfWdHrs(Number(e.target.value))} style={{ ...S.input, width: 60 }} />
+                      <span style={{ ...S.muted, marginBottom: 0 }}>hrs @</span>
+                      <input type="time" value={qfWdStart} onChange={e => setQfWdStart(e.target.value)} style={{ ...S.input, width: 110 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontFamily: S.f, color: '#1a1816', fontWeight: 600 }}>Sat–Sun:</span>
+                      <input type="number" min={0} max={16} value={qfWeHrs} onChange={e => setQfWeHrs(Number(e.target.value))} style={{ ...S.input, width: 60 }} />
+                      <span style={{ ...S.muted, marginBottom: 0 }}>hrs @</span>
+                      <input type="time" value={qfWeStart} onChange={e => setQfWeStart(e.target.value)} style={{ ...S.input, width: 110 }} />
+                    </div>
+                    <button onClick={() => applyWeekdayWeekend(qfWdHrs, qfWdStart, qfWeHrs, qfWeStart)} style={{ ...S.btn, ...S.sec, padding: '5px 12px', fontSize: 12 }}>Apply</button>
+                  </div>
+                )}
+
+                {/* 7-day grid */}
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {[0,1,2,3,4,5,6].map(d => {
+                    const cfg = ws[d] || { studyHours: 8, startTime: '07:00' };
+                    const hrs = Number(cfg.studyHours) || 0;
+                    const startT = cfg.startTime || '07:00';
+                    const isRest = hrs === 0;
+                    return (
+                      <div key={d} style={{ display: 'flex', gap: 10, alignItems: 'center', opacity: isRest ? 0.55 : 1, flexWrap: 'wrap' }}>
+                        <span style={{ minWidth: 90, fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>{DAY_FULL[d]}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <input type="number" min={0} max={16} value={hrs}
+                            onChange={e => updateDay(d, 'studyHours', Math.min(16, Math.max(0, Number(e.target.value))))}
+                            style={{ ...S.input, width: 56, textAlign: 'center' }} />
+                          <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>hrs</span>
+                        </div>
+                        {isRest
+                          ? <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, fontStyle: 'italic' }}>Rest day</span>
+                          : <>
+                              <input type="time" value={startT} onChange={e => updateDay(d, 'startTime', e.target.value)} style={{ ...S.input, width: 110 }} />
+                              <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>→ {fmt12hDisplay(calcEndTime(startT, hrs))}</span>
+                            </>
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Summary */}
+                <p style={{ ...S.muted, fontSize: 12, marginTop: 12 }}>
+                  Weekly total: <strong style={{ color: '#1a1816' }}>{totalWeeklyHrs} hrs</strong> &nbsp;·&nbsp; Avg: <strong style={{ color: '#1a1816' }}>{avgHrs} hrs/day</strong>
+                </p>
+
+                {!hasRestDay && (
+                  <div style={{ padding: '8px 12px', background: '#e67e220d', borderRadius: 8, border: '1px solid #e67e2240', fontSize: 12, color: '#92600a', fontFamily: S.f, lineHeight: 1.5, marginTop: 8 }}>
+                    💡 We recommend at least one rest day per week. Burnout is real — your brain consolidates while you rest.
+                  </div>
+                )}
+                {!hasLongDay && (
+                  <div style={{ padding: '8px 12px', background: '#c0392b0d', borderRadius: 8, border: '1px solid #c0392b40', fontSize: 12, color: '#922b21', fontFamily: S.f, lineHeight: 1.5, marginTop: 8 }}>
+                    ⚠️ No day has enough time for a full-length practice NBME (~6 hours). Consider freeing up at least one day for assessments.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Class schedule ── */}
           <div style={{ ...S.card, marginTop: 0 }}>
@@ -2872,11 +2935,13 @@ export default function StudyPlanner({ onShowTerms }) {
           const renderDayContent = (day) => {
             const special = day.dayType === 'nbme' || day.dayType === 'rest' || day.dayType === 'student-rest';
 
-            // Assign actual start/end times to every block from the student's configured start time
-            const endFallback = calcEndTime(profile.studyStartTime || '07:00', profile.hoursPerDay || 8);
+            // Assign actual start/end times to every block from the day's configured start time
+            const dayStartT = day.startTime || profile.studyStartTime || '07:00';
+            const dayHoursForBlock = day.dayHours ?? profile.hoursPerDay ?? 8;
+            const endFallback = calcEndTime(dayStartT, dayHoursForBlock);
             const timedBlocks = assignBlockTimes(
               day.blocks || [],
-              profile.studyStartTime || '07:00',
+              dayStartT,
               profile.studyEndTime || endFallback
             );
 
@@ -2916,6 +2981,10 @@ export default function StudyPlanner({ onShowTerms }) {
                   {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
                   {day.dayType === 'exam-week' && <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed' }}>⚡ Exam week</span>}
                   {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75' }}>🌙 Exam eve</span>}
+                  {day.dayLabel && !['Rest', 'NBME'].includes(day.dayLabel) && day.dayType === 'study' && (
+                    <span style={{ ...S.tag, background: '#8a857e18', color: '#6b6560' }}>{day.dayLabel}</span>
+                  )}
+                  {day.dayType === 'review' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>📋 Review day</span>}
                   {!special && day.dayType !== 'exam-week' && day.dayType !== 'exam-eve' && day.focusTopic && (
                     <span style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f }}>Focus: <strong style={{ color: '#1a1816' }}>{day.focusTopic}</strong></span>
                   )}
