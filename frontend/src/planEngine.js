@@ -3,35 +3,24 @@ import { getContentSequence } from './contentEngine.js';
 import { getVideosForTopic, calculateContentReviewMinutes } from './lib/videoLookup.js';
 
 // ── Plan Engine Version ───────────────────────────────────────────────────
-// Increment PLAN_ENGINE_VERSION whenever ANY of the following change:
-//   • Yield weights or sub-topic data (data.js)
-//   • Block structure or time allocation logic (planEngine.js)
-//   • Content review recommendation logic (contentEngine.js)
-//   • NBME scheduling rules, resource recommendation rules, discipline strategies
-//   • Any fix that changes what a generated plan looks like
-//
-// DO NOT increment for UI-only changes, backend-only changes, or new features
-// that don't affect the generated plan structure (exports, auth, etc.).
-export const PLAN_ENGINE_VERSION = 5;
-
-export const PLAN_ENGINE_CHANGELOG = {
-  1: 'Initial plan engine — personalized schedule with verified video library resources',
-  2: 'Bug fix: topics now progress through high-yield subtopics across multi-day blocks; video links corrected',
-  3: 'Morning retention blocks simplified — setup instructions replaced with link to /anki guide',
-  4: 'Per-day schedule: block allocation adapts to each day\'s configured hours; assessments placed on long days only',
-  5: 'Content review block time now reflects actual video durations from the library, not fixed estimates',
-};
+// In production builds, PLAN_ENGINE_VERSION is the Unix timestamp (ms) injected
+// by Vite at build time — so every Railway deploy automatically produces a new,
+// larger version number and all existing student plans regenerate on next login.
+// In dev, __BUILD_TIME__ is the string 'dev' and we fall back to the last known
+// numbered version (5) so local hot-reloads don't trigger constant plan regens.
+// eslint-disable-next-line no-undef
+const _buildTime = typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : 'dev';
+export const PLAN_ENGINE_VERSION = _buildTime === 'dev' ? 5 : Number(_buildTime);
 
 /**
- * Returns an array of changelog strings for all versions after `oldVersion`.
+ * Returns an array of changelog strings for versions after `oldVersion`.
  * Used to populate the "Your plan was updated" notification banner.
  */
 export function getChangesSince(oldVersion) {
-  const changes = [];
-  for (let v = (oldVersion || 0) + 1; v <= PLAN_ENGINE_VERSION; v++) {
-    if (PLAN_ENGINE_CHANGELOG[v]) changes.push(PLAN_ENGINE_CHANGELOG[v]);
+  if (oldVersion < PLAN_ENGINE_VERSION) {
+    return ['Your study plan has been updated with the latest improvements.'];
   }
-  return changes;
+  return [];
 }
 
 // ── Time-block helpers ────────────────────────────────────────────────
