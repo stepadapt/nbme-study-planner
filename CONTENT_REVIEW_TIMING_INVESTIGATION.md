@@ -4,6 +4,86 @@ Branch: `content-review-timing`
 
 ---
 
+## Resolution (implemented after user approved all proposed decisions)
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `frontend/src/lib/videoLookup.js` | Added `parseVideoDurationToMinutes()` and `calculateContentReviewMinutes()` exports |
+| `frontend/src/planEngine.js` | Import new helpers; replace hardcoded `seqMins` sum with `calculateContentReviewMinutes(libraryVideos, firstAidMins)`; bump `PLAN_ENGINE_VERSION` to 5 |
+| `frontend/src/pages/StudyPlanner.jsx` | Added 1.5x tip above video buttons in `ContentSequencePanel` |
+| `scripts/test-content-review-timing.mjs` | End-to-end test script (run with `node scripts/test-content-review-timing.mjs`) |
+
+### Test output (all passed)
+
+```
+=== Unit tests: parseVideoDurationToMinutes ===
+  PASS [duration_min: 36]: 36
+  PASS [duration "14:10" → 15]: 15
+  PASS [duration "1:04:34" → 65]: 65
+  PASS [duration "7:30" → 8]: 8
+  PASS [no duration → 20]: 20
+  PASS [null → 20]: 20
+
+=== Integration tests: topic → videos → block time ===
+
+--- Heart failure ---
+Videos found: 5
+  [Ninja Nerd] "Heart Failure" → 36 min (duration_min)
+  [Dirty Medicine] "Heart Failure" → 15 min (duration string)
+  ... (3 more Armando Hasudungan entries)
+Content review block: 56 min → 1.00 hr slot   ✓ was previously ~0.75 hr (hardcoded 40 min)
+
+--- Diabetes mellitus ---
+Videos found: 5
+Content review block: 53 min → 1.00 hr slot
+
+--- Acid-base disorders ---
+Videos found: 3
+Content review block: 40 min → 0.75 hr slot   ✓ Ninja Nerd entry has no duration → 20 min default
+
+--- Biostatistics ---
+Videos found: 5
+  [Randy Neil MD] longest → 33 min
+Content review block: 53 min → 1.00 hr slot
+
+--- nonexistent_topic_xyz ---
+Videos found: 0
+Content review block: 40 min → 0.75 hr slot   ✓ fallback (20 min video default + 20 min FA)
+
+=== ALL TESTS PASSED ===
+```
+
+### Notes
+
+- **Diabetes / Acid-base Ninja Nerd entries have no duration in the library** — these entries exist but lack `duration_min` and `duration` fields. They correctly fall back to the 20-min default. If someone adds duration data to those entries later, the calculation automatically improves with no code change.
+- **PLAN_ENGINE_VERSION bumped to 5** — existing user plans will auto-regenerate on next login, updating their content review block sizes to reflect real durations.
+- The fallback (hardcoded timelabel sum) is preserved for categories with no library match — plan generation cannot crash even for topics completely absent from the library.
+
+### Merge and start
+
+```bash
+git checkout main && git merge content-review-timing
+cd frontend && npm run build
+```
+
+Or for local dev:
+```bash
+git checkout main && git merge content-review-timing
+cd frontend && npm run dev
+```
+
+### Three things to test after merging
+
+1. **Generate a plan with a known topic (e.g., Cardiovascular System / Heart failure focus day).** Open the content review block. Confirm the block's time slot reflects a real number (≥36 min for Heart Failure when Ninja Nerd is longest) rather than the old flat ~0.75 hr estimate.
+
+2. **Open the daily plan view and expand a content review block.** Confirm the `💡 Watch at 1.5x speed to stay on schedule` tip appears in small italic text above the video buttons, once per WATCH step, not on READ steps.
+
+3. **Click a video button.** Confirm it still opens the correct YouTube URL (regression check — the 1.5x tip change doesn't touch link generation, but verify nothing broke).
+
+---
+
 ## Investigation Findings
 
 ### Q1: How is content review block time currently calculated?
