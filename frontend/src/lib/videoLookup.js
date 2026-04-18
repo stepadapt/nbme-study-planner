@@ -123,11 +123,11 @@ function matchesTopic(query, subtopic) {
   const qStem = q.replace(/s$/, '');
   if (qStem.length >= 4 && (s.includes(qStem) || qStem.includes(s))) return true;
 
-  // First-word match: if query starts with a distinctive word (≥6 chars),
-  // check if the subtopic also starts with it (handles "Thyroid disorders" → "Thyroid disease")
-  const qFirstWord = q.split(/\s+/)[0];
-  const sFirstWord = s.split(/\s+/)[0];
-  if (qFirstWord.length >= 6 && qFirstWord === sFirstWord) return true;
+  // Rule 3: Word overlap — require ≥2 shared significant words, or 1 word of length ≥8
+  const qWords = new Set(q.split(/\W+/).filter(w => w.length > 4));
+  const sWords = new Set(s.split(/\W+/).filter(w => w.length > 4));
+  const shared = [...qWords].filter(w => sWords.has(w));
+  if (shared.length >= 2 || shared.some(w => w.length >= 8)) return true;
 
   return false;
 }
