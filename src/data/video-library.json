@@ -1030,7 +1030,7 @@
           ]
         },
         {
-          "subtopic": "Glomerular disease (nephritic vs nephrotic)",
+          "subtopic": "Glomerulonephritis (nephrotic vs nephritic)",
           "resources": [
             {
               "channel": "dirty_medicine",
@@ -1181,7 +1181,7 @@
           ]
         },
         {
-          "subtopic": "Glomerular disease (detailed)",
+          "subtopic": "Glomerulonephritis (detailed)",
           "resources": [
             {
               "channel": "armando_hasudungan",
@@ -1544,7 +1544,7 @@
           ]
         },
         {
-          "subtopic": "Thyroid disease",
+          "subtopic": "Thyroid disorders",
           "resources": [
             {
               "channel": "ninja_nerd",
@@ -2782,7 +2782,7 @@
           ]
         },
         {
-          "subtopic": "Spinal cord pathology (detailed)",
+          "subtopic": "Spinal cord lesions (detailed)",
           "resources": [
             {
               "channel": "armando_hasudungan",
@@ -5747,7 +5747,7 @@
     "biostatistics_epidemiology": {
       "low_hanging_fruit": [
         {
-          "subtopic": "Biostatistics foundation (START HERE \u2014 Randy Neil flagship series)",
+          "subtopic": "Biostatistics foundation (START HERE — Randy Neil flagship series)",
           "resources": [
             {
               "channel": "randy_neil_md",
@@ -6471,7 +6471,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Cardiac cycle & pressure-volume loops"
         }
       ],
       "renal": [
@@ -6513,7 +6514,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Renal physiology (GFR, tubular transport, concentration/dilution)"
         }
       ],
       "pulmonary": [
@@ -6574,7 +6576,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Pulmonary physiology (V/Q matching, gas exchange, compliance)"
         }
       ],
       "gi": [
@@ -6588,7 +6591,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "GI motility, secretion & absorption"
         }
       ]
     },
@@ -6617,7 +6621,8 @@
               "type": "channel_reference",
               "note": "Sketchy Pharm autonomic"
             }
-          ]
+          ],
+          "subtopic": "Autonomic drugs (cholinergic, anticholinergic, adrenergic, blockers)"
         }
       ],
       "cardiovascular": [
@@ -6725,7 +6730,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Cardiac drugs (antiarrhythmics, antianginals, antihypertensives)"
         }
       ],
       "antimicrobials": [
@@ -6806,7 +6812,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Antimicrobials (mechanism, resistance, side effects by class)"
         }
       ],
       "psych_drugs": [
@@ -6844,7 +6851,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "CNS drugs (antidepressants, antipsychotics, anxiolytics, mood stabilizers)"
         }
       ],
       "other_pharm": [
@@ -6978,7 +6986,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Drug metabolism & pharmacokinetics (CYP450, half-life, Vd, bioavailability)"
         }
       ],
       "dmards_and_immunosuppressants": [
@@ -7161,7 +7170,7 @@
               "note": "Search title on Randy Neil MD channel for direct URL"
             }
           ],
-          "note": "Randy's pharmacology foundation \u2014 complements Dirty Medicine's PK/PD video with a more extended, question-based walkthrough."
+          "note": "Randy's pharmacology foundation — complements Dirty Medicine's PK/PD video with a more extended, question-based walkthrough."
         }
       ]
     },
@@ -7231,7 +7240,8 @@
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
           ],
-          "note": "Dirty Medicine has 20+ individual organism videos - see Multisystem section for full list"
+          "note": "Dirty Medicine has 20+ individual organism videos - see Multisystem section for full list",
+          "subtopic": "Bacterial identification (Gram stain, culture, morphology)"
         }
       ]
     },
@@ -7263,7 +7273,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Peripheral nerve anatomy & injury patterns (brachial plexus, lumbosacral)"
         }
       ],
       "vascular_territories": [
@@ -7293,7 +7304,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Stroke syndromes (vascular territories, ischemic vs hemorrhagic)"
         }
       ],
       "embryology": [
@@ -7339,7 +7351,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Neural tube defects & CNS embryology"
         }
       ],
       "general": [
@@ -7481,7 +7494,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Thorax anatomy (lung lobes, pleura, mediastinum, diaphragm)"
         }
       ]
     },
@@ -7515,7 +7529,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Defense mechanisms"
         }
       ]
     },
@@ -7731,7 +7746,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Metabolic pathways (glycolysis, TCA cycle, ETC, gluconeogenesis)"
         }
       ],
       "storage_diseases": [
@@ -7753,7 +7769,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Lysosomal storage diseases (Gaucher's, Tay-Sachs, Niemann-Pick, Fabry's)"
         }
       ],
       "lipids_and_amino_acids": [
@@ -7799,7 +7816,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Lipid metabolism & transport (lipoproteins, dyslipidemia)"
         }
       ],
       "nucleotides": [
@@ -7829,7 +7847,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Purine & pyrimidine metabolism"
         }
       ],
       "other_biochem": [
@@ -7875,7 +7894,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Amino acid derivatives & metabolism disorders (PKU, homocystinuria)"
         }
       ],
       "note": "Dirty Medicine has extensive biochem coverage - better than most paid resources. Fills the gap left by Randy Neil MD being miscategorized in the context doc.",
@@ -7972,7 +7992,7 @@
               "note": "Search title on Randy Neil MD channel for direct URL"
             }
           ],
-          "note": "This is Randy Neil's narrative biochemistry series \u2014 tells biochem as connected pathway stories. Good supplement if you find Dirty Medicine's discrete-topic approach doesn't connect pathways well. This explains the context doc's biochem label \u2014 Randy DOES have significant biochem content, just not as his primary specialty."
+          "note": "This is Randy Neil's narrative biochemistry series — tells biochem as connected pathway stories. Good supplement if you find Dirty Medicine's discrete-topic approach doesn't connect pathways well. This explains the context doc's biochem label — Randy DOES have significant biochem content, just not as his primary specialty."
         }
       ],
       "must_know_pathways": [
@@ -8072,7 +8092,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Hypersensitivity reactions (Types I–IV)"
         }
       ],
       "cell_markers_and_antibodies": [
@@ -8158,7 +8179,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Transplant immunology (rejection types, immunosuppressants)"
         }
       ],
       "autoimmune": [
@@ -8172,7 +8194,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Autoimmune diseases (SLE, RA, Sjögren's — antibodies, organ involvement)"
         }
       ]
     },
@@ -8300,7 +8323,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Organelle functions & associated pathologies"
         }
       ],
       "histology_glomerular_and_smear": [
@@ -8343,7 +8367,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Epithelial histology & glandular structures"
         }
       ],
       "collagen": [
@@ -8365,7 +8390,8 @@
               "verified_title": true,
               "note": "Search title on Dirty Medicine channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Connective tissue disorders (collagen synthesis, Marfan's, Ehlers-Danlos)"
         }
       ]
     },
@@ -8469,7 +8495,8 @@
               "verified_title": true,
               "note": "Search title on Armando Hasudungan channel for direct URL"
             }
-          ]
+          ],
+          "subtopic": "Mendelian inheritance patterns & pedigree analysis"
         },
         {
           "subtopic": "Mnemonic songs for memorizing disease lists",
@@ -8579,8 +8606,8 @@
       "Developmental milestones"
     ],
     "remaining_gaps_requiring_armando_or_pathoma": [
-      "Pathology foundation (cell injury, inflammation, neoplasia) \u2192 Pathoma Ch. 1-3 remains essential",
-      "Sketchy visual mnemonics \u2192 optional; Dirty Medicine's micro series is a free substitute"
+      "Pathology foundation (cell injury, inflammation, neoplasia) → Pathoma Ch. 1-3 remains essential",
+      "Sketchy visual mnemonics → optional; Dirty Medicine's micro series is a free substitute"
     ],
     "students_without_sketchy": {
       "recommendation": "Use Dirty Medicine microbiology series - 20+ individual organism videos cover the high-yield bacteria comprehensively. Combined with Ninja Nerd's antibiotics lecture, this provides full pharm+micro coverage."
