@@ -116,18 +116,31 @@ function matchesTopic(query, subtopic) {
   const s = subtopic.split('(')[0].trim().toLowerCase();
   if (!q || !s) return false;
 
-  // Direct includes match
-  if (s.includes(q) || q.includes(s)) return true;
+  // Direct includes match — use word-boundary check to prevent "parathyroid" matching "thyroid"
+  const wordBoundaryIncludes = (haystack, needle) => {
+    const idx = haystack.indexOf(needle);
+    if (idx === -1) return false;
+    // Verify the match starts at a word boundary (start of string or preceded by non-word char)
+    const before = idx === 0 || /\W/.test(haystack[idx - 1]);
+    return before;
+  };
+  if (wordBoundaryIncludes(s, q) || wordBoundaryIncludes(q, s)) return true;
 
   // Plural stem: strip trailing 's' and try again
   const qStem = q.replace(/s$/, '');
-  if (qStem.length >= 4 && (s.includes(qStem) || qStem.includes(s))) return true;
+  if (qStem.length >= 4 && (wordBoundaryIncludes(s, qStem) || wordBoundaryIncludes(qStem, s))) return true;
 
-  // Rule 3: Word overlap — require ≥2 shared significant words, or 1 word of length ≥8
-  const qWords = new Set(q.split(/\W+/).filter(w => w.length > 4));
-  const sWords = new Set(s.split(/\W+/).filter(w => w.length > 4));
-  const shared = [...qWords].filter(w => sWords.has(w));
-  if (shared.length >= 2 || shared.some(w => w.length >= 8)) return true;
+  // Rule 3: Word overlap — require ≥2 shared significant words (length > 4), OR
+  // a single shared clinical word of length ≥8 that is not a generic structural term.
+  // Generic/structural words are excluded from the single-word rule to prevent false positives
+  // e.g. "pulmonary function" vs "pulmonary embolism", "cardiac cycle" vs "cardiac pharmacology".
+  const GENERIC_LONG_WORDS = new Set(['disorders', 'physiology', 'pathophysiology', 'detailed', 'foundations', 'additional', 'pathology', 'diseases', 'syndrome', 'syndromes', 'mechanism', 'mechanisms', 'infection', 'infections', 'associated', 'conditions', 'treatment', 'function', 'functions', 'pulmonary', 'cardiac', 'clinical', 'overview', 'development', 'reactions', 'metabolism', 'peripheral', 'patterns', 'pathways']);
+  const qWords = q.split(/\W+/).filter(w => w.length > 4);
+  const sWords = s.split(/\W+/).filter(w => w.length > 4);
+  const sSet = new Set(sWords);
+  const shared = qWords.filter(w => sSet.has(w));
+  if (shared.length >= 2) return true;
+  if (shared.some(w => w.length >= 8 && !GENERIC_LONG_WORDS.has(w))) return true;
 
   return false;
 }
