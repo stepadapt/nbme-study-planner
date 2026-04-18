@@ -90,14 +90,25 @@ function matchesTopic(query, subtopic) {
   const s = subtopic.split('(')[0].trim().toLowerCase();
   if (!q || !s) return false;
 
-  if (s.includes(q) || q.includes(s)) return true;
+  const wordBoundaryIncludes = (haystack, needle) => {
+    const idx = haystack.indexOf(needle);
+    if (idx === -1) return false;
+    const before = idx === 0 || /\W/.test(haystack[idx - 1]);
+    return before;
+  };
+  if (wordBoundaryIncludes(s, q) || wordBoundaryIncludes(q, s)) return true;
 
   const qStem = q.replace(/s$/, '');
-  if (qStem.length >= 4 && (s.includes(qStem) || qStem.includes(s))) return true;
+  if (qStem.length >= 4 && (wordBoundaryIncludes(s, qStem) || wordBoundaryIncludes(qStem, s))) return true;
 
-  const qFirstWord = q.split(/\s+/)[0];
-  const sFirstWord = s.split(/\s+/)[0];
-  if (qFirstWord.length >= 6 && qFirstWord === sFirstWord) return true;
+  // Rule 3: Word overlap
+  const GENERIC_LONG_WORDS = new Set(['disorders', 'physiology', 'pathophysiology', 'detailed', 'foundations', 'additional', 'pathology', 'diseases', 'syndrome', 'syndromes', 'mechanism', 'mechanisms', 'infection', 'infections', 'associated', 'conditions', 'treatment', 'function', 'functions', 'pulmonary', 'cardiac', 'clinical', 'overview', 'development', 'reactions', 'metabolism', 'peripheral', 'patterns', 'pathways']);
+  const qWords = q.split(/\W+/).filter(w => w.length > 4);
+  const sWords = s.split(/\W+/).filter(w => w.length > 4);
+  const sSet = new Set(sWords);
+  const shared = qWords.filter(w => sSet.has(w));
+  if (shared.length >= 2) return true;
+  if (shared.some(w => w.length >= 8 && !GENERIC_LONG_WORDS.has(w))) return true;
 
   return false;
 }
