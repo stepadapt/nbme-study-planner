@@ -2892,18 +2892,6 @@ export default function StudyPlanner({ onShowTerms }) {
             const qMatch = block.tasks?.map(t => t.activity || '').join(' ').match(/(\d+)\s*(Qs|questions)/i);
             const qCount = qMatch ? qMatch[1] : null;
 
-            // Anki/retention block → always one-liner, no collapse needed
-            if (block.type === 'anki') {
-              const hasSetupLink = block.tasks?.some(t => t.setupLink);
-              return (
-                <div key={bi} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: bc.bg, borderLeft: `3px solid ${bc.border}` }}>
-                  <span style={{ fontSize: 13 }}>🧠</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#166534', flex: 1 }}>{block.label}</span>
-                  <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{block.startTime && block.endTime ? formatTimeRange(block.startTime, block.endTime) : formatDuration(totalHours)}</span>
-                  {hasSetupLink && <button onClick={() => window.open('/anki', '_blank')} style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, padding: '2px 8px', borderRadius: 10, background: '#27ae6015', border: '1px solid #27ae6030', cursor: 'pointer', whiteSpace: 'nowrap' }}>Setup guide →</button>}
-                </div>
-              );
-            }
 
             const header = (
               <div onClick={() => toggleBlock(key)}

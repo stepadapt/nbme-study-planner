@@ -560,8 +560,8 @@ function getUnsuspendInstruction(ankiDeck) {
 function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, ankiDeck = 'anking') {
   // No Anki selected — use UWorld incorrects for spaced repetition
   if (!hasAnki) {
-    return { type: 'anki', label: 'Morning retention', tasks: [
-      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed questions from recent blocks. Focus on questions you got wrong yesterday. Goal: retrieval practice, not re-learning. Your annotated First Aid pages are your "deck" — flip through flagged pages quickly.', hours },
+    return { type: 'anki', label: 'Morning retention — UWorld review', tasks: [
+      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed UWorld questions. Read the full explanation for each — focus on WHY you got it wrong, not just the right answer. Flag any concept you miss twice for First Aid annotation.', hours },
     ]};
   }
 
