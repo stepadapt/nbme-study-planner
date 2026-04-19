@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Ninja Nerd",
+    "url": "https://www.youtube.com/@NinjaNerdOfficial",
+    "description": "Deep pathophysiology and mechanisms"
+  },
+  {
+    "name": "Dirty Medicine",
+    "url": "https://www.youtube.com/@dirtymedicine",
+    "description": "High-yield mnemonics and quick review"
+  },
+  {
+    "name": "Armando Hasudungan",
+    "url": "https://www.youtube.com/@ArmandoHasudungan",
+    "description": "Visual hand-drawn pathology and neuroanatomy"
+  },
+  {
+    "name": "Randy Neil MD",
+    "url": "https://www.youtube.com/@RandyNeilMD",
+    "description": "Biostatistics, genetics, ethics, communication"
+  }
+]
