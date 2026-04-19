@@ -877,6 +877,34 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       .map(a => [a.day + 1, a])
   );
 
+  // Bug 1 fix: also check student-entered assessments for review days.
+  // If a student entered scores for an NBME taken on any plan day N-1 (or the day before
+  // the plan started), today/the next plan day becomes a review day.
+  // This covers onboarding entries ("I took NBME 26 yesterday") and mid-plan "Enter new scores".
+  for (const taken of (profile.takenAssessments || [])) {
+    if (!taken.takenDate) continue;
+    const takenDate = new Date(taken.takenDate);
+    takenDate.setHours(0, 0, 0, 0);
+    // Which calendar day did the student take this assessment?
+    // calendarDay 1 = planStartDate; calendarDay 0 = day before plan (yesterday)
+    const msDiff = takenDate.getTime() - planStartDate.getTime();
+    const daysTaken = Math.round(msDiff / (24 * 60 * 60 * 1000)) + 1; // e.g., 0 = yesterday, 1 = today
+    const reviewCalDay = daysTaken + 1;
+    if (reviewCalDay < 1 || reviewCalDay >= totalCalendarDays) continue;
+    if (assessmentDayMap.has(reviewCalDay) || reviewDayMap.has(reviewCalDay)) continue;
+    // Only full-length assessments (NBME, UWSA, Free 120) trigger a review day
+    const practiceTest = PRACTICE_TESTS.find(t => t.id === taken.id);
+    if (!practiceTest) continue;
+    reviewDayMap.set(reviewCalDay, {
+      day: daysTaken,
+      test: practiceTest,
+      label: practiceTest.name,
+      reason: `You took ${practiceTest.name} — today is your dedicated review day.`,
+      reviewHours: 2.0,
+      source: 'student_entered',
+    });
+  }
+
   // Build day schedule
   let daySchedule = [];
   for (let d = 0; d < totalCalendarDays; d++) {
@@ -999,53 +1027,84 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         continue;
       }
 
-      // Block 1: Morning retention (Anki due reviews / UWorld incorrects)
-      reviewBlocks.push({ type: "anki", label: "Morning retention", tasks: [
-        hasAnki
-          ? { resource: getDeckName(ankiDeck), activity: `Due reviews only — keep the streak. 45–60 min max. This primes your memory before the deep review session.`, hours: 1 }
-          : { resource: "UWorld", activity: `Review yesterday's incorrect/marked questions from ${testName} — read every explanation, including why the right answer is right and why each distractor is wrong. 45–60 min.`, hours: 1 },
-      ]});
+      // Derive the weakest system from the student's current priorities
+      // (priorities are ordered by score ASC — priority[0] = weakest/most urgent)
+      const weakTopic = priorities[0];
+      const weakSystem = weakTopic ? weakTopic.category : null;
+      const weakSystemLabel = weakSystem || "weakest system";
+      const reviewRes = weakTopic ? getRes(weakTopic.category) : { practice: [] };
+      const reviewQBank = reviewRes.practice.length > 0 ? rn(reviewRes.practice[0]) : "Question bank";
 
-      // Block 2: Deep wrong-answer review (4 hrs, no questions)
-      reviewBlocks.push({ type: "catchup", label: `${testName} — deep wrong-answer review`, tasks: [
-        { resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept that tripped you up, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? `, (4) ${getUnsuspendInstruction(ankiDeck)} — do NOT create your own cards` : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`, hours: 4 },
-      ]});
+      // Tier-specific review day blocks — structure varies by available hours
+      // All tiers: retention → deep review → (lunch) → (content review) → (targeted Qs) → recalibration
+      // Short days skip content review and questions entirely
 
-      // Lunch
-      reviewBlocks.push({ type: "lunch", label: "Lunch break", tasks: [
-        { resource: "Break", activity: "Step away completely. Eat, move, decompress. Your brain needs this reset before the afternoon execution session.", hours: 1 },
-      ]});
+      const retentionHrs = reviewDayHrs <= 3 ? Math.min(0.5, reviewDayHrs * 0.15) : (reviewDayHrs <= 7 ? 0.75 : 1.0);
+      reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, retentionHrs, false, ankiDeck));
 
-      // Block 3: Targeted reinforcement — 40 Qs on the 2–3 weakest systems from yesterday
-      const topWeak = priorities.slice(0, 3);
-      const weakSystemStr = topWeak.length > 0 ? topWeak.map(p => p.category).slice(0, 3).join(", ") : "weakest systems";
-      const primaryRes = topWeak.length > 0 ? getRes(topWeak[0].category) : { practice: [] };
-      const primaryQBank = primaryRes.practice.length > 0 ? rn(primaryRes.practice[0]) : "Question bank";
-      reviewBlocks.push({
-        type: "questions-focus",
-        label: `Targeted reinforcement: ${weakSystemStr}`,
-        tasks: [
-          { resource: primaryQBank, activity: `${qBlockSize} Qs — filtered to the 2–3 systems with the most wrong answers on ${testName} (${weakSystemStr}). Timed, test mode. This is your first test of whether the morning's review actually stuck.`, hours: 1.25 },
-          { resource: "Self-review", activity: `Thorough review of every wrong answer. If you missed something you reviewed this morning, it means you need a different mental model — not more re-reading. Annotate the pattern, not the fact.`, hours: 0.75 },
-        ],
+      // Deep wrong-answer review — scales with available time
+      const deepReviewHrs = reviewDayHrs <= 3 ? Math.max(0.5, reviewDayHrs - retentionHrs - 0.25)
+        : reviewDayHrs <= 5 ? 2.0
+        : reviewDayHrs <= 7 ? 2.5
+        : 3.0;
+      const deepReviewActivity = `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? `, (4) ${getUnsuspendInstruction(ankiDeck)} — do NOT create your own cards` : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`;
+      reviewBlocks.push({ type: "catchup", label: `${testName} — deep wrong-answer review`,
+        tasks: [{ resource: "Self-review", activity: deepReviewActivity, hours: deepReviewHrs }],
       });
 
-      // Block 4: Random maintenance — 40 Qs all systems
-      reviewBlocks.push({ type: "questions-random", label: "Random maintenance: all systems", tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage and prevents over-indexing on yesterday's weak areas.`, hours: 0.75 },
-        { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag patterns for tomorrow's morning retention session.", hours: 0.25 },
-      ]});
+      if (reviewDayHrs <= 3) {
+        // SHORT day: retention + deep review + flag only — no content or questions
+        reviewBlocks.push({ type: "end-review", label: "Flag patterns for tomorrow",
+          tasks: [{ resource: "Notes", activity: "Flag any recurring patterns for tomorrow's morning retention session.", hours: 0.25 }],
+        });
+      } else {
+        // MEDIUM+ days: add lunch → content review → targeted Qs → recalibration
+        const lunchHrs = reviewDayHrs <= 5 ? 0.5 : reviewDayHrs <= 7 ? 0.75 : 1.0;
+        reviewBlocks.push({ type: "lunch", label: "Lunch break",
+          tasks: [{ resource: "Break", activity: "Step away completely. Eat, move, decompress.", hours: lunchHrs }],
+        });
 
-      // Block 5: Plan recalibration — 30 min
-      reviewBlocks.push({ type: "end-review", label: "Plan recalibration check", tasks: [
-        { resource: "Study plan", activity: `Review how your plan adjusted based on ${testName}'s new scores. Note which focus systems changed and why. Check whether today's reinforcement questions showed improvement. Adjust tomorrow's priority focus if needed.`, hours: 0.5 },
-      ]});
+        // Content review — focused on weakest NBME system
+        const contentHrs = reviewDayHrs <= 5 ? 0.5 : reviewDayHrs <= 7 ? 0.75 : 1.0;
+        reviewBlocks.push({ type: "content", label: `Content review: ${weakSystemLabel} (weakest from ${testName})`,
+          tasks: [{ resource: "First Aid", activity: `Review the ${weakSystemLabel} section in First Aid, focusing on the specific sub-topics where you had the most wrong answers on ${testName}. Read actively — annotate patterns you missed.`, hours: contentHrs }],
+        });
 
+        // Targeted questions — only for standard+ days (>5 hrs)
+        if (reviewDayHrs > 5) {
+          const targetedQCount = reviewDayHrs <= 7 ? 20 : 40;
+          const targetedQHrs = reviewDayHrs <= 7 ? 1.25 : 2.0;
+          reviewBlocks.push({
+            type: "questions-focus",
+            label: `${targetedQCount} Qs: ${weakSystemLabel}`,
+            tasks: [
+              { resource: reviewQBank, activity: `${targetedQCount} Qs — filtered to ${weakSystemLabel} (weakest from ${testName}). Timed, test mode. First test of whether the morning's review actually stuck.`, hours: targetedQCount <= 20 ? 0.75 : 1.25 },
+              { resource: "Self-review", activity: `Thorough review of every wrong answer. Annotate the pattern, not the fact.`, hours: targetedQCount <= 20 ? 0.5 : 0.75 },
+            ],
+          });
+
+          // Random maintenance block only for heavy days (>7 hrs)
+          if (reviewDayHrs > 7) {
+            reviewBlocks.push({ type: "questions-random", label: "Random maintenance: all systems", tasks: [
+              { resource: reviewQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage.`, hours: 0.75 },
+              { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max).", hours: 0.25 },
+            ]});
+          }
+        }
+
+        reviewBlocks.push({ type: "end-review", label: "Plan recalibration check", tasks: [
+          { resource: "Study plan", activity: `Review how your plan adjusted based on ${testName}'s new scores. Note which focus systems changed and why.`, hours: 0.5 },
+        ]});
+      }
+
+      const reviewTotalQs = reviewDayHrs <= 5 ? 0
+        : reviewDayHrs <= 7 ? 20
+        : reviewDayHrs > 7 ? qBlockSize * 2 : 0;
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "review", triageFor: testName,
         startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
-        dayLabel: 'Review day',
-        blocks: reviewBlocks, totalQuestions: qBlockSize * 2, // 40 targeted + 40 random
+        dayLabel: `${testName} review day`,
+        blocks: reviewBlocks, totalQuestions: reviewTotalQs,
       });
       continue;
     }
