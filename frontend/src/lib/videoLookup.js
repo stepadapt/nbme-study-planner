@@ -1,3 +1,6 @@
+// Video lookup has been replaced with static channel buttons (see src/data/static-channels.json).
+// getVideosForTopic is retained as a stub for backwards compatibility.
+
 // ── Video Library Lookup ──────────────────────────────────────────────────
 // Provides verified YouTube video URLs for NBME sub-topics.
 // Data sourced from src/data/video-library.json (918 verified entries).
@@ -194,46 +197,9 @@ function getAllEntries() {
  *   note:        string|null,
  * }>}
  */
-export function getVideosForTopic(query, options = {}) {
-  const { maxResults = 5, channelPreference = [] } = options;
-  if (!query) return [];
-
-  const preferredKeys = channelPreference.map(n => CHANNEL_NAME_TO_KEY[n.toLowerCase()] || n.toLowerCase());
-
-  const results = [];
-  const seen    = new Set(); // deduplicate by channel+title
-
-  for (const entry of getAllEntries()) {
-    if (!matchesTopic(query, entry.subtopic)) continue;
-
-    for (const resource of (entry.resources || [])) {
-      const normalized = normalizeResource(resource);
-      if (!normalized) continue;
-
-      const dedupeKey = `${normalized.channel}::${normalized.title}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-
-      results.push(normalized);
-    }
-  }
-
-  // Sort: direct video URLs first, then by channelPreference order, then as-is
-  results.sort((a, b) => {
-    // Direct URL beats channel URL
-    if (a.directUrl !== b.directUrl) return a.directUrl ? -1 : 1;
-
-    // Preferred channels float up
-    const ai = preferredKeys.indexOf(a.channel);
-    const bi = preferredKeys.indexOf(b.channel);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-
-    return 0;
-  });
-
-  return results.slice(0, maxResults);
+export function getVideosForTopic(query, options = {}) { // eslint-disable-line no-unused-vars
+  // Deprecated: replaced by static channel buttons (src/data/static-channels.json).
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
