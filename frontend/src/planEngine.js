@@ -241,14 +241,17 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   const SIX_WEEKS_MS = 42 * 24 * 60 * 60 * 1000;
   const now = new Date();
 
+  const SIX_MONTHS_MS = 183 * 24 * 60 * 60 * 1000;
+
   // "Recently taken" = no date given (assume recent) OR within last 6 weeks
+  // Used only for UWSA/AMBOSS retake eligibility — NOT for NBMEs.
   const recentlyTaken = new Set(
     takenList
       .filter(t => !t.takenDate || (now - new Date(t.takenDate)) < SIX_WEEKS_MS)
       .map(t => t.id)
   );
   const everTaken = new Set(takenList.map(t => t.id));
-  // canUse: not taken within 6 weeks (older forms may be reused)
+  // canUse (UWSA/AMBOSS only): not taken within 6 weeks
   const canUse = (id) => !recentlyTaken.has(id);
 
   // ── Fixed timeline anchors ──────────────────────────────────────────
@@ -261,9 +264,18 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   const ALL_NBME_IDS = ['nbme26','nbme27','nbme28','nbme29','nbme30','nbme31','nbme32','nbme33'];
   const allNBMEsDone = ALL_NBME_IDS.every(id => everTaken.has(id));
 
-  // Untaken NBMEs available for scheduling (ascending order = lowest first)
+  // NBME retake: only eligible when ALL 8 forms have been taken AND this specific
+  // form was taken more than 6 months ago. A form taken 7 weeks ago is NOT eligible.
+  const nbmeRetakeEligible = (id) => {
+    if (!allNBMEsDone) return false; // untaken forms still exist — use those first
+    const entry = takenList.find(t => t.id === id);
+    if (!entry || !entry.takenDate) return false; // no date = assume recent = not eligible
+    return (now - new Date(entry.takenDate)) >= SIX_MONTHS_MS;
+  };
+
+  // Untaken NBMEs: truly never taken, OR eligible for retake (all 8 done + 6+ months old)
   const untakenNBMEs = ALL_NBME_IDS
-    .filter(id => canUse(id))
+    .filter(id => !everTaken.has(id) || nbmeRetakeEligible(id))
     .map(id => PRACTICE_TESTS.find(t => t.id === id))
     .filter(Boolean); // already in ascending order — ALL_NBME_IDS is sorted 26→33
 
@@ -511,6 +523,16 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   }
 
   result.sort((a, b) => a.day - b.day);
+
+  // Validation: log a warning if any scheduled NBME was already taken and not retake-eligible
+  if (typeof __BUILD_TIME__ === 'undefined' || __BUILD_TIME__ === 'dev') {
+    for (const s of result) {
+      if (s.test?.type === 'nbme' && everTaken.has(s.test.id) && !nbmeRetakeEligible(s.test.id)) {
+        console.error(`[scheduleAssessments] BUG: ${s.test.id} is scheduled on day ${s.day} but student already took it and it is not retake-eligible.`);
+      }
+    }
+  }
+
   return result;
 }
 
