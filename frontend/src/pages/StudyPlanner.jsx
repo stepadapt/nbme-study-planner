@@ -2265,11 +2265,9 @@ export default function StudyPlanner({ onShowTerms }) {
           return;
         }
         const { assessment } = await api.assessments.save({ formName: histDraft.formName, scores: examScores, stickingPoints: [], takenAt: histDraft.takenAt });
-        setAssessments(prev => {
-          const combined = [...prev, assessment];
-          combined.sort((a, b) => new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt));
-          return combined;
-        });
+        const combined = [...assessments, assessment].sort((a, b) => new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt));
+        setAssessments(combined);
+        regeneratePlanFromAssessments(combined);
         setHistDraft(defaultHistDraft());
         setHistError('');
         navigate("dashboard");
@@ -2595,10 +2593,16 @@ export default function StudyPlanner({ onShowTerms }) {
     const generateAndNavigate = async () => {
       const isRebuild = skipAssessmentSaveRef.current;
       skipAssessmentSaveRef.current = false;
-      const derivedTaken = assessments.map(a => {
+      const fromHistory = assessments.map(a => {
         const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
         return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
       }).filter(Boolean);
+      // Include the assessment being entered right now (not yet in assessments state) so the
+      // plan engine knows this NBME is already taken and won't schedule it again.
+      const currentMatch = !isRebuild && nbmeForm ? PRACTICE_TESTS.find(t => t.name === nbmeForm) : null;
+      const derivedTaken = currentMatch
+        ? [...fromHistory, { id: currentMatch.id, takenDate: new Date().toISOString().slice(0, 10) }]
+        : fromHistory;
       const profileForPlan = { ...profile, takenAssessments: derivedTaken };
       const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints);
       setPlan(generatedPlan);
