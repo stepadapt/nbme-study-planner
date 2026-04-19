@@ -1,6 +1,6 @@
 import { STEP1_CATEGORIES, STEP1_DISCIPLINE_CATEGORIES, HIGH_YIELD_WEIGHTS, RESOURCE_MAP, RESOURCES, SUB_TOPICS, PRACTICE_TESTS, DISCIPLINE_ATTACK_STRATEGIES } from './data.js';
 import { getContentSequence } from './contentEngine.js';
-import { getVideosForTopic, calculateContentReviewMinutes } from './lib/videoLookup.js';
+// getVideosForTopic / calculateContentReviewMinutes removed — content review uses fixed 30 min default.
 
 // ── Plan Engine Version ───────────────────────────────────────────────────
 // In production builds, PLAN_ENGINE_VERSION is the Unix timestamp (ms) injected
@@ -1212,23 +1212,11 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           contentSeqFull.sequence = [contentSeqFull.sequence[0]];
         }
         const contentSeqB2 = contentSeqFull || null;
-        // Compute block duration from actual video library durations.
-        // D1: longest video in results; D2: budget at 1x; D3: +20 min FA if included.
-        // Fallback to summing hardcoded timelabels when no videos are found in the library.
-        const topSubQuery = topSubs?.[0]?.topic || focusTopic.category;
-        const libraryVideos = getVideosForTopic(topSubQuery, { maxResults: 5 });
+        // Content review block time: fixed 30-minute default.
+        // Video duration lookup has been replaced with static channel buttons.
         const hasFirstAidStep = (contentSeqFull?.sequence || []).some(s => s.resource === 'First Aid');
-        const firstAidMins = hasFirstAidStep ? 20 : 0; // D3: upper bound of "~15-20 min" FA step
-        let seqMins;
-        if (libraryVideos.length > 0) {
-          // Real durations available — use them (D1+D2+D3)
-          seqMins = calculateContentReviewMinutes(libraryVideos, firstAidMins);
-        } else {
-          // Fallback: sum hardcoded timelabels (preserves existing behavior for unmapped topics)
-          seqMins = (contentSeqFull?.sequence || []).reduce(
-            (sum, s) => sum + parseStepMinutes(s.timeLabel), 0
-          );
-        }
+        const firstAidMins = hasFirstAidStep ? 20 : 0; // +20 min FA if included
+        const seqMins = 30 + firstAidMins;
         const b2Hrs = seqMins > 0
           ? Math.ceil(seqMins / 5) * 5 / 60   // round up to nearest 5 min → hours
           : (isKG ? 0.75 : 0.5);               // fallback if sequence is somehow empty
