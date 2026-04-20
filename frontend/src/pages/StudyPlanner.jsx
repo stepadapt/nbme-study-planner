@@ -389,7 +389,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const regenStickingPoints = last?.stickingPoints || last?.sticking_points || stickingPoints || [];
     const derivedTaken = assessments.map(a => {
       const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
-      return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
+      return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
 
@@ -586,7 +586,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const newScores = Object.keys(catScores).length > 0 ? catScores : scores;
     const derivedTaken = updatedAssessments.map(a => {
       const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
-      return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
+      return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
     const generatedPlan = updatedAssessments.length === 0
@@ -2595,7 +2595,7 @@ export default function StudyPlanner({ onShowTerms }) {
       skipAssessmentSaveRef.current = false;
       const fromHistory = assessments.map(a => {
         const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
-        return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.created_at } : null;
+        return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
       }).filter(Boolean);
       // Include the assessment being entered right now (not yet in assessments state) so the
       // plan engine knows this NBME is already taken and won't schedule it again.
