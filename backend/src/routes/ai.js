@@ -68,7 +68,7 @@ PERFORMANCE BY DISCIPLINE categories (use these exact names):
 
 Return ONLY a JSON object with this exact structure:
 {
-  "formName": "NBME 26" (or whatever form number is shown, or null if not visible),
+  "formName": "NBME 26" — use EXACTLY one of: "NBME 26", "NBME 27", "NBME 28", "NBME 29", "NBME 30", "NBME 31", "NBME 32", "NBME 33", "UWSA 1", "UWSA 2", "Free 120 (2024)", "Free 120 (old)", "AMBOSS SA". Use null if no form is identifiable.
   "scores": {
     "Exact Category Name From List Above": <integer 0-100>,
     ...

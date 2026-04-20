@@ -5,6 +5,22 @@ import { api } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import staticChannels from '../../../src/data/static-channels.json';
 
+// Fuzzy-match a practice test by name, handling AI-returned formats like
+// "NBME Form 26", "CBSSA Form 26", "Form 26" in addition to exact "NBME 26".
+function matchPracticeTest(name) {
+  if (!name) return null;
+  const exact = PRACTICE_TESTS.find(t => t.name === name);
+  if (exact) return exact;
+  // NBME number fallback: extract 26-33 from any format
+  const m = name.match(/\b(2[6-9]|3[0-3])\b/);
+  if (m) {
+    const num = parseInt(m[0], 10);
+    const byNum = PRACTICE_TESTS.find(t => t.type === 'nbme' && t.number === num);
+    if (byNum) return byNum;
+  }
+  return null;
+}
+
 function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
   return (
     <div style={{ width: "100%", background: "rgba(128,128,128,0.15)", borderRadius: height / 2, height, overflow: "hidden" }}>
@@ -388,7 +404,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const regenScores = Object.keys(catScores).length > 0 ? catScores : scores;
     const regenStickingPoints = last?.stickingPoints || last?.sticking_points || stickingPoints || [];
     const derivedTaken = assessments.map(a => {
-      const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
+      const match = matchPracticeTest(a.form_name || a.formName);
       return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
@@ -585,7 +601,7 @@ export default function StudyPlanner({ onShowTerms }) {
     })();
     const newScores = Object.keys(catScores).length > 0 ? catScores : scores;
     const derivedTaken = updatedAssessments.map(a => {
-      const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
+      const match = matchPracticeTest(a.form_name || a.formName);
       return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
@@ -728,7 +744,12 @@ export default function StudyPlanner({ onShowTerms }) {
     setScreenshotError('');
     try {
       const result = await api.ai.parseScreenshot(file, 'step1');
-      if (result.formName) setNbmeForm(result.formName);
+      if (result.formName) {
+        // Normalize AI-returned form name to exactly match PRACTICE_TESTS names
+        // (AI may return "NBME Form 26" or "CBSSA Form 26" instead of "NBME 26")
+        const pt = matchPracticeTest(result.formName);
+        setNbmeForm(pt ? pt.name : result.formName);
+      }
       if (result.scores && typeof result.scores === 'object') {
         const cats = selectedExam?.categories || [];
         const matched = {};
@@ -2594,12 +2615,12 @@ export default function StudyPlanner({ onShowTerms }) {
       const isRebuild = skipAssessmentSaveRef.current;
       skipAssessmentSaveRef.current = false;
       const fromHistory = assessments.map(a => {
-        const match = PRACTICE_TESTS.find(t => t.name === (a.form_name || a.formName));
+        const match = matchPracticeTest(a.form_name || a.formName);
         return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
       }).filter(Boolean);
       // Include the assessment being entered right now (not yet in assessments state) so the
       // plan engine knows this NBME is already taken and won't schedule it again.
-      const currentMatch = !isRebuild && nbmeForm ? PRACTICE_TESTS.find(t => t.name === nbmeForm) : null;
+      const currentMatch = !isRebuild && nbmeForm ? matchPracticeTest(nbmeForm) : null;
       const derivedTaken = currentMatch
         ? [...fromHistory, { id: currentMatch.id, takenDate: new Date().toISOString().slice(0, 10) }]
         : fromHistory;
