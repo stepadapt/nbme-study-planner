@@ -191,7 +191,7 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 //
 // SCHEDULING PRINCIPLES:
 // 1. NBME 26 ALWAYS first (oldest form — saves newer, more predictive forms for later).
-//    Exception: if NBME 26 already taken, use the lowest available form as baseline.
+//    Exception: if NBME 26 already taken, use the lowest available form as first slot.
 // 2. Highest numbered untaken form ALWAYS occupies the LAST NBME slot before Free 120.
 // 3. Wider gaps early (student still building) → tighter late (frequent calibration).
 //    Transition at ~60% through the plan.
@@ -200,6 +200,9 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 // 6. Free 120 (2024) MANDATORY at exactly T-2, never moved.
 // 7. UWSA2/UWSA1 only after ALL 8 NBMEs taken (existing gate unchanged).
 //    Exception: for 45+ day plans, UWSA2 fills a gap ≥10 days between last NBME and Free 120.
+// 8. If student has ANY prior assessment data (takenAssessments.length > 0), the first
+//    scheduled NBME is delayed by earlyGapDays (~2 weeks) and labeled "Progress check".
+//    Only students with ZERO prior data get a "Baseline diagnostic" placed early.
 
 export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null) {
   const takenList = profile.takenAssessments || [];
@@ -349,25 +352,45 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
       middleForms = middle;
     }
 
-    // ── STEP 5: Place baseline ─────────────────────────────────────────
-    // Give a few study days before the first NBME (not day 1)
-    const initialGap = hasLimitedDays ? 0 : Math.min(3, Math.floor(totalCalendarDays * 0.07));
-    const baselineDay = findNextEligible(initialGap, 1);
+    // ── STEP 5: Place first NBME ──────────────────────────────────────
+    // hasBaseline = student already has at least one prior assessment on record.
+    // No baseline → place early (2nd–4th study day), labeled "Baseline diagnostic".
+    // Has baseline → push out by earlyGapDays (~2 weeks) so the student has time
+    //   to actually improve before the next data point. Labeled "Progress check".
+    const hasBaseline = takenList.length > 0;
 
-    if (baselineDay) {
-      result.push({
-        day: baselineDay,
-        test: firstNBME,
-        label: 'Baseline diagnostic',
-        reason: firstNBME.id === 'nbme26'
+    let firstDay;
+    if (!hasBaseline) {
+      // New student — place baseline diagnostic soon after study begins
+      const initialGap = hasLimitedDays ? 0 : Math.min(3, Math.floor(totalCalendarDays * 0.07));
+      firstDay = findNextEligible(initialGap, 1);
+    } else {
+      // Student has prior data — delay first progress check by a full earlyGapDays
+      firstDay = findNextEligible(0, earlyGapDays);
+      // Fallback: gap impossible near exam — take first available eligible day
+      if (!firstDay) firstDay = findNextEligible(0, 1);
+    }
+
+    if (firstDay) {
+      let label, reason;
+      if (!hasBaseline) {
+        label = 'Baseline diagnostic';
+        reason = firstNBME.id === 'nbme26'
           ? `NBME 26 is your baseline — the oldest form, chosen intentionally so newer, more predictive forms are saved for later. Most students feel underprepared at this point — that's expected and irrelevant. The score doesn't define where you'll land; the system breakdown becomes the blueprint for your entire plan.`
-          : `Your first NBME before dedicated study kicks in. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for everything that follows.`,
-        reviewHours: 2.0,
-      });
-      claimDay(baselineDay);
+          : `Your first NBME before dedicated study kicks in. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for everything that follows.`;
+      } else {
+        label = `Progress check — NBME ${firstNBME.number}`;
+        reason = firstNBME.number >= 32
+          ? `NBME ${firstNBME.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`
+          : firstNBME.number >= 30
+            ? `NBME ${firstNBME.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`
+            : `NBME ${firstNBME.number} — your first progress check. You already have baseline data; what matters here is the direction of movement in your weak systems since your last assessment.`;
+      }
+      result.push({ day: firstDay, test: firstNBME, label, reason, reviewHours: 2.0 });
+      claimDay(firstDay);
 
       // ── STEP 6: Place middle forms with graduated spacing ──────────────
-      let prevDay = baselineDay;
+      let prevDay = firstDay;
       for (const nbme of middleForms) {
         const gap     = prevDay >= transitionDay ? lateGapDays : earlyGapDays;
         const nextDay = findNextEligible(prevDay, gap);
