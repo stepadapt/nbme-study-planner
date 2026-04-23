@@ -133,10 +133,6 @@ const CONTENT_MAP = {
         { channel: "Ninja Nerd", query: "Ninja Nerd stroke syndromes vascular territories deficits step 1" },
         { channel: "Armando Hasudungan", query: "Armando Hasudungan stroke ischemic hemorrhagic pathophysiology" },
       ],
-      "Ethics": [
-        { channel: "Boards & Beyond", query: "Boards Beyond medical ethics autonomy informed consent step 1" },
-        { channel: "Dirty Medicine", query: "Dirty Medicine ethics USMLE informed consent capacity" },
-      ],
       "Neurotransmitters": [
         { channel: "Ninja Nerd", query: "Ninja Nerd neurotransmitters receptors pharmacology step 1" },
         { channel: "Armando Hasudungan", query: "Armando Hasudungan neurotransmitter receptor serotonin dopamine" },
@@ -156,10 +152,6 @@ const CONTENT_MAP = {
       "Cranial nerves": [
         { channel: "Ninja Nerd", query: "Ninja Nerd cranial nerves pathways lesions deficits step 1" },
         { channel: "Dr. Najeeb", query: "Dr Najeeb cranial nerves anatomy lesions" },
-      ],
-      "Biostatistics": [
-        { channel: "Dirty Medicine", query: "Dirty Medicine biostatistics sensitivity specificity PPV NPV step 1" },
-        { channel: "Boards & Beyond", query: "Boards Beyond biostatistics study design USMLE" },
       ],
     },
   },
