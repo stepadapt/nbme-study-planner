@@ -180,3 +180,53 @@ Reasoning:
 - Adding 4 new target topics to Behavioral Sciences is clean and additive.
 - Seizure, demyelinating, and psychiatric entries are on different lines in the array and are not touched.
 - The plan engine calls `getTopSubTopics(category)` with the exact category string — no string comparisons or conditionals anywhere in planEngine reference "ethics" or "biostatistics" by name.
+
+---
+
+## Resolution
+
+### Files changed
+- `frontend/src/data.js` — removed Biostatistics, Ethics, and Bias from BH&NS/SS; added 4 missing Behavioral Sciences topics; expanded developmental milestones label
+- `frontend/src/contentEngine.js` — removed Ethics and Biostatistics from BH&NS/SS subTopicVideos and reading guide entries
+
+### Verification test output
+```
+── Behavioral Sciences discipline ──
+  PASS  Biostatistics IS in Behavioral Sciences
+  PASS  Ethics IS in Behavioral Sciences
+  PASS  Study design IS in Behavioral Sciences
+  PASS  Defense mechanisms IS in Behavioral Sciences
+  PASS  Developmental milestones IS in Behavioral Sciences
+  PASS  End-of-life care IS in Behavioral Sciences
+  PASS  Communication skills IS in Behavioral Sciences
+  PASS  Healthcare law IS in Behavioral Sciences
+  PASS  Patient safety IS in Behavioral Sciences
+
+── BH&NS/SS system — removed topics ──
+  PASS  Biostatistics NOT in BH&NS/SS
+  PASS  Ethics NOT in BH&NS/SS
+  PASS  Bias & confounding NOT in BH&NS/SS
+
+── BH&NS/SS system — must-stay topics ──
+  PASS  Seizure disorders STILL in BH&NS/SS
+  PASS  Demyelinating diseases STILL in BH&NS/SS
+  PASS  Psychiatric disorders STILL in BH&NS/SS
+  PASS  Neurodegenerative STILL in BH&NS/SS
+  PASS  Stroke STILL in BH&NS/SS
+
+────────────────────────────────────────
+Result: 17 passed, 0 failed
+```
+
+### Build status
+PASS — `vite build` clean in 925ms, 0 errors.
+
+### Manual verification for the user
+1. Generate a study plan. Confirm there's a "Behavioral Sciences" discipline block.
+2. Confirm that block contains: ethics, biostatistics, informed consent/HIPAA, end-of-life care, communication skills, healthcare law, patient safety, defense mechanisms, developmental milestones.
+3. Confirm "Behavioral Health & Nervous Systems/Special Senses" block still has: seizures, demyelinating diseases, mood/psychotic disorders, stroke, neurodegenerative diseases.
+4. Confirm ethics does NOT appear in the BH&NS/SS block.
+5. Confirm biostatistics does NOT appear in the BH&NS/SS block as a subtopic.
+
+### Merge command
+`git checkout main && git merge fix-ethics-categorization && git push origin main`
