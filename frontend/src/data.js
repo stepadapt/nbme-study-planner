@@ -313,8 +313,12 @@ export const SUB_TOPICS = {
     { topic: "Statistical tests (p-value, confidence intervals, power)", yield: 7 },
     { topic: "Substance use disorders (alcohol, opioids, stimulants)", yield: 6 },
     { topic: "Defense mechanisms", yield: 6 },
-    { topic: "Developmental milestones", yield: 5 },
+    { topic: "Developmental milestones (Freud, Piaget, Erikson, Vygotsky)", yield: 5 },
     { topic: "Sleep stages & disorders", yield: 5 },
+    { topic: "End-of-life care (advance directives, DNR, hospice, palliative care)", yield: 7 },
+    { topic: "Communication skills (SPIKES, breaking bad news, motivational interviewing)", yield: 5 },
+    { topic: "Healthcare law (EMTALA, Good Samaritan, malpractice, mandatory reporting)", yield: 5 },
+    { topic: "Patient safety & quality improvement (PDSA, root cause analysis, handoffs)", yield: 4 },
   ],
   "Biochemistry & Nutrition": [
     { topic: "Metabolic pathways (glycolysis, TCA cycle, ETC, gluconeogenesis)", yield: 9 },
