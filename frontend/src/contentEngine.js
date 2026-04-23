@@ -133,10 +133,6 @@ const CONTENT_MAP = {
         { channel: "Ninja Nerd", query: "Ninja Nerd stroke syndromes vascular territories deficits step 1" },
         { channel: "Armando Hasudungan", query: "Armando Hasudungan stroke ischemic hemorrhagic pathophysiology" },
       ],
-      "Ethics": [
-        { channel: "Boards & Beyond", query: "Boards Beyond medical ethics autonomy informed consent step 1" },
-        { channel: "Dirty Medicine", query: "Dirty Medicine ethics USMLE informed consent capacity" },
-      ],
       "Neurotransmitters": [
         { channel: "Ninja Nerd", query: "Ninja Nerd neurotransmitters receptors pharmacology step 1" },
         { channel: "Armando Hasudungan", query: "Armando Hasudungan neurotransmitter receptor serotonin dopamine" },
@@ -156,10 +152,6 @@ const CONTENT_MAP = {
       "Cranial nerves": [
         { channel: "Ninja Nerd", query: "Ninja Nerd cranial nerves pathways lesions deficits step 1" },
         { channel: "Dr. Najeeb", query: "Dr Najeeb cranial nerves anatomy lesions" },
-      ],
-      "Biostatistics": [
-        { channel: "Dirty Medicine", query: "Dirty Medicine biostatistics sensitivity specificity PPV NPV step 1" },
-        { channel: "Boards & Beyond", query: "Boards Beyond biostatistics study design USMLE" },
       ],
     },
   },
@@ -660,13 +652,11 @@ const FIRST_AID_MAP = {
     default: { section: "Neuroscience — Overview & Neuroanatomy", focus: "Master the vascular territory table and neurotransmitter pathways before jumping to specific pathologies" },
     subTopics: {
       "Stroke":                  { section: "Neurology — Cerebrovascular Disease", focus: "Vascular territory table (ACA, MCA, PCA, posterior circulation deficits) — know which specific deficits localize to each vessel; lacunar infarct locations (internal capsule, thalamus, pons)" },
-      "Ethics":                  { section: "Behavioral Science — Medical Ethics", focus: "The 4 principles table (autonomy, beneficence, non-maleficence, justice); informed consent vs capacity vs competence distinction; when to override patient wishes" },
       "Neurotransmitters":       { section: "Neuroscience — Neurotransmitters & Receptors", focus: "Receptor type table (ionotropic vs metabotropic); pathology associations (↓DA in Parkinson's, ↓ACh in Alzheimer's, ↑DA in schizophrenia); drug mechanism MOA column" },
       "Mood disorders":          { section: "Psychiatry — Mood Disorders", focus: "MDD vs bipolar I vs II vs dysthymia diagnostic criteria; antidepressant mechanism table — SSRI vs TCA vs MAOI side effects; serotonin syndrome vs NMS comparison" },
       "Seizure":                 { section: "Neurology — Seizures & Epilepsy", focus: "Seizure classification table (focal vs generalized); antiepileptic drug MOA and key side effects (valproate teratogenicity, phenytoin gingival hyperplasia, carbamazepine SIADH)" },
       "Neurodegenerative":       { section: "Neurology — Neurodegenerative Diseases", focus: "Alzheimer's vs Parkinson's vs Huntington's vs ALS comparison table; histological findings (amyloid plaques, Lewy bodies, caudate atrophy); drug treatments and MOA" },
       "Cranial nerves":          { section: "Neuroscience — Cranial Nerves", focus: "The 12 CN table: function (motor/sensory/both), foramen, and classic lesion findings; CN III vs Horner syndrome for ptosis; CN VII upper vs lower motor neuron lesion" },
-      "Biostatistics":           { section: "Behavioral Sciences — Biostatistics", focus: "The 2×2 table — practice calculating all 8 values from scratch; sensitivity vs specificity trade-off; PPV/NPV dependence on prevalence is almost always tested clinically" },
       "Sleep":                   { section: "Behavioral Sciences — Sleep Disorders", focus: "Sleep stage EEG patterns (alpha, theta, delta, sawtooth); REM vs NREM disorders; narcolepsy (cataplexy, sleep paralysis) and treatment" },
     },
   },

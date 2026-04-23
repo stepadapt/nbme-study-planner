@@ -163,18 +163,15 @@ export const SUB_TOPICS = {
     { topic: "Pulmonary hypertension", yield: 5,  disciplines: ["Pathology"] },
   ],
   "Behavioral Health & Nervous Systems/Special Senses": [
-    // Exam weight 10-14%; biostatistics here because it appears on every form
+    // Exam weight 10-14%; neurology, psychiatry, and sensory systems
     { topic: "Stroke syndromes (vascular territories, tPA, hemorrhagic vs ischemic)", yield: 10, disciplines: ["Pathology", "Gross Anatomy & Embryology"] },
     { topic: "Neurotransmitters & receptor pharmacology (dopamine pathways, GABA)", yield: 9, disciplines: ["Pharmacology", "Physiology"] },
-    { topic: "Biostatistics (sensitivity, specificity, PPV/NPV, study design, NNT)", yield: 9, disciplines: ["Behavioral Sciences"] },
-    { topic: "Ethics (autonomy, informed consent, capacity, HIPAA, mandatory reporting)", yield: 8, disciplines: ["Behavioral Sciences"] },
     { topic: "Seizure disorders & antiepileptic drugs", yield: 8, disciplines: ["Pathology", "Pharmacology"] },
     { topic: "Demyelinating diseases (MS, Guillain-Barré, CIDP)", yield: 8, disciplines: ["Pathology"] },
     { topic: "Psychiatric disorders (MDD, bipolar, schizophrenia, antidepressants)", yield: 7, disciplines: ["Behavioral Sciences", "Pharmacology"] },
     { topic: "Neurodegenerative diseases (Alzheimer's, Parkinson's, ALS, Huntington's)", yield: 7, disciplines: ["Pathology"] },
     { topic: "Spinal cord lesions (Brown-Séquard, anterior cord, subacute combined)", yield: 7, disciplines: ["Pathology", "Gross Anatomy & Embryology"] },
     { topic: "CNS tumors (glioblastoma, meningioma, medulloblastoma — location & age)", yield: 7, disciplines: ["Pathology"] },
-    { topic: "Bias & confounding (selection, recall, lead-time, Hawthorne)", yield: 7, disciplines: ["Behavioral Sciences"] },
     { topic: "Substance use disorders (opioids, alcohol, stimulants — withdrawal)", yield: 6, disciplines: ["Behavioral Sciences"] },
     { topic: "Meningitis (bacterial vs viral, CSF findings)", yield: 6, disciplines: ["Microbiology & Immunology"] },
     { topic: "Cranial nerve palsies (anatomy, lesion localization)", yield: 5, disciplines: ["Gross Anatomy & Embryology"] },
@@ -316,8 +313,12 @@ export const SUB_TOPICS = {
     { topic: "Statistical tests (p-value, confidence intervals, power)", yield: 7 },
     { topic: "Substance use disorders (alcohol, opioids, stimulants)", yield: 6 },
     { topic: "Defense mechanisms", yield: 6 },
-    { topic: "Developmental milestones", yield: 5 },
+    { topic: "Developmental milestones (Freud, Piaget, Erikson, Vygotsky)", yield: 5 },
     { topic: "Sleep stages & disorders", yield: 5 },
+    { topic: "End-of-life care (advance directives, DNR, hospice, palliative care)", yield: 7 },
+    { topic: "Communication skills (SPIKES, breaking bad news, motivational interviewing)", yield: 5 },
+    { topic: "Healthcare law (EMTALA, Good Samaritan, malpractice, mandatory reporting)", yield: 5 },
+    { topic: "Patient safety & quality improvement (PDSA, root cause analysis, handoffs)", yield: 4 },
   ],
   "Biochemistry & Nutrition": [
     { topic: "Metabolic pathways (glycolysis, TCA cycle, ETC, gluconeogenesis)", yield: 9 },
