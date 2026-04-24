@@ -417,44 +417,64 @@ export default function StudyPlanner({ onShowTerms }) {
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
 
     // ── Case A: Detect and recover an incorrectly reset plan ───────────
-    // Guard: only attempt once per session to avoid infinite regen loops.
-    const recoveryFlagKey = `sa_reset_recovery_${latestPlanMeta.id}`;
+    // Invariant: plan.created_at must NOT be more than 1 day after the earliest
+    // assessment.createdAt (DB insertion time = when the student first entered data).
+    // A larger gap means a POST replaced the plan row — resetting created_at to a
+    // later date — instead of a PUT that preserves the original created_at.
+    //
+    // Uses assessment.createdAt (server clock, when the record was inserted) rather
+    // than takenAt (user-specified exam date, can be any historical date). The
+    // earliest createdAt is the best proxy for the student's original setup date.
+    //
+    // Flag key is versioned (v2) to invalidate any flags set by the old recovery
+    // logic, which could block retries after a failed attempt. Flag is set ONLY
+    // after the API call succeeds — failed saves leave it unset so the next load retries.
+    const recoveryFlagKey = `sa_reset_recovery_v2_${latestPlanMeta.id}`;
+    // Helper: parse both SQLite ("YYYY-MM-DD HH:MM:SS", space, no tz = UTC) and
+    // ISO strings safely. Space-separator strings must be treated as UTC.
+    const parseDbDate = (s) => {
+      if (!s) return new Date(NaN);
+      return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+    };
+
     if (!sessionStorage.getItem(recoveryFlagKey) && assessments.length > 0) {
-      const planCreatedDate = new Date(latestPlanMeta.createdAt);
-      planCreatedDate.setHours(0, 0, 0, 0);
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const planCreatedToday = planCreatedDate.getTime() === today.getTime();
+      // Sort by DB creation time to find when the student originally set up
+      const byCreation = [...assessments].sort((a, b) =>
+        parseDbDate(a.createdAt).getTime() - parseDbDate(b.createdAt).getTime()
+      );
+      const firstEntered = byCreation[0];
+      const firstEnteredMs = parseDbDate(firstEntered.createdAt).getTime();
+      const planCreatedMs  = parseDbDate(latestPlanMeta.createdAt).getTime();
 
-      if (planCreatedToday) {
-        const earliest = sorted[0];
-        const earliestDate = new Date(earliest.takenAt || earliest.created_at);
-        earliestDate.setHours(0, 0, 0, 0);
-
-        if (earliestDate < planCreatedDate) {
-          // Plan was reset AFTER at least one assessment was taken — recover.
-          sessionStorage.setItem(recoveryFlagKey, '1');
-          console.warn('[plan-regen] Detected incorrect plan reset — recovering from original start date:', earliestDate.toISOString());
-          try {
-            const recoveredPlan = generatePlan(profileForPlan, regenScores, regenStickingPoints,
-              { planStartDate: earliestDate });
-            const originalCreatedAt = earliestDate.toISOString();
-            api.plans.update(latestPlanMeta.id, {
-              planData: recoveredPlan,
-              profileSnapshot: profile,
-              engineVersion: PLAN_ENGINE_VERSION,
-              createdAt: originalCreatedAt,
-            }).then(result => {
-              if (!result?.id) return;
-              setPlan(recoveredPlan);
-              setLatestPlanMeta(prev => ({ ...prev, createdAt: originalCreatedAt, engineVersion: PLAN_ENGINE_VERSION }));
-            }).catch(err => {
-              console.error('[plan-regen] Recovery save failed:', err);
-            });
-          } catch (err) {
-            console.error('[plan-regen] Recovery generation failed:', err);
-          }
-          return; // Recovery handled — skip version-upgrade regen
+      // Bug condition: plan was created more than 1 day after the student's first
+      // assessment entry. Valid flow (onboarding): both happen within minutes.
+      const ONE_DAY_MS = 86400000;
+      if (!isNaN(planCreatedMs) && !isNaN(firstEnteredMs) && planCreatedMs - firstEnteredMs > ONE_DAY_MS) {
+        const gapDays = Math.round((planCreatedMs - firstEnteredMs) / ONE_DAY_MS);
+        console.warn(`[plan-regen] Detected reset: plan created_at is ${gapDays}d after first assessment entry. Recovering...`);
+        const recoveryStartDate = parseDbDate(firstEntered.createdAt);
+        try {
+          const recoveredPlan = generatePlan(profileForPlan, regenScores, regenStickingPoints,
+            { planStartDate: recoveryStartDate });
+          const recoveryCreatedAt = recoveryStartDate.toISOString();
+          api.plans.update(latestPlanMeta.id, {
+            planData: recoveredPlan,
+            profileSnapshot: profile,
+            engineVersion: PLAN_ENGINE_VERSION,
+            createdAt: recoveryCreatedAt,
+          }).then(result => {
+            if (!result?.id) return;
+            sessionStorage.setItem(recoveryFlagKey, '1'); // set AFTER success only
+            setPlan(recoveredPlan);
+            setLatestPlanMeta(prev => ({ ...prev, createdAt: recoveryCreatedAt, engineVersion: PLAN_ENGINE_VERSION }));
+          }).catch(err => {
+            console.error('[plan-regen] Recovery save failed — will retry on next load:', err);
+            // Flag intentionally NOT set — next page load will retry
+          });
+        } catch (err) {
+          console.error('[plan-regen] Recovery generation failed:', err);
         }
+        return; // Recovery dispatched — skip version-upgrade regen
       }
     }
 
