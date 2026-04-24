@@ -819,10 +819,12 @@ function getDayLabel(hours, startTime) {
 
 export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const weights = HIGH_YIELD_WEIGHTS;
-  const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - new Date()) / 86400000));
-  const hrs = profile.hoursPerDay || 8; // global fallback; per-day overrides used in loop
-  const planStartDate = new Date();
+  // planStartDate can be overridden so regeneration preserves the original Day 1.
+  // Without this, regeneration resets all calendarDay offsets to today = Day 1.
+  const planStartDate = options.planStartDate ? new Date(options.planStartDate) : new Date();
   planStartDate.setHours(0, 0, 0, 0);
+  const totalCalendarDays = Math.max(1, Math.round((new Date(profile.examDate) - planStartDate) / 86400000));
+  const hrs = profile.hoursPerDay || 8; // global fallback; per-day overrides used in loop
 
   // Per-day schedule — migrate from old single-hrs model if needed
   const weeklySchedule = migrateToWeeklySchedule(profile);

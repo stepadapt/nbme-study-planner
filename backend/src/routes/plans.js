@@ -50,6 +50,27 @@ router.get('/latest', (req, res) => {
   });
 });
 
+// PUT /api/plans/:id — update plan in-place, preserving created_at.
+// Pass createdAt in body only for the one-time reset-recovery case (restores original start date).
+router.put('/:id', (req, res) => {
+  const { planData, profileSnapshot, engineVersion, createdAt } = req.body;
+  if (!planData || !profileSnapshot) {
+    return res.status(400).json({ error: 'planData and profileSnapshot required' });
+  }
+  const row = db.prepare('SELECT id FROM study_plans WHERE id = ? AND user_id = ?')
+    .get(req.params.id, req.user.userId);
+  if (!row) return res.status(404).json({ error: 'Plan not found' });
+
+  if (createdAt) {
+    db.prepare('UPDATE study_plans SET plan_data=?, profile_snapshot=?, engine_version=?, created_at=? WHERE id=? AND user_id=?')
+      .run(JSON.stringify(planData), JSON.stringify(profileSnapshot), engineVersion || 0, createdAt, req.params.id, req.user.userId);
+  } else {
+    db.prepare('UPDATE study_plans SET plan_data=?, profile_snapshot=?, engine_version=? WHERE id=? AND user_id=?')
+      .run(JSON.stringify(planData), JSON.stringify(profileSnapshot), engineVersion || 0, req.params.id, req.user.userId);
+  }
+  res.json({ id: parseInt(req.params.id) });
+});
+
 // POST /api/plans — save a generated plan
 router.post('/', (req, res) => {
   const { planData, profileSnapshot, assessmentId, engineVersion } = req.body;

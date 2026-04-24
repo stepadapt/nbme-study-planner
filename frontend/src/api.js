@@ -54,6 +54,7 @@ export const api = {
     list: () => request('GET', '/plans'),
     latest: () => request('GET', '/plans/latest'),
     save: (data) => request('POST', '/plans', data),
+    update: (id, data) => request('PUT', `/plans/${id}`, data),
   },
 
   ai: {
