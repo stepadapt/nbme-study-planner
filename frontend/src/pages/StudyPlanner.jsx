@@ -696,14 +696,27 @@ export default function StudyPlanner({ onShowTerms }) {
       return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
     const profileForPlan = { ...profile, takenAssessments: derivedTaken };
+    // Preserve the original plan start date — never regenerate from today
+    const existingStartDate = latestPlanMeta?.createdAt ? (() => {
+      const s = latestPlanMeta.createdAt;
+      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+      d.setHours(0, 0, 0, 0);
+      return d;
+    })() : null;
     const generatedPlan = updatedAssessments.length === 0
       ? generateFirstTimerPlan(profile, [], null)
-      : generatePlan(profileForPlan, newScores, stickingPoints);
+      : generatePlan(profileForPlan, newScores, stickingPoints, existingStartDate ? { planStartDate: existingStartDate } : {});
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
-    api.plans.save({ planData: generatedPlan, profileSnapshot: profile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
-      .then(result => { if (result?.id) setLatestPlanMeta(prev => ({ ...prev, id: result.id, engineVersion: PLAN_ENGINE_VERSION })); })
-      .catch(() => {});
+    // Use PUT (update) to preserve created_at — never POST (save) which resets day position
+    if (latestPlanMeta?.id) {
+      api.plans.update(latestPlanMeta.id, { planData: generatedPlan, profileSnapshot: profile, engineVersion: PLAN_ENGINE_VERSION })
+        .catch(() => {});
+    } else {
+      api.plans.save({ planData: generatedPlan, profileSnapshot: profile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
+        .then(result => { if (result?.id) setLatestPlanMeta(prev => ({ ...prev, id: result.id, engineVersion: PLAN_ENGINE_VERSION })); })
+        .catch(() => {});
+    }
   };
 
   const startEditAssessment = (a) => {
@@ -2717,7 +2730,14 @@ export default function StudyPlanner({ onShowTerms }) {
         ? [...fromHistory, { id: currentMatch.id, takenDate: new Date().toISOString().slice(0, 10) }]
         : fromHistory;
       const profileForPlan = { ...profile, takenAssessments: derivedTaken };
-      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints);
+      // Preserve the original plan start date — never regenerate from today
+      const existingStartOpt = latestPlanMeta?.createdAt ? (() => {
+        const s = latestPlanMeta.createdAt;
+        const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+        d.setHours(0, 0, 0, 0);
+        return { planStartDate: d };
+      })() : {};
+      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints, existingStartOpt);
       setPlan(generatedPlan);
       setExpandedWeek(0);
       let savedAssessment;
@@ -2726,14 +2746,24 @@ export default function StudyPlanner({ onShowTerms }) {
       } else {
         savedAssessment = await saveCurrentAssessment();
       }
-      api.plans.save({
-        planData: generatedPlan,
-        profileSnapshot: profile,
-        assessmentId: savedAssessment?.id || null,
-        engineVersion: PLAN_ENGINE_VERSION,
-      }).then(result => {
-        if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION });
-      }).catch(() => {});
+      // Use PUT (update) to preserve created_at — never POST (save) which resets day position
+      if (latestPlanMeta?.id) {
+        api.plans.update(latestPlanMeta.id, {
+          planData: generatedPlan,
+          profileSnapshot: profile,
+          assessmentId: savedAssessment?.id || null,
+          engineVersion: PLAN_ENGINE_VERSION,
+        }).catch(() => {});
+      } else {
+        api.plans.save({
+          planData: generatedPlan,
+          profileSnapshot: profile,
+          assessmentId: savedAssessment?.id || null,
+          engineVersion: PLAN_ENGINE_VERSION,
+        }).then(result => {
+          if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION });
+        }).catch(() => {});
+      }
       setPostNbmeDone(false); setPostNbmeRating(null); setPostNbmeComment('');
       navigate(previousAssessment && !isRebuild ? "comparison" : "plan");
     };
