@@ -503,7 +503,7 @@ export default function StudyPlanner({ onShowTerms }) {
       const regeneratedPlan = assessments.length === 0
         ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
         : generatePlan(profileForPlan, regenScores, regenStickingPoints,
-            { planStartDate: originalStartDate });
+            { planStartDate: originalStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [] });
 
       // PUT (not POST) — updates plan_data + engine_version, preserves created_at
       api.plans.update(latestPlanMeta.id, {
@@ -705,7 +705,10 @@ export default function StudyPlanner({ onShowTerms }) {
     })() : null;
     const generatedPlan = updatedAssessments.length === 0
       ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
-      : generatePlan(profileForPlan, newScores, stickingPoints, existingStartDate ? { planStartDate: existingStartDate } : {});
+      : generatePlan(profileForPlan, newScores, stickingPoints, {
+        ...(existingStartDate ? { planStartDate: existingStartDate } : {}),
+        weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [],
+      });
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
     // Use PUT (update) to preserve created_at — never POST (save) which resets day position
@@ -2593,6 +2596,10 @@ export default function StudyPlanner({ onShowTerms }) {
                 }
                 setScores(syntheticScores);
                 setStickingPoints(weakSystems.filter(s => STEP1_CATEGORIES.includes(s)));
+                // Persist weak systems in latestPlanMeta so all regen paths can use them
+                if (weakSystems.length > 0) {
+                  setLatestPlanMeta(prev => prev ? { ...prev, firstTimerWeakSystems: weakSystems } : prev);
+                }
                 navigate("sticking-points");
               } else {
                 const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
@@ -2759,7 +2766,8 @@ export default function StudyPlanner({ onShowTerms }) {
         d.setHours(0, 0, 0, 0);
         return { planStartDate: d };
       })() : {};
-      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints, existingStartOpt);
+      const weakFallback = weakSystems.length > 0 ? weakSystems : (latestPlanMeta?.firstTimerWeakSystems || []);
+      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints, { ...existingStartOpt, weakSystemsFallback: weakFallback });
       setPlan(generatedPlan);
       setExpandedWeek(0);
       let savedAssessment;
@@ -2779,11 +2787,11 @@ export default function StudyPlanner({ onShowTerms }) {
       } else {
         api.plans.save({
           planData: generatedPlan,
-          profileSnapshot: profile,
+          profileSnapshot: { ...profile, firstTimerData: { weakSystems: weakFallback } },
           assessmentId: savedAssessment?.id || null,
           engineVersion: PLAN_ENGINE_VERSION,
         }).then(result => {
-          if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION });
+          if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION, firstTimerWeakSystems: weakFallback.length > 0 ? weakFallback : null });
         }).catch(() => {});
       }
       setPostNbmeDone(false); setPostNbmeRating(null); setPostNbmeComment('');
@@ -3699,7 +3707,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
         const newPlan = assessments.length === 0
           ? generateFirstTimerPlan(newProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
-          : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate });
+          : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [] });
 
         await api.plans.update(latestPlanMeta.id, {
           planData: newPlan,

@@ -838,12 +838,33 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       .map(([d]) => parseInt(d, 10))
   );
 
+  // When no NBME breakdown is available, fall back to self-selected weak systems so the
+  // plan doesn't silently default to exam-weight ordering. This covers:
+  //   - Path B onboarding (import total score only, no system breakdown)
+  //   - Version-bump regen for users who never provided breakdowns
+  //   - Edit Plan regen when the last assessment has no breakdown
+  const hasMeaningfulScores = STEP1_CATEGORIES.some(cat => {
+    const s = scores[cat];
+    return s !== undefined && s !== '' && s !== null;
+  });
+  const weakSystemsFallback = options.weakSystemsFallback || [];
+  let effectiveScores = scores;
+  let effectiveStickingPoints = stickingPoints;
+  if (!hasMeaningfulScores && weakSystemsFallback.length > 0) {
+    const baseline = 55;
+    effectiveScores = {};
+    for (const cat of STEP1_CATEGORIES) {
+      effectiveScores[cat] = weakSystemsFallback.includes(cat) ? Math.max(15, baseline - 20) : Math.min(75, baseline + 5);
+    }
+    effectiveStickingPoints = [...new Set([...stickingPoints, ...weakSystemsFallback])];
+  }
+
   let priorities = [];
   for (const cat of STEP1_CATEGORIES) {
-    const score = scores[cat] ?? 50;
+    const score = effectiveScores[cat] ?? 50;
     const weakness = Math.max(0, 100 - score);
     const yld = weights[cat] || 5;
-    const flagged = stickingPoints.includes(cat);
+    const flagged = effectiveStickingPoints.includes(cat);
     // Auto-derive gap type: knowledge gap when score < 50, application gap otherwise
     const gapType = score < 50 ? "knowledge" : "application";
     // Discipline crossover bonus: amplify system priority when the student is
@@ -853,7 +874,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     let crossoverBonus = 1.0;
     if (!STEP1_DISCIPLINE_CATEGORIES.includes(cat)) {
       for (const disc of getDominantDisciplinesForSystem(cat)) {
-        if ((scores[disc] ?? 50) < 60) crossoverBonus = Math.min(crossoverBonus + 0.15, 1.5);
+        if ((effectiveScores[disc] ?? 50) < 60) crossoverBonus = Math.min(crossoverBonus + 0.15, 1.5);
       }
     }
     const compositeScore = ((weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0)) * crossoverBonus;
