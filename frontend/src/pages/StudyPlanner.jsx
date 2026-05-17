@@ -256,6 +256,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [planUpdateBanner, setPlanUpdateBanner] = useState(null); // null | string[] of changelog entries
   const [scores, setScores] = useState({});
   const [nbmeForm, setNbmeForm] = useState("");
+  const [nbmeTakenAt, setNbmeTakenAt] = useState('');
   const [weakSystems, setWeakSystems] = useState([]);  // first-timer self-assessment
   const [uworldPct, setUworldPct] = useState('');       // first-timer self-assessment
   const [stickingPoints, setStickingPoints] = useState([]);
@@ -647,10 +648,13 @@ export default function StudyPlanner({ onShowTerms }) {
   const previousAssessment = assessments.length > 0 ? assessments[assessments.length - 1] : null;
 
   const saveCurrentAssessment = async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
     const entry = {
       formName: nbmeForm || `NBME #${assessments.length + 1}`,
       scores: { ...scores },
       stickingPoints: [...stickingPoints],
+      takenAt: nbmeTakenAt || yesterday.toISOString().slice(0, 10),
     };
     try {
       const { assessment } = await api.assessments.save(entry);
@@ -668,6 +672,7 @@ export default function StudyPlanner({ onShowTerms }) {
     await saveCurrentAssessment();
     setScores({});
     setNbmeForm("");
+    setNbmeTakenAt('');
     setStickingPoints([]);
     setHistHasScores(true);
     setHistList([]);
@@ -2694,6 +2699,16 @@ export default function StudyPlanner({ onShowTerms }) {
               <option value="Other">Other / Unknown</option>
             </select>
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={S.label}>When did you take this exam?</label>
+            <input
+              type="date"
+              style={{ ...S.input, maxWidth: 180 }}
+              value={nbmeTakenAt || (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })()}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={e => setNbmeTakenAt(e.target.value)}
+            />
+          </div>
           {[
             { label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES },
             { label: "Performance by Discipline", cats: STEP1_DISCIPLINE_CATEGORIES },
@@ -2755,8 +2770,10 @@ export default function StudyPlanner({ onShowTerms }) {
       // Include the assessment being entered right now (not yet in assessments state) so the
       // plan engine knows this NBME is already taken and won't schedule it again.
       const currentMatch = !isRebuild && nbmeForm ? matchPracticeTest(nbmeForm) : null;
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const currentTakenDate = nbmeTakenAt || yesterday.toISOString().slice(0, 10);
       const derivedTaken = currentMatch
-        ? [...fromHistory, { id: currentMatch.id, takenDate: new Date().toISOString().slice(0, 10) }]
+        ? [...fromHistory, { id: currentMatch.id, takenDate: currentTakenDate }]
         : fromHistory;
       const profileForPlan = { ...profile, takenAssessments: derivedTaken };
       // Preserve the original plan start date — never regenerate from today
