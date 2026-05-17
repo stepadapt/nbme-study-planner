@@ -204,7 +204,7 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 //    scheduled NBME is delayed by earlyGapDays (~2 weeks) and labeled "Progress check".
 //    Only students with ZERO prior data get a "Baseline diagnostic" placed early.
 
-export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null) {
+export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null, currentPlanDay = 1) {
   const takenList = profile.takenAssessments || [];
   const now = new Date();
   const SIX_MONTHS_MS = 183 * 24 * 60 * 60 * 1000;
@@ -272,16 +272,18 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   }
 
   // ── STEP 2: Build sorted eligible day pool ─────────────────────────────
-  // Pool = calendar days with ≥6 study hours, within LAST_ASSESSMENT_DAY
+  // Pool = calendar days with ≥6 study hours, within LAST_ASSESSMENT_DAY.
+  // Never place assessments on today or past days — only future days.
+  const minSchedulableDay = Math.max(1, currentPlanDay + 1);
   let eligiblePool;
   if (eligibleCalendarDays && eligibleCalendarDays.size > 0) {
     eligiblePool = [...eligibleCalendarDays]
-      .filter(d => d >= 1 && d <= LAST_ASSESSMENT_DAY)
+      .filter(d => d >= minSchedulableDay && d <= LAST_ASSESSMENT_DAY)
       .sort((a, b) => a - b);
   } else {
     // Fallback: all days eligible (no per-day schedule configured)
     eligiblePool = [];
-    for (let d = 1; d <= LAST_ASSESSMENT_DAY; d++) eligiblePool.push(d);
+    for (let d = minSchedulableDay; d <= LAST_ASSESSMENT_DAY; d++) eligiblePool.push(d);
   }
 
   if (eligiblePool.length === 0) {
@@ -901,7 +903,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   // If no eligible days exist, pass null so scheduleAssessments falls back to unrestricted placement
   const effectiveEligible = eligibleCalendarDaySet.size > 0 ? eligibleCalendarDaySet : null;
 
-  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible);
+  // currentPlanDay: today's position in the plan so scheduled assessments are never placed in the past
+  const todayForPlan = new Date();
+  todayForPlan.setHours(0, 0, 0, 0);
+  const currentPlanDay = Math.round((todayForPlan.getTime() - planStartDate.getTime()) / 86400000) + 1;
+
+  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible, currentPlanDay);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
   // Review days = day after each assessment (unless that day is also an assessment day or exam day).
   // Review days are FULL study days — they take priority over student-selected rest days.
