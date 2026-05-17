@@ -2182,11 +2182,17 @@ export default function StudyPlanner({ onShowTerms }) {
           const lastExam = histList[histList.length - 1];
           const lastScores = lastExam.hasBreakdown ? Object.fromEntries(Object.entries(lastExam.scores).filter(([, v]) => v !== undefined)) : {};
           if (Object.keys(lastScores).length > 0) {
+            // Has system/discipline breakdown — go straight to sticking-points
             setScores(lastScores);
             setNbmeForm(lastExam.formName || '');
+            skipAssessmentSaveRef.current = true;
+            navigate("sticking-points");
+          } else {
+            // No breakdown — collect weak systems via self-assessment before generating
+            setNbmeForm(lastExam.formName || '');
+            skipAssessmentSaveRef.current = true;
+            navigate("self-assessment");
           }
-          skipAssessmentSaveRef.current = true;
-          navigate("sticking-points");
         } else {
           // No valid score data found in the list — go to self-assessment or dashboard
           navigate(plan ? "dashboard" : "self-assessment");
@@ -2508,8 +2514,8 @@ export default function StudyPlanner({ onShowTerms }) {
         <VerifyBanner />
         <div style={S.topBar}><button style={{ ...S.btn, ...S.ghost }} onClick={() => navigate("onboarding")}>← Back</button>{dots(1)}<UserBar /></div>
         <div style={S.wrap}>
-          <h1 style={S.h1}>Before your first NBME</h1>
-          <p style={S.sub}>Tell me where you're starting from — I'll build a diagnostic-first plan that gets you real data fast.</p>
+          <h1 style={S.h1}>{assessments.length > 0 ? "Select your weakest systems" : "Before your first NBME"}</h1>
+          <p style={S.sub}>{assessments.length > 0 ? "You entered scores without a system breakdown — select the areas you feel weakest in so the plan can prioritize them." : "Tell me where you're starting from — I'll build a diagnostic-first plan that gets you real data fast."}</p>
 
           {/* Weak systems */}
           <div style={S.card}>
@@ -2552,8 +2558,8 @@ export default function StudyPlanner({ onShowTerms }) {
             )}
           </div>
 
-          {/* Callout explaining the plan */}
-          <div style={{ ...S.card, background: '#fefcf8', border: '1.5px solid #e8dcc8', marginBottom: 20 }}>
+          {/* Callout explaining the plan — only for true first-timers */}
+          {assessments.length === 0 && <div style={{ ...S.card, background: '#fefcf8', border: '1.5px solid #e8dcc8', marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#b45309', fontFamily: S.f, marginBottom: 8 }}>📋 What happens next</div>
             <div style={{ display: 'grid', gap: 8 }}>
               {[
@@ -2567,27 +2573,43 @@ export default function StudyPlanner({ onShowTerms }) {
                 </div>
               ))}
             </div>
-          </div>
+          </div>}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-            <button style={{ ...S.btn, ...S.sec, fontSize: 13 }} onClick={() => navigate("scores")}>
-              I have NBME scores already →
-            </button>
+            {assessments.length === 0 && (
+              <button style={{ ...S.btn, ...S.sec, fontSize: 13 }} onClick={() => navigate("scores")}>
+                I have NBME scores already →
+              </button>
+            )}
             <button style={{ ...S.btn, ...S.pri }} onClick={async () => {
-              const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
-              setPlan(generatedPlan);
-              setExpandedWeek(0);
-              api.plans.save({
-                planData: generatedPlan,
-                profileSnapshot: { ...profile, firstTimerData: { weakSystems, uworldPct } },
-                assessmentId: null,
-                engineVersion: PLAN_ENGINE_VERSION,
-              }).then(result => {
-                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION, firstTimerWeakSystems: weakSystems });
-              }).catch(() => {});
-              navigate("plan");
+              if (assessments.length > 0) {
+                // Came from history-import with no breakdown — build synthetic scores from
+                // weak-system selections so generatePlan can prioritize them correctly
+                const baseline = uworldNum != null ? Math.max(20, Math.min(80, uworldNum)) : 55;
+                const syntheticScores = {};
+                for (const cat of STEP1_CATEGORIES) {
+                  const isWeak = weakSystems.includes(cat);
+                  syntheticScores[cat] = isWeak ? Math.max(15, baseline - 20) : Math.min(75, baseline + 5);
+                }
+                setScores(syntheticScores);
+                setStickingPoints(weakSystems.filter(s => STEP1_CATEGORIES.includes(s)));
+                navigate("sticking-points");
+              } else {
+                const generatedPlan = generateFirstTimerPlan(profile, weakSystems, uworldNum);
+                setPlan(generatedPlan);
+                setExpandedWeek(0);
+                api.plans.save({
+                  planData: generatedPlan,
+                  profileSnapshot: { ...profile, firstTimerData: { weakSystems, uworldPct } },
+                  assessmentId: null,
+                  engineVersion: PLAN_ENGINE_VERSION,
+                }).then(result => {
+                  if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION, firstTimerWeakSystems: weakSystems });
+                }).catch(() => {});
+                navigate("plan");
+              }
             }}>
-              Build my starter plan →
+              {assessments.length > 0 ? "Continue →" : "Build my starter plan →"}
             </button>
           </div>
         </div>
