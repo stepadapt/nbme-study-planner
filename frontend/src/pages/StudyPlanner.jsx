@@ -377,7 +377,7 @@ export default function StudyPlanner({ onShowTerms }) {
       if (savedSchedule) setSchedule(savedSchedule);
       if (savedPlan) {
         setPlan(savedPlan.planData);
-        setLatestPlanMeta({ id: savedPlan.id, createdAt: savedPlan.createdAt, engineVersion: savedPlan.engineVersion || 0 });
+        setLatestPlanMeta({ id: savedPlan.id, createdAt: savedPlan.createdAt, engineVersion: savedPlan.engineVersion || 0, firstTimerWeakSystems: savedPlan.profileSnapshot?.firstTimerData?.weakSystems || null });
       }
       if (savedCycles?.length > 0) setArchivedCycles(savedCycles);
     }).finally(() => setDataLoaded(true));
@@ -501,7 +501,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const originalStartDate = new Date(latestPlanMeta.createdAt);
     try {
       const regeneratedPlan = assessments.length === 0
-        ? generateFirstTimerPlan(profile, [], null)
+        ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
         : generatePlan(profileForPlan, regenScores, regenStickingPoints,
             { planStartDate: originalStartDate });
 
@@ -704,7 +704,7 @@ export default function StudyPlanner({ onShowTerms }) {
       return d;
     })() : null;
     const generatedPlan = updatedAssessments.length === 0
-      ? generateFirstTimerPlan(profile, [], null)
+      ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
       : generatePlan(profileForPlan, newScores, stickingPoints, existingStartDate ? { planStartDate: existingStartDate } : {});
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
@@ -2583,7 +2583,7 @@ export default function StudyPlanner({ onShowTerms }) {
                 assessmentId: null,
                 engineVersion: PLAN_ENGINE_VERSION,
               }).then(result => {
-                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION });
+                if (result?.id) setLatestPlanMeta({ id: result.id, createdAt: result.createdAt || new Date().toISOString(), engineVersion: PLAN_ENGINE_VERSION, firstTimerWeakSystems: weakSystems });
               }).catch(() => {});
               navigate("plan");
             }}>
@@ -3374,7 +3374,12 @@ export default function StudyPlanner({ onShowTerms }) {
         {plan.priorities?.length > 0 && (
           <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
             <div onClick={() => setShowPriorityRanking(v => !v)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', cursor: 'pointer', userSelect: 'none' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>🎯 Priority ranking <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.priorities?.length} systems ranked)</span></span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: '#4a4540' }}>🎯 Priority ranking <span style={{ fontWeight: 400, color: '#8a857e' }}>({plan.priorities?.length} systems ranked)</span></span>
+                <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>
+                  {assessments.length > 0 ? '📊 Based on your NBME score breakdown' : (latestPlanMeta?.firstTimerWeakSystems?.length > 0 ? '✋ Based on your self-assessment · Take an NBME for data-driven priorities' : '⚖️ Based on exam content weights · Select weak areas or take an NBME for personalized priorities')}
+                </span>
+              </div>
               <span style={{ fontSize: 12, color: '#8a857e', display: 'inline-block', transform: showPriorityRanking ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>▾</span>
             </div>
             {showPriorityRanking && (
@@ -3671,7 +3676,7 @@ export default function StudyPlanner({ onShowTerms }) {
         })() : new Date();
 
         const newPlan = assessments.length === 0
-          ? generateFirstTimerPlan(newProfile, [], null)
+          ? generateFirstTimerPlan(newProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
           : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate });
 
         await api.plans.update(latestPlanMeta.id, {
