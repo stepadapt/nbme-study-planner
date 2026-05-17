@@ -928,7 +928,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const daysTaken = Math.round(msDiff / (24 * 60 * 60 * 1000)) + 1; // e.g., 0 = yesterday, 1 = today
     const reviewCalDay = daysTaken + 1;
     if (reviewCalDay < 1 || reviewCalDay >= totalCalendarDays) continue;
-    if (assessmentDayMap.has(reviewCalDay) || reviewDayMap.has(reviewCalDay)) continue;
+    // An actual scheduled assessment takes absolute priority — can't review and test same day
+    if (assessmentDayMap.has(reviewCalDay)) continue;
+    // Student-entered review beats a scheduled (not-yet-taken) review day.
+    // Skip only if another student-entered review already claimed this day.
+    const existingReview = reviewDayMap.get(reviewCalDay);
+    if (existingReview && existingReview.source === 'student_entered') continue;
     // Only full-length assessments (NBME, UWSA, Free 120) trigger a review day
     const practiceTest = PRACTICE_TESTS.find(t => t.id === taken.id);
     if (!practiceTest) continue;
