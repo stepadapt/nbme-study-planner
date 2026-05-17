@@ -730,19 +730,27 @@ export default function StudyPlanner({ onShowTerms }) {
   const startEditAssessment = (a) => {
     setEditingAssessment(a);
     setEditFormName(a.formName || '');
-    const dateVal = a.takenAt ? a.takenAt.slice(0, 10) : (a.createdAt ? a.createdAt.slice(0, 10) : '');
+    const takenAtRaw = a.takenAt || a.taken_at;
+    const dateVal = takenAtRaw ? takenAtRaw.slice(0, 10) : (a.createdAt || a.created_at || '').slice(0, 10);
     setEditTakenAt(dateVal);
-    const cats = Object.keys(a.scores || {}).filter(k => k !== '__total__');
-    setEditScores(cats.length > 0 ? Object.fromEntries(cats.map(k => [k, a.scores[k]])) : { ...(a.scores || {}) });
+    // Always show all STEP1_CATEGORIES so existing scores can be viewed/edited
+    // and missing scores can be added. Carry over any existing values.
+    const existing = a.scores || {};
+    const fullScores = Object.fromEntries(STEP1_CATEGORIES.map(cat => [cat, existing[cat] ?? '']));
+    setEditScores(fullScores);
   };
 
   const saveEditAssessment = async () => {
     if (!editingAssessment) return;
     setEditSaving(true);
     try {
+      // Strip empty strings so we only save actual scores
+      const cleanScores = Object.fromEntries(
+        Object.entries(editScores).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+      );
       const { assessment: updated } = await api.assessments.update(editingAssessment.id, {
         formName: editFormName,
-        scores: editScores,
+        scores: cleanScores,
         stickingPoints: editingAssessment.stickingPoints || [],
         takenAt: editTakenAt || null,
       });
@@ -1509,50 +1517,58 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           )}
 
-          {/* Row 5: Recent assessments + Quick actions */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            {/* Recent assessments */}
-            <div style={{ ...S.card, marginBottom: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Recent Assessments</div>
-              {assessments.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '12px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>No assessments yet.</div>
-              ) : (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {[...assessments].reverse().slice(0, 5).map((a, i) => {
-                    const cats = selectedExamLocal?.categories || Object.keys(a.scores || {});
-                    const vals = cats.map(c => Number(a.scores[c] || 0)).filter(v => v > 0);
-                    const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
-                    const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (a.date || '');
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < Math.min(assessments.length, 5) - 1 ? '1px solid #f0ece6' : 'none' }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: heatColor(avg), flexShrink: 0 }} />
-                        <div style={{ flex: 1, fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>{a.formName}</div>
-                        <div style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{dateStr}</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: heatColor(avg), fontFamily: S.f, minWidth: 34, textAlign: 'right' }}>{avg}%</div>
-                        <button onClick={() => startEditAssessment(a)} title="Edit" style={{ padding: '3px 6px', fontSize: 12, background: 'none', border: '1px solid #e0dbd4', borderRadius: 6, cursor: 'pointer', color: '#6b6560', lineHeight: 1, flexShrink: 0 }}>✏️</button>
-                        <button onClick={() => setDeleteConfirmId(a.id)} title="Delete" style={{ padding: '3px 6px', fontSize: 12, background: 'none', border: '1px solid #f8e8e8', borderRadius: 6, cursor: 'pointer', color: '#c0392b', lineHeight: 1, flexShrink: 0 }}>🗑️</button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            {/* Quick actions */}
-            <div style={{ ...S.card, marginBottom: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Quick Actions</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {[
-                  { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
-                  { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
-                  { icon: '🕰️', label: 'Past Exam', action: () => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); } },
-                  { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
-                ].map((item, i) => (
-                  <button key={i} disabled={item.disabled} style={{ ...S.btn, ...S.sec, flexDirection: 'column', padding: '14px 10px', gap: 6, fontSize: 12, textAlign: 'center', justifyContent: 'center', opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }} onClick={item.action}>
-                    <span style={{ fontSize: 20 }}>{item.icon}</span>
-                    {item.label}
-                  </button>
-                ))}
+          {/* Row 5: Score history */}
+          <div style={S.card}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f }}>Score History</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={{ ...S.btn, ...S.sec, padding: '5px 12px', fontSize: 12 }} onClick={() => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); }}>+ Past Exam</button>
+                <button style={{ ...S.btn, ...S.pri, padding: '5px 12px', fontSize: 12 }} onClick={() => navigate("scores")}>+ New Score</button>
               </div>
+            </div>
+            {assessments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '12px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>No assessments yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {[...assessments].reverse().slice(0, 8).map((a, i) => {
+                  const breakdownCats = STEP1_CATEGORIES.filter(c => a.scores?.[c] !== undefined && a.scores[c] !== '');
+                  const vals = breakdownCats.map(c => Number(a.scores[c])).filter(v => v > 0);
+                  const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : (a.scores?.__total__ ? Number(a.scores.__total__) : 0);
+                  const dateStr = (a.takenAt || a.taken_at)
+                    ? new Date(a.takenAt || a.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                  const hasBreakdown = breakdownCats.length > 0;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, border: '1px solid #f0ece6' }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: heatColor(avg), flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.formName || 'Assessment'}</div>
+                        <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{dateStr}{hasBreakdown ? ` · ${breakdownCats.length} systems` : ' · total only'}</div>
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: heatColor(avg), fontFamily: S.f, minWidth: 38, textAlign: 'right', flexShrink: 0 }}>{avg ? `${avg}%` : '—'}</div>
+                      <button onClick={() => startEditAssessment(a)} title="View / Edit" style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, flexShrink: 0, whiteSpace: 'nowrap' }}>✏️ Edit</button>
+                      <button onClick={() => setDeleteConfirmId(a.id)} title="Delete" style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #f8e8e8', borderRadius: 8, cursor: 'pointer', color: '#c0392b', lineHeight: 1, flexShrink: 0 }}>🗑️</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {/* Row 6: Quick actions */}
+          <div style={{ ...S.card, marginBottom: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Quick Actions</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {[
+                { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
+                { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
+                { icon: '🕰️', label: 'Past Exam', action: () => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); } },
+                { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
+              ].map((item, i) => (
+                <button key={i} disabled={item.disabled} style={{ ...S.btn, ...S.sec, flexDirection: 'column', padding: '14px 10px', gap: 6, fontSize: 12, textAlign: 'center', justifyContent: 'center', opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }} onClick={item.action}>
+                  <span style={{ fontSize: 20 }}>{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
