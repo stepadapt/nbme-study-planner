@@ -3598,6 +3598,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <span style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: "#1a1816" }}>{a.formName}</span>
                         <span style={{ fontSize: 12, fontFamily: S.f, color: "#8a857e" }}>{a.date}</span>
                         <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, fontFamily: S.f, color: "#1a1816" }}>Avg: {avg}%</span>
+                        <button onClick={() => startEditAssessment(a)} title="Edit assessment" style={{ padding: '5px 10px', fontSize: 12, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 7, cursor: 'pointer', color: '#6b6560', fontFamily: S.f, lineHeight: 1, whiteSpace: 'nowrap' }}>✏️ Edit</button>
                       </div>
                       <div style={{ display: "flex", gap: 2, marginTop: 4 }}>
                         {cats.map(c => { const v = a.scores[c] || 0; return <div key={c} title={`${c}: ${v}%`} style={{ flex: 1, height: 4, borderRadius: 2, background: v <= 30 ? "#c0392b" : v <= 50 ? "#e67e22" : v <= 70 ? "#2980b9" : "#27ae60", opacity: 0.7 }} />; })}
@@ -3668,6 +3669,59 @@ export default function StudyPlanner({ onShowTerms }) {
                 }} style={{ ...S.btn, ...S.pri, width: '100%', padding: '11px', justifyContent: 'center', fontSize: 14 }}>Submit</button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Assessment action toast ── */}
+      {assessmentActionMsg && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1816', color: '#fff', padding: '12px 22px', borderRadius: 12, fontSize: 13, fontFamily: S.f, zIndex: 2000, boxShadow: '0 4px 20px #0000002a', maxWidth: 460, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+          {assessmentActionMsg}
+        </div>
+      )}
+
+      {/* ── Edit assessment modal ── */}
+      {editingAssessment && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 20 }}>✏️ Edit Assessment</div>
+            <div style={{ display: 'grid', gap: 16 }}>
+              {/* Form name */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Form Name</label>
+                <input value={editFormName} onChange={e => setEditFormName(e.target.value)} placeholder="e.g. NBME 26"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+              {/* Date taken */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Date Taken</label>
+                <input type="date" value={editTakenAt} onChange={e => setEditTakenAt(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+              {/* Scores */}
+              {Object.keys(editScores).length > 0 && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 8 }}>Scores (%)</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {Object.keys(editScores).map(cat => (
+                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#faf8f5', borderRadius: 8 }}>
+                        <span style={{ fontSize: 11, color: '#6b6560', flex: 1, lineHeight: 1.3 }}>{cat}</span>
+                        <input type="number" min="0" max="100" value={editScores[cat] ?? ''}
+                          onChange={e => setEditScores(prev => ({ ...prev, [cat]: Number(e.target.value) }))}
+                          style={{ width: 54, padding: '4px 6px', borderRadius: 6, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, textAlign: 'right', outline: 'none' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button onClick={() => setEditingAssessment(null)} disabled={editSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+              <button onClick={saveEditAssessment} disabled={editSaving}
+                style={{ ...S.btn, ...S.pri, flex: 1, opacity: editSaving ? 0.6 : 1 }}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
           </div>
         </div>
       )}
