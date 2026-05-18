@@ -113,6 +113,16 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
 
 const defaultHistDraft = () => ({ formName: '', takenAt: '', totalScore: '', hasBreakdown: false, scores: {} });
 
+// Format a Date as YYYY-MM-DD in LOCAL time (not UTC).
+// `new Date().toISOString().slice(0,10)` returns a UTC date — in negative-UTC offsets
+// (EDT/EST/CDT/PDT) it shifts one day forward in the evening. Use this instead.
+function formatLocalYMD(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Calculates study window end time from start time + study hours.
 // Students with ≥5 study hours get a 1-hour lunch break added automatically.
 // Returns "HH:MM" string (24-hour, for the time input).
@@ -654,7 +664,7 @@ export default function StudyPlanner({ onShowTerms }) {
       formName: nbmeForm || `NBME #${assessments.length + 1}`,
       scores: { ...scores },
       stickingPoints: [...stickingPoints],
-      takenAt: nbmeTakenAt || yesterday.toISOString().slice(0, 10),
+      takenAt: nbmeTakenAt || formatLocalYMD(yesterday),
     };
     try {
       const { assessment } = await api.assessments.save(entry);
@@ -2351,7 +2361,7 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
               <div>
                 <label style={S.label}>Date taken</label>
-                <input type="date" style={S.input} value={histDraft.takenAt} max={new Date().toISOString().split('T')[0]} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
+                <input type="date" style={S.input} value={histDraft.takenAt} max={formatLocalYMD()} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
               </div>
             </div>
 
@@ -2469,7 +2479,7 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
               <div>
                 <label style={S.label}>Date taken</label>
-                <input type="date" style={S.input} value={histDraft.takenAt} max={new Date().toISOString().split('T')[0]} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
+                <input type="date" style={S.input} value={histDraft.takenAt} max={formatLocalYMD()} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))} />
               </div>
             </div>
 
@@ -2716,14 +2726,19 @@ export default function StudyPlanner({ onShowTerms }) {
             </select>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={S.label}>When did you take this exam?</label>
+            <label style={S.label}>What date did you take this exam? <span style={{ color: '#c0392b' }}>*</span></label>
             <input
               type="date"
-              style={{ ...S.input, maxWidth: 180 }}
-              value={nbmeTakenAt || (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })()}
-              max={new Date().toISOString().slice(0, 10)}
+              style={{ ...S.input, maxWidth: 180, ...(nbmeTakenAt ? {} : { borderColor: '#e8a87c' }) }}
+              value={nbmeTakenAt}
+              max={formatLocalYMD()}
               onChange={e => setNbmeTakenAt(e.target.value)}
             />
+            {!nbmeTakenAt && (
+              <p style={{ ...S.muted, fontSize: 12, marginTop: 4 }}>
+                Pick the actual date you sat the exam — this anchors your "Exam day" and the next-day Review on your plan.
+              </p>
+            )}
           </div>
           {[
             { label: "Performance by System", cats: STEP1_SYSTEM_CATEGORIES },
@@ -2762,7 +2777,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   Skip — use imported scores →
                 </button>
               )}
-              <button disabled={!allFilled} style={{ ...S.btn, ...S.pri, opacity: allFilled ? 1 : 0.4 }} onClick={() => navigate("sticking-points")}>Analyze →</button>
+              <button disabled={!allFilled || !nbmeTakenAt} style={{ ...S.btn, ...S.pri, opacity: (allFilled && nbmeTakenAt) ? 1 : 0.4 }} onClick={() => navigate("sticking-points")}>Analyze →</button>
             </div>
           </div>
         </div>
@@ -2787,7 +2802,7 @@ export default function StudyPlanner({ onShowTerms }) {
       // plan engine knows this NBME is already taken and won't schedule it again.
       const currentMatch = !isRebuild && nbmeForm ? matchPracticeTest(nbmeForm) : null;
       const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-      const currentTakenDate = nbmeTakenAt || yesterday.toISOString().slice(0, 10);
+      const currentTakenDate = nbmeTakenAt || formatLocalYMD(yesterday);
       const derivedTaken = currentMatch
         ? [...fromHistory, { id: currentMatch.id, takenDate: currentTakenDate }]
         : fromHistory;
