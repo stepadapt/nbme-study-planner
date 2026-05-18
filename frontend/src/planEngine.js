@@ -31,6 +31,16 @@ function parseMinutes(t) {
   return h * 60 + (m || 0);
 }
 
+// Parse YYYY-MM-DD as a LOCAL-time Date. Avoids `new Date('2026-05-16')` being
+// interpreted as UTC midnight, which lands on the previous day in negative-UTC
+// timezones (e.g. PDT/EDT). Accepts full ISO strings too — falls back to native parse.
+function parseLocalYMD(s) {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  return new Date(s);
+}
+
 function fmt12(mins) {
   // Snap to nearest 5-min mark, then format as 12-hr time
   const snapped = Math.round(mins / 5) * 5;
@@ -212,7 +222,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 
   // ── Taken/retake eligibility (unchanged) ──────────────────────────────
   const recentlyTaken = new Set(
-    takenList.filter(t => !t.takenDate || (now - new Date(t.takenDate)) < SIX_WEEKS_MS).map(t => t.id)
+    takenList.filter(t => !t.takenDate || (now - parseLocalYMD(t.takenDate)) < SIX_WEEKS_MS).map(t => t.id)
   );
   const everTaken = new Set(takenList.map(t => t.id));
   const canUse = (id) => !recentlyTaken.has(id);
@@ -230,7 +240,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     if (!allNBMEsDone) return false;
     const entry = takenList.find(t => t.id === id);
     if (!entry || !entry.takenDate) return false;
-    return (now - new Date(entry.takenDate)) >= SIX_MONTHS_MS;
+    return (now - parseLocalYMD(entry.takenDate)) >= SIX_MONTHS_MS;
   };
 
   const untakenNBMEs = ALL_NBME_IDS
@@ -927,8 +937,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   // This covers onboarding entries ("I took NBME 26 yesterday") and mid-plan "Enter new scores".
   for (const taken of (profile.takenAssessments || [])) {
     if (!taken.takenDate) continue;
-    const takenDate = new Date(taken.takenDate);
-    takenDate.setHours(0, 0, 0, 0);
+    const takenDate = parseLocalYMD(taken.takenDate);
+    if (!takenDate || isNaN(takenDate.getTime())) continue;
     // Which calendar day did the student take this assessment?
     // calendarDay 1 = planStartDate; calendarDay 0 = day before plan (yesterday)
     const msDiff = takenDate.getTime() - planStartDate.getTime();
