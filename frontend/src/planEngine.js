@@ -952,6 +952,20 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       reviewHours: 2.0,
       source: 'student_entered',
     });
+    // Also mark the takenDate itself as an exam day on the calendar.
+    // Without this, the day they actually took the exam falls through to a regular study day,
+    // and the review day on takenDate+1 looks orphaned.
+    // Guard: only valid within plan range, and skip the final day (rest-day terminator).
+    if (daysTaken >= 1 && daysTaken < totalCalendarDays - 1) {
+      assessmentDayMap.set(daysTaken, {
+        day: daysTaken,
+        test: practiceTest,
+        label: practiceTest.name,
+        reason: `You took ${practiceTest.name} on this day.`,
+        reviewHours: 2.0,
+        source: 'student_entered',
+      });
+    }
   }
 
   // Build day schedule
