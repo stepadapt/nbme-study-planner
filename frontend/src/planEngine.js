@@ -1003,8 +1003,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     // Student rest: weeklySchedule marks this day as 0 hours (and it's not an assessment or review day)
     const isStudentRest = dayHours === 0 && !assessmentDayMap.has(calendarDay) && !reviewDayMap.has(calendarDay);
     const dayItem = assessmentDayMap.get(calendarDay);
-    const isStudentEntered = dayItem?.source === 'student_entered';
-    const isGatingExam = calendarDay === nextAssessmentDay;
     // "Locked" = past the next unscored practice exam, but not the final exam wind-down.
     // The wind-down (exam-week / exam-eve / final rest) is tied to the real Step 1 date,
     // not to any NBME breakdown — it stays visible regardless of lock state.
@@ -1016,9 +1014,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
     if (isLastDay) {
       daySchedule.push({ calendarDay, type: "rest", dayHours, dayStartTime });
-    } else if (dayItem && (isStudentEntered || isGatingExam)) {
-      // Past taken exams (student_entered) keep their card; the gating future exam is the
-      // single visible NBME ahead. Further scheduled future exams fall through to "locked".
+    } else if (dayItem) {
+      // ALL scheduled assessment days render normally — past taken (student_entered),
+      // the gating future exam, AND further scheduled future exams. Students need to
+      // see when upcoming NBMEs land on the calendar so they can plan around them.
+      // Only the study/review days BETWEEN future NBMEs (and after the gating one)
+      // get locked, because their content depends on scores we don't have yet.
       daySchedule.push({ calendarDay, type: "nbme", assessItem: dayItem, dayHours, dayStartTime });
     } else if (isExamEve) {
       daySchedule.push({ calendarDay, type: "exam-eve", dayHours, dayStartTime });
