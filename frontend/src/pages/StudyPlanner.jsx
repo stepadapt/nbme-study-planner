@@ -217,6 +217,10 @@ function generateICSContent(plan, planCreatedAt, studyStartTime, studyEndTime) {
         `UID:stepadapt-day${day.calendarDay}-rest@stepadapt.com`,'END:VEVENT');
       continue;
     }
+    if (day.dayType === 'locked') {
+      // No calendar event — this day will be populated after the gating exam is scored.
+      continue;
+    }
     const timedBl = assignBlockTimes(day.blocks || [], studyStartTime, studyEndTime);
     timedBl.forEach((block, bi) => {
       if (block.type === 'break' || block.type === 'lunch') return;
@@ -1364,6 +1368,22 @@ export default function StudyPlanner({ onShowTerms }) {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            ) : todayData.day.dayType === 'locked' ? (
+              <div style={{ padding: '24px 18px', background: '#f5f3ef', borderRadius: 12, border: '1px dashed #c5c0b8', textAlign: 'center' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#6b6560', fontFamily: S.f, marginBottom: 6 }}>
+                  Locked
+                </div>
+                <div style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f, lineHeight: 1.6, maxWidth: 380, margin: '0 auto' }}>
+                  This day unlocks after you enter your score for{' '}
+                  <strong style={{ color: '#2c2a26' }}>{todayData.day.lockedByTest?.name || 'your next practice exam'}</strong>
+                  {todayData.day.lockedByDay && (() => {
+                    const d = getPlanDayDate(todayData.day.lockedByDay);
+                    const lbl = fmtDayDate(d);
+                    return lbl ? <> on <strong style={{ color: '#2c2a26' }}>{lbl}</strong></> : null;
+                  })()}.
                 </div>
               </div>
             ) : (
@@ -3158,6 +3178,31 @@ export default function StudyPlanner({ onShowTerms }) {
 
           /* Render a full day's content (shared across day + full views) */
           const renderDayContent = (day) => {
+            // Locked day — single faded placeholder; no blocks to render.
+            if (day.dayType === 'locked') {
+              return (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>
+                      Day {day.calendarDay}{fmtPlanDate(getPlanDayDate(day.calendarDay)) ? ` · ${fmtPlanDate(getPlanDayDate(day.calendarDay))}` : ''}
+                    </span>
+                    {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75', fontWeight: 700 }}>TODAY</span>}
+                    <span style={{ ...S.tag, background: '#8a857e18', color: '#6b6560' }}>🔒 Locked</span>
+                  </div>
+                  <div style={{ padding: '16px 18px', background: '#f5f3ef', borderRadius: 10, border: '1px dashed #c5c0b8', textAlign: 'center' }}>
+                    <div style={{ fontSize: 22, marginBottom: 4 }}>🔒</div>
+                    <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>
+                      Unlocks after <strong style={{ color: '#2c2a26' }}>{day.lockedByTest?.name || 'your next practice exam'}</strong>
+                      {day.lockedByDay && (() => {
+                        const d = getPlanDayDate(day.lockedByDay);
+                        const lbl = fmtPlanDate(d);
+                        return lbl ? <> on <strong style={{ color: '#2c2a26' }}>{lbl}</strong></> : null;
+                      })()}
+                    </div>
+                  </div>
+                </>
+              );
+            }
             const special = day.dayType === 'nbme' || day.dayType === 'rest' || day.dayType === 'student-rest';
 
             // Assign actual start/end times to every block from the day's configured start time.
@@ -3334,7 +3379,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <div style={{ fontSize: 12, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
                       </div>
                       {week.days.map((day, di) => {
-                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'exam-week' ? '#7c3aed' : '#1a1816';
+                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'exam-week' ? '#7c3aed' : day.dayType === 'locked' ? '#8a857e' : '#1a1816';
                         const dayDate = getPlanDayDate(day.calendarDay);
                         const isTodayDay = isToday(dayDate);
                         return (
@@ -3348,12 +3393,13 @@ export default function StudyPlanner({ onShowTerms }) {
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
-                                  {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.focusTopic || 'Study day'}
+                                  {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.dayType === 'locked' ? '🔒 Locked' : day.focusTopic || 'Study day'}
                                 </div>
                                 {isTodayDay && <span style={{ fontSize: 10, fontWeight: 700, color: '#1D9E75', background: '#1D9E7518', padding: '1px 6px', borderRadius: 6, fontFamily: S.f }}>TODAY</span>}
                               </div>
                               {day.dayType === 'student-rest' && <div style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, marginTop: 1 }}>0 Qs — rest day · 30–45 min light activity</div>}
                               {day.dayType === 'review' && <div style={{ fontSize: 11, color: '#d97706', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · deep review + reinforcement</div>}
+                              {day.dayType === 'locked' && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1, fontStyle: 'italic' }}>Unlocks after {day.lockedByTest?.name || 'your next practice exam'}</div>}
                               {day.totalQuestions > 0 && day.dayType !== 'student-rest' && day.dayType !== 'review' && <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · {(day.blocks || []).filter(b => b.type !== 'lunch').length} blocks</div>}
                             </div>
                             <span style={{ fontSize: 14, color: '#d0ccc6' }}>›</span>

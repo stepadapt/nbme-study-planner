@@ -920,6 +920,15 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
   const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible, currentPlanDay);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
+  // Lock boundary: the day of the next scheduled (not-yet-taken) practice exam.
+  // scheduleAssessments already excludes past days (currentPlanDay+1 min) and excludes
+  // student-entered taken assessments, so the first element is by definition the gating exam.
+  // Days strictly after this become dayType "locked" — they unlock once the student enters
+  // the score for the gating exam (regen replaces that exam with a student_entered taken
+  // assessment, scheduleAssessments returns the next one, and the boundary advances).
+  // If no future exams remain, null = nothing is locked.
+  const nextAssessmentDay = assessmentSchedule.length > 0 ? assessmentSchedule[0].day : null;
+  const nextAssessmentItem = assessmentSchedule.length > 0 ? assessmentSchedule[0] : null;
   // Review days = day after each assessment (unless that day is also an assessment day or exam day).
   // Review days are FULL study days — they take priority over student-selected rest days.
   const reviewDayMap = new Map(
@@ -993,18 +1002,38 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const { hours: dayHours, startTime: dayStartTime } = getStudyHoursForDay(weeklySchedule, dayDate);
     // Student rest: weeklySchedule marks this day as 0 hours (and it's not an assessment or review day)
     const isStudentRest = dayHours === 0 && !assessmentDayMap.has(calendarDay) && !reviewDayMap.has(calendarDay);
+    const dayItem = assessmentDayMap.get(calendarDay);
+    const isStudentEntered = dayItem?.source === 'student_entered';
+    const isGatingExam = calendarDay === nextAssessmentDay;
+    // "Locked" = past the next unscored practice exam, but not the final exam wind-down.
+    // The wind-down (exam-week / exam-eve / final rest) is tied to the real Step 1 date,
+    // not to any NBME breakdown — it stays visible regardless of lock state.
+    const isLocked = nextAssessmentDay !== null
+      && calendarDay > nextAssessmentDay
+      && !isLastDay
+      && !isExamEve
+      && !isExamWeekDay;
+
     if (isLastDay) {
       daySchedule.push({ calendarDay, type: "rest", dayHours, dayStartTime });
-    } else if (assessmentDayMap.has(calendarDay)) {
-      // Assessments always override rest days — NBME/Free120 takes priority
-      daySchedule.push({ calendarDay, type: "nbme", assessItem: assessmentDayMap.get(calendarDay), dayHours, dayStartTime });
-    } else if (reviewDayMap.has(calendarDay)) {
-      // Review day wins over student rest — exam data is time-sensitive
-      daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay), dayHours, dayStartTime });
+    } else if (dayItem && (isStudentEntered || isGatingExam)) {
+      // Past taken exams (student_entered) keep their card; the gating future exam is the
+      // single visible NBME ahead. Further scheduled future exams fall through to "locked".
+      daySchedule.push({ calendarDay, type: "nbme", assessItem: dayItem, dayHours, dayStartTime });
     } else if (isExamEve) {
       daySchedule.push({ calendarDay, type: "exam-eve", dayHours, dayStartTime });
     } else if (isExamWeekDay) {
       daySchedule.push({ calendarDay, type: "exam-week", dayHours, dayStartTime });
+    } else if (isLocked) {
+      // Placeholder: blocks intentionally empty. UI renders a single locked card.
+      daySchedule.push({
+        calendarDay, type: "locked", dayHours, dayStartTime,
+        lockedByTest: nextAssessmentItem.test,
+        lockedByDay: nextAssessmentDay,
+      });
+    } else if (reviewDayMap.has(calendarDay)) {
+      // Review day wins over student rest — exam data is time-sensitive
+      daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay), dayHours, dayStartTime });
     } else if (isStudentRest) {
       daySchedule.push({ calendarDay, type: "student-rest", dayHours: 0, dayStartTime: null });
     } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
@@ -1051,6 +1080,22 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     if (weekNum !== currentWeek.week) {
       if (currentWeek.days.length > 0) weeks.push(currentWeek);
       currentWeek = { week: weekNum, days: [], phase: "", focusTopics: [] };
+    }
+
+    // ── Locked day — placeholder past the next unscored practice exam ──
+    // No study blocks. UI renders a single faded card naming the gating exam.
+    if (sched.type === "locked") {
+      currentWeek.days.push({
+        calendarDay: sched.calendarDay,
+        dayType: "locked",
+        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
+        dayHours: sched.dayHours ?? hrs,
+        lockedByTest: sched.lockedByTest,
+        lockedByDay: sched.lockedByDay,
+        blocks: [],
+        totalQuestions: 0,
+      });
+      continue;
     }
 
     // ── Assessment day ────────────────────────────────────────────────
@@ -1514,5 +1559,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     + totalLightDays * (20 + qBlockSize);
   const nbmeDays = assessmentSchedule.length;
 
-  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay };
+  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay,
+    nextAssessment: nextAssessmentItem ? { day: nextAssessmentDay, test: nextAssessmentItem.test, label: nextAssessmentItem.label } : null };
 }
