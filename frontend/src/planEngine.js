@@ -214,7 +214,7 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 //    scheduled NBME is delayed by earlyGapDays (~2 weeks) and labeled "Progress check".
 //    Only students with ZERO prior data get a "Baseline diagnostic" placed early.
 
-export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null, currentPlanDay = 1) {
+export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null, currentPlanDay = 1, overrideDayByTestId = null) {
   const takenList = profile.takenAssessments || [];
   const now = new Date();
   const SIX_MONTHS_MS = 183 * 24 * 60 * 60 * 1000;
@@ -305,6 +305,73 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     return result;
   }
 
+  // ── PHASE 0: Pin student-overridden assessments at their chosen days ──
+  // overrideDayByTestId is a plain object { testId: dayNumber } (caller already
+  // converted YYYY-MM-DD → calendar day relative to plan start). Free 120 is
+  // never overridable here; the caller is expected to filter, but we also skip
+  // defensively. Any pinned exam is added to result + claimedDays so the normal
+  // STEP 4–8 placement skips it and other exams reflow around it via findNextEligible.
+  const hasBaselineForPhase0 = takenList.length > 0;
+  const buildOverrideEntry = (test, day) => {
+    if (test.type === 'nbme') {
+      let label, reason;
+      if (test.id === 'nbme26' && !hasBaselineForPhase0) {
+        label = 'Baseline diagnostic';
+        reason = `NBME 26 is your baseline — the oldest form, chosen intentionally so newer, more predictive forms are saved for later. Most students feel underprepared at this point — that's expected and irrelevant. The score doesn't define where you'll land; the system breakdown becomes the blueprint for your entire plan.`;
+      } else {
+        label = `Progress check — NBME ${test.number}`;
+        if (test.number >= 32) {
+          reason = `NBME ${test.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`;
+        } else if (test.number >= 30) {
+          reason = `NBME ${test.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`;
+        } else {
+          reason = `NBME ${test.number} — progress check. The total score matters less than the direction of movement in your weak systems since your last assessment.`;
+        }
+      }
+      return { day, test, label, reason, reviewHours: 2.0 };
+    }
+    if (test.id === 'uwsa2') {
+      return {
+        day, test, label: 'Score predictor',
+        reason: `UWSA 2 is the strongest single predictor of your actual Step 1 score. Students typically land within 3–5 points of this number. Take it under full exam conditions — 280 questions, timed, no interruptions. The score you see here is approximately where you'll score on exam day.`,
+        reviewHours: 2.5, predictorNote: true,
+      };
+    }
+    if (test.id === 'uwsa1') {
+      return {
+        day, test, label: 'Midpoint learning tool',
+        reason: `UWSA 1 shows how far you've come — and where you still need work. Critical caveat: UWSA 1 consistently overpredicts by 10–25 points. A score of 245 here often translates to 220–235 on exam day. Don't get complacent if the number looks high.`,
+        reviewHours: 2.0,
+        overpredictWarning: 'This exam typically overpredicts by 10–25 points. Use it for learning direction, not score prediction.',
+      };
+    }
+    if (test.id === 'amboss') {
+      return {
+        day, test, label: 'Midpoint check (AMBOSS)',
+        reason: `AMBOSS SA runs harder than the real exam intentionally — students typically score 5–15 points lower than their actual Step 1 result. Use it as a high-fidelity stress test to find remaining gaps.`,
+        reviewHours: 2.0,
+      };
+    }
+    return { day, test, label: test.name || 'Practice assessment', reason: '', reviewHours: 2.0 };
+  };
+
+  const overriddenIds = new Set();
+  if (overrideDayByTestId && typeof overrideDayByTestId === 'object') {
+    for (const [testId, dayRaw] of Object.entries(overrideDayByTestId)) {
+      if (testId === 'free120new' || testId === 'free120old') continue; // Free 120 is locked
+      if (everTaken.has(testId) && !nbmeRetakeEligible(testId)) continue; // exam already taken
+      const day = Number(dayRaw);
+      if (!Number.isInteger(day)) continue;
+      if (day < minSchedulableDay || day > LAST_ASSESSMENT_DAY) continue;
+      if (isClaimed(day)) continue;
+      const test = PRACTICE_TESTS.find(t => t.id === testId);
+      if (!test) continue;
+      result.push(buildOverrideEntry(test, day));
+      claimDay(day);
+      overriddenIds.add(testId);
+    }
+  }
+
   // ── STEP 3: Graduated spacing parameters ──────────────────────────────
   // earlyGapDays / lateGapDays = minimum calendar days between consecutive assessments.
   // Transition at ~60% through the plan.
@@ -346,8 +413,10 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   };
 
   // ── STEP 4a: Schedule NBMEs (untaken forms remain) ────────────────────
-  if (untakenNBMEs.length > 0) {
-    const sortedByNum = [...untakenNBMEs].sort((a, b) => a.number - b.number);
+  // Exclude any NBME the student has already pinned in Phase 0 — those are placed.
+  const schedulableNBMEs = untakenNBMEs.filter(t => !overriddenIds.has(t.id));
+  if (schedulableNBMEs.length > 0) {
+    const sortedByNum = [...schedulableNBMEs].sort((a, b) => a.number - b.number);
 
     // NBME 26 is ALWAYS first unless already taken
     const firstNBME  = sortedByNum.find(t => t.id === 'nbme26') || sortedByNum[0];
@@ -365,11 +434,12 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     }
 
     // ── STEP 5: Place first NBME ──────────────────────────────────────
-    // hasBaseline = student already has at least one prior assessment on record.
+    // hasBaseline = student already has at least one prior assessment on record,
+    // OR has pinned NBME 26 via override (treat the pinned exam as the baseline).
     // No baseline → place early (2nd–4th study day), labeled "Baseline diagnostic".
     // Has baseline → push out by earlyGapDays (~2 weeks) so the student has time
     //   to actually improve before the next data point. Labeled "Progress check".
-    const hasBaseline = takenList.length > 0;
+    const hasBaseline = takenList.length > 0 || overriddenIds.has('nbme26');
 
     let firstDay;
     if (!hasBaseline) {
@@ -450,7 +520,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
         const gapToFree = FREE120_DAY - prevDay;
         const uwsa2Test = PRACTICE_TESTS.find(t => t.id === 'uwsa2');
 
-        if (gapToFree >= 10 && uwsa2Test && canUse('uwsa2')) {
+        if (gapToFree >= 10 && uwsa2Test && canUse('uwsa2') && !overriddenIds.has('uwsa2')) {
           // Place UWSA2 closest to T-7 (7 days before Free 120)
           const uwsa2Target = FREE120_DAY - 7;
           let best2 = null;
@@ -468,7 +538,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
             claimDay(best2);
 
             // Also try UWSA1 if gap is large enough (≥18 days)
-            if (gapToFree >= 18 && canUse('uwsa1')) {
+            if (gapToFree >= 18 && canUse('uwsa1') && !overriddenIds.has('uwsa1')) {
               const uwsa1Test = PRACTICE_TESTS.find(t => t.id === 'uwsa1');
               if (uwsa1Test) {
                 const uwsa1Target = prevDay + Math.round((best2 - prevDay) / 2);
@@ -510,7 +580,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
       return best;
     };
 
-    if (uwsa2 && LAST_ASSESSMENT_DAY >= 3 && tier !== '2w') {
+    if (uwsa2 && LAST_ASSESSMENT_DAY >= 3 && tier !== '2w' && !overriddenIds.has('uwsa2')) {
       const d = pickEligible(Math.min(LAST_ASSESSMENT_DAY, FREE120_DAY - 9));
       if (d) {
         result.push({
@@ -522,7 +592,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
       }
     }
 
-    if (uwsa1 && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
+    if (uwsa1 && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5 && !overriddenIds.has('uwsa1')) {
       const d = pickEligible(Math.min(Math.floor(totalCalendarDays / 2), LAST_ASSESSMENT_DAY - 5));
       if (d) {
         result.push({
@@ -535,7 +605,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
       }
     }
 
-    if (!uwsa1 && amboss && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5) {
+    if (!uwsa1 && amboss && (tier === '8w' || tier === '5w') && LAST_ASSESSMENT_DAY >= 5 && !overriddenIds.has('amboss')) {
       const d = pickEligible(Math.min(Math.floor(totalCalendarDays / 2), LAST_ASSESSMENT_DAY - 5));
       if (d) {
         result.push({
@@ -918,7 +988,20 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   todayForPlan.setHours(0, 0, 0, 0);
   const currentPlanDay = Math.round((todayForPlan.getTime() - planStartDate.getTime()) / 86400000) + 1;
 
-  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible, currentPlanDay);
+  // Build override map for student-rescheduled assessments.
+  // profile.scheduledAssessmentOverrides is { testId: 'YYYY-MM-DD' }; convert each
+  // to a calendar-day index relative to planStartDate. scheduleAssessments will
+  // validate bounds, taken-status, and Free-120 lock-down internally.
+  const overrideDayByTestId = {};
+  const rawOverrides = profile.scheduledAssessmentOverrides || {};
+  for (const [testId, dateStr] of Object.entries(rawOverrides)) {
+    const d = parseLocalYMD(dateStr);
+    if (!d) continue;
+    const dayIndex = Math.round((d.getTime() - planStartDate.getTime()) / 86400000) + 1;
+    if (Number.isInteger(dayIndex)) overrideDayByTestId[testId] = dayIndex;
+  }
+
+  const assessmentSchedule = scheduleAssessments(profile, totalCalendarDays, hasExistingScores, effectiveEligible, currentPlanDay, overrideDayByTestId);
   const assessmentDayMap = new Map(assessmentSchedule.map(a => [a.day, a]));
   // Lock boundary: the day of the next scheduled (not-yet-taken) practice exam.
   // scheduleAssessments already excludes past days (currentPlanDay+1 min) and excludes

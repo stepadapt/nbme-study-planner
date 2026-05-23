@@ -302,6 +302,12 @@ export default function StudyPlanner({ onShowTerms }) {
   const [assessmentActionLoading, setAssessmentActionLoading] = useState(false);
   const [assessmentActionMsg, setAssessmentActionMsg] = useState('');
 
+  // ── Reschedule upcoming exam state ────────────────────────────────
+  // reschedulingExam = { test, day, label, currentDate } when modal is open
+  const [reschedulingExam, setReschedulingExam] = useState(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
+
   // ── Historical import state ────────────────────────────────────────
   const [histDraft, setHistDraft] = useState(defaultHistDraft);
   const [histList, setHistList] = useState([]); // accumulated exams in import flow
@@ -697,7 +703,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
   // ── Assessment edit / delete helpers ──────────────────────────────
 
-  const regeneratePlanFromAssessments = (updatedAssessments) => {
+  const regeneratePlanFromAssessments = (updatedAssessments, profileOverride = null) => {
     const sorted = [...updatedAssessments].sort((a, b) =>
       new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt)
     );
@@ -714,7 +720,30 @@ export default function StudyPlanner({ onShowTerms }) {
       const match = matchPracticeTest(a.form_name || a.formName);
       return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt || a.created_at } : null;
     }).filter(Boolean);
-    const profileForPlan = { ...profile, takenAssessments: derivedTaken };
+
+    // Prune stale reschedule overrides: any whose testId is now taken, date is in
+    // the past, or refers to Free 120 (which is never overridable). Use profileOverride
+    // if supplied (so the reschedule save flow uses its own freshly-merged overrides).
+    const sourceProfile = profileOverride || profile;
+    const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
+    const takenIds = new Set(derivedTaken.map(t => t.id));
+    const rawOverrides = sourceProfile.scheduledAssessmentOverrides || {};
+    const prunedOverrides = {};
+    let overridesChanged = false;
+    for (const [testId, dateStr] of Object.entries(rawOverrides)) {
+      if (testId === 'free120new' || testId === 'free120old') { overridesChanged = true; continue; }
+      if (takenIds.has(testId)) { overridesChanged = true; continue; }
+      const d = dateStr ? new Date(dateStr) : null;
+      if (!d || isNaN(d.getTime())) { overridesChanged = true; continue; }
+      d.setHours(0, 0, 0, 0);
+      if (d.getTime() < todayFlat.getTime()) { overridesChanged = true; continue; }
+      prunedOverrides[testId] = dateStr;
+    }
+    const effectiveProfile = overridesChanged
+      ? { ...sourceProfile, scheduledAssessmentOverrides: prunedOverrides }
+      : sourceProfile;
+
+    const profileForPlan = { ...effectiveProfile, takenAssessments: derivedTaken };
     // Preserve the original plan start date — never regenerate from today
     const existingStartDate = latestPlanMeta?.createdAt ? (() => {
       const s = latestPlanMeta.createdAt;
@@ -723,7 +752,7 @@ export default function StudyPlanner({ onShowTerms }) {
       return d;
     })() : null;
     const generatedPlan = updatedAssessments.length === 0
-      ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
+      ? generateFirstTimerPlan(effectiveProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
       : generatePlan(profileForPlan, newScores, stickingPoints, {
         ...(existingStartDate ? { planStartDate: existingStartDate } : {}),
         weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [],
@@ -731,12 +760,17 @@ export default function StudyPlanner({ onShowTerms }) {
       });
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
+    // Persist pruned override map back to profile so next session starts clean
+    if (overridesChanged) {
+      setProfile(effectiveProfile);
+      api.profile.save(effectiveProfile).catch(() => {});
+    }
     // Use PUT (update) to preserve created_at — never POST (save) which resets day position
     if (latestPlanMeta?.id) {
-      api.plans.update(latestPlanMeta.id, { planData: generatedPlan, profileSnapshot: profile, engineVersion: PLAN_ENGINE_VERSION })
+      api.plans.update(latestPlanMeta.id, { planData: generatedPlan, profileSnapshot: effectiveProfile, engineVersion: PLAN_ENGINE_VERSION })
         .catch(() => {});
     } else {
-      api.plans.save({ planData: generatedPlan, profileSnapshot: profile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
+      api.plans.save({ planData: generatedPlan, profileSnapshot: effectiveProfile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
         .then(result => { if (result?.id) setLatestPlanMeta(prev => ({ ...prev, id: result.id, engineVersion: PLAN_ENGINE_VERSION })); })
         .catch(() => {});
     }
@@ -779,6 +813,70 @@ export default function StudyPlanner({ onShowTerms }) {
       setAssessmentActionMsg('Failed to save: ' + (err.message || 'Please try again.'));
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  // Open the reschedule modal for an upcoming exam (from assessmentSchedule).
+  // Item shape: { day, test, label, ... } as returned by scheduleAssessments.
+  // Free 120 is locked at T-2 and cannot be moved — caller is expected to gate,
+  // but we also guard defensively here.
+  const openRescheduleExam = (item) => {
+    if (!item || !item.test) return;
+    if (item.test.id === 'free120new' || item.test.id === 'free120old') return;
+    const startDate = latestPlanMeta?.createdAt ? (() => {
+      const s = latestPlanMeta.createdAt;
+      const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+      d.setHours(0, 0, 0, 0);
+      return d;
+    })() : null;
+    if (!startDate) return;
+    const cur = new Date(startDate); cur.setDate(cur.getDate() + item.day - 1);
+    const ymd = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+    setReschedulingExam({ test: item.test, day: item.day, label: item.label, currentDate: ymd });
+    setRescheduleDate(ymd);
+  };
+
+  const saveRescheduleExam = async () => {
+    if (!reschedulingExam) return;
+    const testId = reschedulingExam.test.id;
+    if (testId === 'free120new' || testId === 'free120old') return;
+    if (!rescheduleDate) return;
+    setRescheduleSaving(true);
+    try {
+      const newOverrides = { ...(profile.scheduledAssessmentOverrides || {}), [testId]: rescheduleDate };
+      const newProfile = { ...profile, scheduledAssessmentOverrides: newOverrides };
+      setProfile(newProfile);
+      await api.profile.save(newProfile);
+      regeneratePlanFromAssessments(assessments, newProfile);
+      setReschedulingExam(null);
+      setAssessmentActionMsg(`${reschedulingExam.test.name} rescheduled — your plan has been recalculated around the new date.`);
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to reschedule: ' + (err.message || 'Please try again.'));
+    } finally {
+      setRescheduleSaving(false);
+    }
+  };
+
+  // Reset an overridden exam back to engine-chosen placement.
+  const resetRescheduleExam = async () => {
+    if (!reschedulingExam) return;
+    const testId = reschedulingExam.test.id;
+    setRescheduleSaving(true);
+    try {
+      const newOverrides = { ...(profile.scheduledAssessmentOverrides || {}) };
+      delete newOverrides[testId];
+      const newProfile = { ...profile, scheduledAssessmentOverrides: newOverrides };
+      setProfile(newProfile);
+      await api.profile.save(newProfile);
+      regeneratePlanFromAssessments(assessments, newProfile);
+      setReschedulingExam(null);
+      setAssessmentActionMsg(`${reschedulingExam.test.name} reset to engine-chosen date.`);
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to reset: ' + (err.message || 'Please try again.'));
+    } finally {
+      setRescheduleSaving(false);
     }
   };
 
@@ -3249,6 +3347,19 @@ export default function StudyPlanner({ onShowTerms }) {
                   </span>
                   {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75', fontWeight: 700 }}>TODAY</span>}
                   {day.dayType === 'nbme' && <span style={{ ...S.tag, background: '#c0392b18', color: '#c0392b' }}>📋 NBME</span>}
+                  {day.dayType === 'nbme' && (() => {
+                    const item = (plan.assessmentSchedule || []).find(a => a.day === day.calendarDay);
+                    if (!item || !item.test) return null;
+                    if (item.test.id === 'free120new' || item.test.id === 'free120old') {
+                      return <span style={{ ...S.tag, background: '#8a857e18', color: '#8a857e', fontSize: 10 }}>🔒 locked</span>;
+                    }
+                    return (
+                      <button onClick={() => openRescheduleExam(item)} title="Reschedule"
+                        style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                        📅 Reschedule
+                      </button>
+                    );
+                  })()}
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
                   {day.dayType === 'student-rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>🌿 Rest day</span>}
                   {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
@@ -3473,6 +3584,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     const dayDate = psDate ? new Date(psDate.getTime() + (a.day - 1) * 86400000) : null;
                     const dateStr = dayDate ? dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Day ${a.day}`;
                     const isExpanded = expandedAssessmentIdx === i;
+                    const isLocked = a.test?.id === 'free120new' || a.test?.id === 'free120old';
                     return (
                       <div key={i}
                         style={{ padding: '7px 0 7px 12px', borderLeft: '2.5px solid #c0392b30', marginBottom: 4, cursor: a.reason ? 'pointer' : 'default' }}
@@ -3482,6 +3594,13 @@ export default function StudyPlanner({ onShowTerms }) {
                           <span style={{ fontSize: 12, fontFamily: S.f, color: '#1a1816', fontWeight: 600, flex: 1 }}>{a.test?.name || 'Practice Assessment'}</span>
                           <span style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f }}>{dateStr}</span>
                           <span style={{ ...S.tag, background: '#c0392b12', color: '#c0392b', fontSize: 10 }}>{a.label || 'NBME'}</span>
+                          {isLocked
+                            ? <span style={{ ...S.tag, background: '#8a857e18', color: '#8a857e', fontSize: 10 }}>🔒 locked</span>
+                            : <button onClick={(e) => { e.stopPropagation(); openRescheduleExam(a); }}
+                                title="Reschedule"
+                                style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                                📅 Reschedule
+                              </button>}
                         </div>
                         {isExpanded && a.reason && (
                           <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginTop: 4, lineHeight: 1.5 }}>{a.reason}</div>
@@ -3772,6 +3891,93 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
         </div>
       )}
+
+      {/* ── Reschedule upcoming exam modal ── */}
+      {reschedulingExam && (() => {
+        // Date bounds: must be strictly future, must leave ≥3-day buffer before exam day.
+        const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
+        const minD = new Date(todayFlat); minD.setDate(minD.getDate() + 1);
+        const examD = profile.examDate ? new Date(profile.examDate) : null;
+        if (examD) examD.setHours(0, 0, 0, 0);
+        const maxD = examD ? (() => { const d = new Date(examD); d.setDate(d.getDate() - 3); return d; })() : null;
+        const fmtYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const selectedD = rescheduleDate ? (() => { const d = new Date(rescheduleDate); d.setHours(0, 0, 0, 0); return d; })() : null;
+        const isPast = selectedD && selectedD.getTime() < minD.getTime();
+        const isTooLate = selectedD && maxD && selectedD.getTime() > maxD.getTime();
+        // Collision: another scheduled (or taken) assessment on the same day
+        const collisions = (plan?.assessmentSchedule || [])
+          .filter(a => a.test?.id !== reschedulingExam.test.id)
+          .map(a => {
+            const startDate = latestPlanMeta?.createdAt ? (() => {
+              const s = latestPlanMeta.createdAt;
+              const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+              d.setHours(0, 0, 0, 0);
+              return d;
+            })() : null;
+            if (!startDate) return null;
+            const aDate = new Date(startDate); aDate.setDate(aDate.getDate() + a.day - 1);
+            return { test: a.test, date: fmtYmd(aDate) };
+          })
+          .filter(Boolean);
+        const hasCollision = collisions.some(c => c.date === rescheduleDate);
+        const hardBlocked = isPast || isTooLate || hasCollision;
+        // Soft warnings
+        const dow = selectedD ? selectedD.getDay() : null;
+        const dayHrs = (dow !== null && profile.weeklySchedule) ? (profile.weeklySchedule[dow]?.studyHours ?? null) : null;
+        const isRestDay = (profile.rest_days || []).includes(rescheduleDate);
+        const lowHours = dayHrs !== null && dayHrs < 6;
+        const tooCloseToOther = collisions.some(c => {
+          const cd = new Date(c.date); cd.setHours(0, 0, 0, 0);
+          if (!selectedD) return false;
+          return Math.abs(cd.getTime() - selectedD.getTime()) <= 3 * 86400000 && cd.getTime() !== selectedD.getTime();
+        });
+        const hasOverride = !!(profile.scheduledAssessmentOverrides || {})[reschedulingExam.test.id];
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>📅 Reschedule {reschedulingExam.test.name}</div>
+              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 20 }}>{reschedulingExam.label || 'Upcoming practice exam'}</div>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>New Date</label>
+                  <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
+                    min={fmtYmd(minD)} max={maxD ? fmtYmd(maxD) : undefined}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+                  <div style={{ fontSize: 11, color: '#8a857e', marginTop: 6 }}>Currently scheduled: {reschedulingExam.currentDate}</div>
+                </div>
+                {/* Hard-block messages */}
+                {isPast && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Date must be after today.</div>}
+                {isTooLate && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Must be at least 3 days before your Step 1 exam date.</div>}
+                {hasCollision && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Another assessment is already scheduled on this day.</div>}
+                {/* Soft warnings */}
+                {!hardBlocked && (lowHours || isRestDay || tooCloseToOther) && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fef3c7', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+                    {lowHours && <div>⚠ Only {dayHrs} study hours scheduled this day.</div>}
+                    {isRestDay && <div>⚠ This is currently a rest day.</div>}
+                    {tooCloseToOther && <div>⚠ Within 3 days of another upcoming exam.</div>}
+                    <div style={{ marginTop: 4, color: '#8a857e' }}>You can still save — these are just heads-ups.</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                <button onClick={() => setReschedulingExam(null)} disabled={rescheduleSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={saveRescheduleExam} disabled={rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate}
+                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: (rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate) ? 0.5 : 1 }}>
+                  {rescheduleSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              {hasOverride && (
+                <div style={{ textAlign: 'center', marginTop: 14 }}>
+                  <button onClick={resetRescheduleExam} disabled={rescheduleSaving}
+                    style={{ background: 'none', border: 'none', color: '#8a857e', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: S.f }}>
+                    Reset to engine-chosen date
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       <Footer />
     </div>
