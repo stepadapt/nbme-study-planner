@@ -109,5 +109,7 @@ addCol('ALTER TABLE user_profiles ADD COLUMN rest_days TEXT DEFAULT "[]"');
 addCol('ALTER TABLE study_plans ADD COLUMN engine_version INTEGER DEFAULT 0');
 addCol('ALTER TABLE user_profiles ADD COLUMN weekly_schedule TEXT DEFAULT NULL');
 addCol('ALTER TABLE user_profiles ADD COLUMN scheduled_assessment_overrides TEXT DEFAULT "{}"');
+addCol('ALTER TABLE user_profiles ADD COLUMN skipped_assessment_ids TEXT DEFAULT "[]"');
+addCol('ALTER TABLE user_profiles ADD COLUMN skip_uwsa_nudge_dismissed INTEGER DEFAULT 0');
 
 module.exports = db;

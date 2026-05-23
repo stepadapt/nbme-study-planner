@@ -227,6 +227,12 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   const everTaken = new Set(takenList.map(t => t.id));
   const canUse = (id) => !recentlyTaken.has(id);
 
+  // ── Student-skipped exams (Free 120 can never be skipped) ─────────────
+  const skippedSet = new Set(
+    (Array.isArray(profile.skippedAssessmentIds) ? profile.skippedAssessmentIds : [])
+      .filter(id => id !== 'free120new' && id !== 'free120old')
+  );
+
   // ── Fixed anchors ──────────────────────────────────────────────────────
   const FREE120_DAY        = totalCalendarDays - 2;  // ALWAYS locked here
   const LAST_ASSESSMENT_DAY = totalCalendarDays - 5; // 3-day buffer before Free 120
@@ -244,14 +250,15 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   };
 
   const untakenNBMEs = ALL_NBME_IDS
+    .filter(id => !skippedSet.has(id))
     .filter(id => !everTaken.has(id) || nbmeRetakeEligible(id))
     .map(id => PRACTICE_TESTS.find(t => t.id === id))
     .filter(Boolean);
 
-  // UWSA/AMBOSS: only after all 8 NBMEs done (unchanged gate)
-  const uwsa1  = (allNBMEsDone && canUse('uwsa1'))  ? PRACTICE_TESTS.find(t => t.id === 'uwsa1')  : null;
-  const uwsa2  = (allNBMEsDone && canUse('uwsa2'))  ? PRACTICE_TESTS.find(t => t.id === 'uwsa2')  : null;
-  const amboss = (allNBMEsDone && canUse('amboss')) ? PRACTICE_TESTS.find(t => t.id === 'amboss') : null;
+  // UWSA/AMBOSS: only after all 8 NBMEs done (unchanged gate); also nulled if student skipped them
+  const uwsa1  = (allNBMEsDone && canUse('uwsa1')  && !skippedSet.has('uwsa1'))  ? PRACTICE_TESTS.find(t => t.id === 'uwsa1')  : null;
+  const uwsa2  = (allNBMEsDone && canUse('uwsa2')  && !skippedSet.has('uwsa2'))  ? PRACTICE_TESTS.find(t => t.id === 'uwsa2')  : null;
+  const amboss = (allNBMEsDone && canUse('amboss') && !skippedSet.has('amboss')) ? PRACTICE_TESTS.find(t => t.id === 'amboss') : null;
 
   const free120 = PRACTICE_TESTS.find(t => t.id === 'free120new')
                || PRACTICE_TESTS.find(t => t.id === 'free120old');
@@ -359,6 +366,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
   if (overrideDayByTestId && typeof overrideDayByTestId === 'object') {
     for (const [testId, dayRaw] of Object.entries(overrideDayByTestId)) {
       if (testId === 'free120new' || testId === 'free120old') continue; // Free 120 is locked
+      if (skippedSet.has(testId)) continue; // student has skipped this exam — don't pin it
       if (everTaken.has(testId) && !nbmeRetakeEligible(testId)) continue; // exam already taken
       const day = Number(dayRaw);
       if (!Number.isInteger(day)) continue;
@@ -520,7 +528,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
         const gapToFree = FREE120_DAY - prevDay;
         const uwsa2Test = PRACTICE_TESTS.find(t => t.id === 'uwsa2');
 
-        if (gapToFree >= 10 && uwsa2Test && canUse('uwsa2') && !overriddenIds.has('uwsa2')) {
+        if (gapToFree >= 10 && uwsa2Test && canUse('uwsa2') && !overriddenIds.has('uwsa2') && !skippedSet.has('uwsa2')) {
           // Place UWSA2 closest to T-7 (7 days before Free 120)
           const uwsa2Target = FREE120_DAY - 7;
           let best2 = null;
@@ -538,7 +546,7 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
             claimDay(best2);
 
             // Also try UWSA1 if gap is large enough (≥18 days)
-            if (gapToFree >= 18 && canUse('uwsa1') && !overriddenIds.has('uwsa1')) {
+            if (gapToFree >= 18 && canUse('uwsa1') && !overriddenIds.has('uwsa1') && !skippedSet.has('uwsa1')) {
               const uwsa1Test = PRACTICE_TESTS.find(t => t.id === 'uwsa1');
               if (uwsa1Test) {
                 const uwsa1Target = prevDay + Math.round((best2 - prevDay) / 2);

@@ -22,21 +22,23 @@ router.get('/', (req, res) => {
       rest_days: JSON.parse(profile.rest_days || '[]'),
       weeklySchedule: profile.weekly_schedule ? JSON.parse(profile.weekly_schedule) : null,
       scheduledAssessmentOverrides: JSON.parse(profile.scheduled_assessment_overrides || '{}'),
+      skippedAssessmentIds: JSON.parse(profile.skipped_assessment_ids || '[]'),
+      skipUwsaNudgeDismissed: !!profile.skip_uwsa_nudge_dismissed,
     }
   });
 });
 
 // PUT /api/profile
 router.put('/', (req, res) => {
-  const { exam, resources, examDate, hoursPerDay, studyStartTime, studyEndTime, takenAssessments, subTopicProgress, rest_days, weeklySchedule, scheduledAssessmentOverrides } = req.body;
+  const { exam, resources, examDate, hoursPerDay, studyStartTime, studyEndTime, takenAssessments, subTopicProgress, rest_days, weeklySchedule, scheduledAssessmentOverrides, skippedAssessmentIds, skipUwsaNudgeDismissed } = req.body;
   const existing = db.prepare('SELECT id FROM user_profiles WHERE user_id = ?').get(req.user.userId);
 
   if (existing) {
-    db.prepare(`UPDATE user_profiles SET exam=?, resources=?, exam_date=?, hours_per_day=?, study_start_time=?, study_end_time=?, taken_assessments=?, sub_topic_progress=?, rest_days=?, weekly_schedule=?, scheduled_assessment_overrides=?, updated_at=datetime('now') WHERE user_id=?`)
-      .run(exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null, JSON.stringify(scheduledAssessmentOverrides || {}), req.user.userId);
+    db.prepare(`UPDATE user_profiles SET exam=?, resources=?, exam_date=?, hours_per_day=?, study_start_time=?, study_end_time=?, taken_assessments=?, sub_topic_progress=?, rest_days=?, weekly_schedule=?, scheduled_assessment_overrides=?, skipped_assessment_ids=?, skip_uwsa_nudge_dismissed=?, updated_at=datetime('now') WHERE user_id=?`)
+      .run(exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null, JSON.stringify(scheduledAssessmentOverrides || {}), JSON.stringify(Array.isArray(skippedAssessmentIds) ? skippedAssessmentIds : []), skipUwsaNudgeDismissed ? 1 : 0, req.user.userId);
   } else {
-    db.prepare('INSERT INTO user_profiles (user_id, exam, resources, exam_date, hours_per_day, study_start_time, study_end_time, taken_assessments, sub_topic_progress, rest_days, weekly_schedule, scheduled_assessment_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.user.userId, exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null, JSON.stringify(scheduledAssessmentOverrides || {}));
+    db.prepare('INSERT INTO user_profiles (user_id, exam, resources, exam_date, hours_per_day, study_start_time, study_end_time, taken_assessments, sub_topic_progress, rest_days, weekly_schedule, scheduled_assessment_overrides, skipped_assessment_ids, skip_uwsa_nudge_dismissed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(req.user.userId, exam || null, JSON.stringify(resources || []), examDate || null, hoursPerDay || 8, studyStartTime || '07:00', studyEndTime || '17:00', JSON.stringify(takenAssessments || []), JSON.stringify(subTopicProgress || {}), JSON.stringify(rest_days || []), weeklySchedule ? JSON.stringify(weeklySchedule) : null, JSON.stringify(scheduledAssessmentOverrides || {}), JSON.stringify(Array.isArray(skippedAssessmentIds) ? skippedAssessmentIds : []), skipUwsaNudgeDismissed ? 1 : 0);
   }
 
   res.json({ success: true });

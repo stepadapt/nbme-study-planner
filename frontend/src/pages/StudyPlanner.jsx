@@ -308,6 +308,11 @@ export default function StudyPlanner({ onShowTerms }) {
   const [rescheduleDate, setRescheduleDate] = useState('');
   const [rescheduleSaving, setRescheduleSaving] = useState(false);
 
+  // ── Skip upcoming exam state ──────────────────────────────────────
+  // skippingExam = { test, label } when modal is open
+  const [skippingExam, setSkippingExam] = useState(null);
+  const [skipSaving, setSkipSaving] = useState(false);
+
   // ── Historical import state ────────────────────────────────────────
   const [histDraft, setHistDraft] = useState(defaultHistDraft);
   const [histList, setHistList] = useState([]); // accumulated exams in import flow
@@ -739,9 +744,24 @@ export default function StudyPlanner({ onShowTerms }) {
       if (d.getTime() < todayFlat.getTime()) { overridesChanged = true; continue; }
       prunedOverrides[testId] = dateStr;
     }
-    const effectiveProfile = overridesChanged
+    // Prune stale skipped-exam IDs: drop Free 120 (never skippable) and any test
+    // the student has now taken (you can't skip something already completed).
+    const rawSkipped = Array.isArray(sourceProfile.skippedAssessmentIds) ? sourceProfile.skippedAssessmentIds : [];
+    const prunedSkipped = [];
+    let skippedChanged = false;
+    for (const id of rawSkipped) {
+      if (id === 'free120new' || id === 'free120old') { skippedChanged = true; continue; }
+      if (takenIds.has(id)) { skippedChanged = true; continue; }
+      prunedSkipped.push(id);
+    }
+
+    const baseProfile = overridesChanged
       ? { ...sourceProfile, scheduledAssessmentOverrides: prunedOverrides }
       : sourceProfile;
+    const effectiveProfile = skippedChanged
+      ? { ...baseProfile, skippedAssessmentIds: prunedSkipped }
+      : baseProfile;
+    const profileNeedsPersist = overridesChanged || skippedChanged;
 
     const profileForPlan = { ...effectiveProfile, takenAssessments: derivedTaken };
     // Preserve the original plan start date — never regenerate from today
@@ -760,8 +780,8 @@ export default function StudyPlanner({ onShowTerms }) {
       });
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
-    // Persist pruned override map back to profile so next session starts clean
-    if (overridesChanged) {
+    // Persist pruned override map / skip list back to profile so next session starts clean
+    if (profileNeedsPersist) {
       setProfile(effectiveProfile);
       api.profile.save(effectiveProfile).catch(() => {});
     }
@@ -877,6 +897,104 @@ export default function StudyPlanner({ onShowTerms }) {
       setAssessmentActionMsg('Failed to reset: ' + (err.message || 'Please try again.'));
     } finally {
       setRescheduleSaving(false);
+    }
+  };
+
+  // ── Skip upcoming exam helpers ────────────────────────────────────
+  // openSkipExam: gate Free 120 defensively, then open the confirm modal.
+  const openSkipExam = (item) => {
+    if (!item || !item.test) return;
+    if (item.test.id === 'free120new' || item.test.id === 'free120old') return;
+    setSkippingExam({ test: item.test, label: item.label });
+  };
+
+  const confirmSkipExam = async () => {
+    if (!skippingExam) return;
+    const testId = skippingExam.test.id;
+    if (testId === 'free120new' || testId === 'free120old') return;
+    setSkipSaving(true);
+    try {
+      const currentSkipped = Array.isArray(profile.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+      const newSkipped = currentSkipped.includes(testId) ? currentSkipped : [...currentSkipped, testId];
+      // Remove any reschedule override for this exam — skip supersedes override
+      const newOverrides = { ...(profile.scheduledAssessmentOverrides || {}) };
+      delete newOverrides[testId];
+      // If the student is skipping a UWSA via the inline button, also dismiss
+      // the nudge banner so it doesn't reappear.
+      const dismissNudge = (testId === 'uwsa1' || testId === 'uwsa2') ? true : !!profile.skipUwsaNudgeDismissed;
+      const newProfile = {
+        ...profile,
+        skippedAssessmentIds: newSkipped,
+        scheduledAssessmentOverrides: newOverrides,
+        skipUwsaNudgeDismissed: dismissNudge,
+      };
+      setProfile(newProfile);
+      await api.profile.save(newProfile);
+      regeneratePlanFromAssessments(assessments, newProfile);
+      const removed = skippingExam.test.name;
+      setSkippingExam(null);
+      setAssessmentActionMsg(`${removed} removed from your schedule. Those days will be used for weak-point work.`);
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to skip exam: ' + (err.message || 'Please try again.'));
+    } finally {
+      setSkipSaving(false);
+    }
+  };
+
+  // addBackSkippedExam: remove an ID from the skip array (no confirm — benign).
+  const addBackSkippedExam = async (testId) => {
+    if (!testId) return;
+    const currentSkipped = Array.isArray(profile.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+    if (!currentSkipped.includes(testId)) return;
+    setSkipSaving(true);
+    try {
+      const newSkipped = currentSkipped.filter(id => id !== testId);
+      const newProfile = { ...profile, skippedAssessmentIds: newSkipped };
+      setProfile(newProfile);
+      await api.profile.save(newProfile);
+      regeneratePlanFromAssessments(assessments, newProfile);
+      const test = PRACTICE_TESTS.find(t => t.id === testId);
+      setAssessmentActionMsg(`${test?.name || 'Exam'} added back to your schedule.`);
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to add exam back: ' + (err.message || 'Please try again.'));
+    } finally {
+      setSkipSaving(false);
+    }
+  };
+
+  // First-time-taker nudge actions
+  const dismissUwsaNudge = async () => {
+    if (profile.skipUwsaNudgeDismissed) return;
+    const newProfile = { ...profile, skipUwsaNudgeDismissed: true };
+    setProfile(newProfile);
+    try { await api.profile.save(newProfile); } catch { /* persist failures are non-fatal */ }
+  };
+
+  const skipBothUwsasFromNudge = async () => {
+    setSkipSaving(true);
+    try {
+      const currentSkipped = Array.isArray(profile.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+      const newSkipped = Array.from(new Set([...currentSkipped, 'uwsa1', 'uwsa2']));
+      const newOverrides = { ...(profile.scheduledAssessmentOverrides || {}) };
+      delete newOverrides.uwsa1;
+      delete newOverrides.uwsa2;
+      const newProfile = {
+        ...profile,
+        skippedAssessmentIds: newSkipped,
+        scheduledAssessmentOverrides: newOverrides,
+        skipUwsaNudgeDismissed: true,
+      };
+      setProfile(newProfile);
+      await api.profile.save(newProfile);
+      regeneratePlanFromAssessments(assessments, newProfile);
+      setAssessmentActionMsg('UWSAs removed from your schedule. Those days will be used for weak-point work.');
+      setTimeout(() => setAssessmentActionMsg(''), 5000);
+    } catch (err) {
+      setAssessmentActionMsg('Failed to skip UWSAs: ' + (err.message || 'Please try again.'));
+    } finally {
+      setSkipSaving(false);
     }
   };
 
@@ -3354,10 +3472,16 @@ export default function StudyPlanner({ onShowTerms }) {
                       return <span style={{ ...S.tag, background: '#8a857e18', color: '#8a857e', fontSize: 10 }}>🔒 locked</span>;
                     }
                     return (
-                      <button onClick={() => openRescheduleExam(item)} title="Reschedule"
-                        style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
-                        📅 Reschedule
-                      </button>
+                      <>
+                        <button onClick={() => openRescheduleExam(item)} title="Reschedule"
+                          style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                          📅 Reschedule
+                        </button>
+                        <button onClick={() => openSkipExam(item)} title="Remove from schedule"
+                          style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                          ❌ Skip
+                        </button>
+                      </>
                     );
                   })()}
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
@@ -3569,6 +3693,32 @@ export default function StudyPlanner({ onShowTerms }) {
           {plan.timelineMode === 'triage' && <span style={{ color: '#c0392b', fontWeight: 600 }}> · ⚠ Triage mode</span>}
         </div>
 
+        {/* ── First-time-taker UWSA nudge banner ── */}
+        {(() => {
+          const takenCount = (profile?.takenAssessments || []).length;
+          const skippedIds = Array.isArray(profile?.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+          const uwsasStillScheduled = !(skippedIds.includes('uwsa1') && skippedIds.includes('uwsa2'));
+          const shouldShow = takenCount === 0 && uwsasStillScheduled && !profile?.skipUwsaNudgeDismissed;
+          if (!shouldShow) return null;
+          return (
+            <div style={{ background: '#fef9e7', border: '1px solid #f0d97a', borderRadius: 10, padding: '12px 14px', marginBottom: 10, fontFamily: S.f }}>
+              <div style={{ fontSize: 13, color: '#7a5c00', lineHeight: 1.5 }}>
+                💡 <strong>First time taking Step 1?</strong> UWSAs aren't essential — most students get the strongest signal from NBMEs 26-33 and the Free 120. Skipping them frees up days to attack weak topics.
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <button onClick={skipBothUwsasFromNudge} disabled={skipSaving}
+                  style={{ padding: '6px 12px', fontSize: 12, background: '#1a1816', color: '#fff', border: 'none', borderRadius: 8, cursor: skipSaving ? 'default' : 'pointer', fontFamily: S.f, opacity: skipSaving ? 0.6 : 1 }}>
+                  Skip both UWSAs
+                </button>
+                <button onClick={dismissUwsaNudge} disabled={skipSaving}
+                  style={{ padding: '6px 12px', fontSize: 12, background: '#fff', color: '#6b6560', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', fontFamily: S.f }}>
+                  Keep them, dismiss
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── Assessment schedule collapsible ── */}
         {plan.assessmentSchedule?.length > 0 && (
           <div style={{ borderBottom: '1px solid #f0ece6', marginBottom: 4 }}>
@@ -3580,6 +3730,31 @@ export default function StudyPlanner({ onShowTerms }) {
               const psDate = latestPlanMeta?.createdAt ? (() => { const d = new Date(latestPlanMeta.createdAt); d.setHours(0,0,0,0); return d; })() : null;
               return (
                 <div style={{ paddingBottom: 10 }}>
+                  {(() => {
+                    const skippedIds = Array.isArray(profile?.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+                    if (skippedIds.length === 0) return null;
+                    return (
+                      <div style={{ padding: '8px 10px', marginBottom: 8, background: '#f7f3ee', border: '1px dashed #d8d2ca', borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', marginBottom: 6, fontFamily: S.f }}>
+                          Skipped exams
+                        </div>
+                        {skippedIds.map(id => {
+                          const test = PRACTICE_TESTS.find(t => t.id === id);
+                          if (!test) return null;
+                          return (
+                            <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                              <span style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, flex: 1 }}>{test.name} — skipped</span>
+                              <button onClick={() => addBackSkippedExam(id)} disabled={skipSaving}
+                                title="Add back to schedule"
+                                style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: skipSaving ? 'default' : 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f, opacity: skipSaving ? 0.6 : 1 }}>
+                                ↩ Add back
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   {plan.assessmentSchedule.map((a, i) => {
                     const dayDate = psDate ? new Date(psDate.getTime() + (a.day - 1) * 86400000) : null;
                     const dateStr = dayDate ? dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Day ${a.day}`;
@@ -3596,11 +3771,18 @@ export default function StudyPlanner({ onShowTerms }) {
                           <span style={{ ...S.tag, background: '#c0392b12', color: '#c0392b', fontSize: 10 }}>{a.label || 'NBME'}</span>
                           {isLocked
                             ? <span style={{ ...S.tag, background: '#8a857e18', color: '#8a857e', fontSize: 10 }}>🔒 locked</span>
-                            : <button onClick={(e) => { e.stopPropagation(); openRescheduleExam(a); }}
-                                title="Reschedule"
-                                style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
-                                📅 Reschedule
-                              </button>}
+                            : <>
+                                <button onClick={(e) => { e.stopPropagation(); openRescheduleExam(a); }}
+                                  title="Reschedule"
+                                  style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                                  📅 Reschedule
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); openSkipExam(a); }}
+                                  title="Remove from schedule"
+                                  style={{ padding: '3px 9px', fontSize: 11, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, fontFamily: S.f }}>
+                                  ❌ Skip
+                                </button>
+                              </>}
                         </div>
                         {isExpanded && a.reason && (
                           <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, marginTop: 4, lineHeight: 1.5 }}>{a.reason}</div>
@@ -3974,6 +4156,32 @@ export default function StudyPlanner({ onShowTerms }) {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Skip upcoming exam modal ── */}
+      {skippingExam && (() => {
+        const isNbme = skippingExam.test?.type === 'nbme';
+        const name = skippingExam.test?.name || 'this exam';
+        const copy = isNbme
+          ? `Remove ${name} from your schedule? NBMEs are the most predictive practice exam for Step 1 — most students should keep all eight. Are you sure?`
+          : `Remove ${name} from your schedule? Your study plan will use those days to keep working on weak points. You can add it back any time.`;
+        const confirmLabel = isNbme ? 'Skip NBME anyway' : 'Skip exam';
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>❌ Skip {name}</div>
+              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 16 }}>{skippingExam.label || 'Upcoming practice exam'}</div>
+              <div style={{ fontSize: 13, color: '#4a4540', lineHeight: 1.55, marginBottom: 22 }}>{copy}</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setSkippingExam(null)} disabled={skipSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={confirmSkipExam} disabled={skipSaving}
+                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: skipSaving ? 0.5 : 1 }}>
+                  {skipSaving ? 'Saving…' : confirmLabel}
+                </button>
+              </div>
             </div>
           </div>
         );
