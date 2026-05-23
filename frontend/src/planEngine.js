@@ -1071,7 +1071,10 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   let focusCursor = 0, maintCursor = 0, studyDayNum = 0;
   // Tracks how many times each category has been used as focusTopic,
   // so getTopSubTopics can advance through the subtopic list on repeat days.
-  const subTopicCursors = {};
+  // Seeded from options.subTopicCursors so variety persists across plan regens
+  // (e.g. after a new NBME score is entered) — a still-weak system keeps
+  // advancing through its subtopic list instead of restarting at the top.
+  const subTopicCursors = { ...(options.subTopicCursors || {}) };
   let weeks = [];
   let currentWeek = { week: 1, days: [], phase: "", focusTopics: [] };
 
@@ -1561,5 +1564,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const nbmeDays = assessmentSchedule.length;
 
   return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay,
-    nextAssessment: nextAssessmentItem ? { day: nextAssessmentDay, test: nextAssessmentItem.test, label: nextAssessmentItem.label } : null };
+    nextAssessment: nextAssessmentItem ? { day: nextAssessmentDay, test: nextAssessmentItem.test, label: nextAssessmentItem.label } : null,
+    subTopicCursors };
 }

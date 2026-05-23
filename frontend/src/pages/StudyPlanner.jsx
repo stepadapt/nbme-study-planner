@@ -483,7 +483,7 @@ export default function StudyPlanner({ onShowTerms }) {
         const recoveryStartDate = parseDbDate(firstEntered.createdAt);
         try {
           const recoveredPlan = generatePlan(profileForPlan, regenScores, regenStickingPoints,
-            { planStartDate: recoveryStartDate });
+            { planStartDate: recoveryStartDate, subTopicCursors: plan?.subTopicCursors || {} });
           const recoveryCreatedAt = recoveryStartDate.toISOString();
           api.plans.update(latestPlanMeta.id, {
             planData: recoveredPlan,
@@ -518,7 +518,7 @@ export default function StudyPlanner({ onShowTerms }) {
       const regeneratedPlan = assessments.length === 0
         ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
         : generatePlan(profileForPlan, regenScores, regenStickingPoints,
-            { planStartDate: originalStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [] });
+            { planStartDate: originalStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [], subTopicCursors: plan?.subTopicCursors || {} });
 
       // PUT (not POST) — updates plan_data + engine_version, preserves created_at
       api.plans.update(latestPlanMeta.id, {
@@ -727,6 +727,7 @@ export default function StudyPlanner({ onShowTerms }) {
       : generatePlan(profileForPlan, newScores, stickingPoints, {
         ...(existingStartDate ? { planStartDate: existingStartDate } : {}),
         weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [],
+        subTopicCursors: plan?.subTopicCursors || {},
       });
     setPlan(generatedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
@@ -2835,7 +2836,7 @@ export default function StudyPlanner({ onShowTerms }) {
         return { planStartDate: d };
       })() : {};
       const weakFallback = weakSystems.length > 0 ? weakSystems : (latestPlanMeta?.firstTimerWeakSystems || []);
-      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints, { ...existingStartOpt, weakSystemsFallback: weakFallback });
+      const generatedPlan = generatePlan(profileForPlan, scores, stickingPoints, { ...existingStartOpt, weakSystemsFallback: weakFallback, subTopicCursors: plan?.subTopicCursors || {} });
       setPlan(generatedPlan);
       setExpandedWeek(0);
       let savedAssessment;
@@ -3855,7 +3856,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
         const newPlan = assessments.length === 0
           ? generateFirstTimerPlan(newProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
-          : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [] });
+          : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [], subTopicCursors: plan?.subTopicCursors || {} });
 
         await api.plans.update(latestPlanMeta.id, {
           planData: newPlan,
