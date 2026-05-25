@@ -1014,14 +1014,14 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
   // Practice step — always last, references Block 3
   const practiceStep = {
     type: 'practice', emoji: '🎯',
-    label: `40 Qs — ${category}, timed`,
-    action: 'PRACTICE', resource: 'UWorld', topic: `40 Qs — ${category}, timed`,
-    timeLabel: '~2–2.5 hrs',
+    label: `20 Qs — ${category}, timed`,
+    action: 'PRACTICE', resource: 'UWorld', topic: `20 Qs — ${category}, timed`,
+    timeLabel: '~1.25 hrs',
     focus: 'Review every question — annotate First Aid for wrong answers',
     skip: null,
     instruction: gapType === 'knowledge'
-      ? 'Now apply what you learned — 40 timed Qs on this system. Read every explanation thoroughly.'
-      : '40 timed Qs on this system. When you miss one, go back immediately — annotate First Aid with the clinical reasoning.',
+      ? 'Now apply what you learned — 20 timed Qs on this system. Read every explanation thoroughly.'
+      : '20 timed Qs on this system. When you miss one, go back immediately — annotate First Aid with the clinical reasoning.',
     links: [],
   };
 

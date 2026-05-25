@@ -193,7 +193,7 @@ function getICSEventDescription(block) {
       const subs = (block.highYield || []).slice(0,3).map(h => h.topic).join(', ');
       return subs ? `Focus: ${subs}` : 'See StepAdapt app for details.';
     }
-    case 'questions-focus': return '40 UWorld Qs, timed, test mode. Review every question after.';
+    case 'questions-focus': return '20 UWorld Qs, timed, test mode. Review every question after.';
     case 'questions-random': return 'Random, all systems, timed. Exam simulation.';
     case 'end-review': return 'Review wrong answers from today\'s random blocks.';
     case 'nbme': return 'Full-length, timed, test conditions. No interruptions.';
@@ -2090,7 +2090,7 @@ export default function StudyPlanner({ onShowTerms }) {
           <div style={{ ...S.card, textAlign: "left", marginBottom: 24 }}>
             <div style={{ display: "grid", gap: 20 }}>
               {[
-                { icon: "🎯", title: "Questions are the backbone", desc: "2-3 blocks of 40 questions daily, with thorough review of every single one" },
+                { icon: "🎯", title: "Questions are the backbone", desc: "Multiple blocks of 20 questions daily (matches the real Step 1 block size), with thorough review of every single one" },
                 { icon: "🔥", title: "Focus blocks attack your weakest high-yield topics", desc: "System-specific question blocks where your score can jump the most" },
                 { icon: "🔄", title: "Maintenance blocks simulate test day", desc: "Random mixed questions across all systems — trains context-switching and prevents decay" },
                 { icon: "📚", title: "Content review is reactive, not passive", desc: "You don't re-read chapters — you look up what you got wrong in questions" },

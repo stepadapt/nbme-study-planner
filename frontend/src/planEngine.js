@@ -186,7 +186,7 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
   if (isUworld) {
     return hasCrossPharm
       ? `UWorld filter: System → "${category}". For the drug sub-topics, also run a separate Pharmacology filter session to isolate those Qs.`
-      : `UWorld filter: System → "${category}" to focus all 40 Qs on this system.`;
+      : `UWorld filter: System → "${category}" to focus all 20 Qs on this system.`;
   }
   if (isAmboss) {
     return hasCrossPharm
@@ -643,18 +643,20 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
 // ── Study-day time allocation by hours-per-day ────────────────────────────
 // Returns fixed block durations for the 5-block daily structure.
 // All numbers in hours. Sums match the student's declared hours/day.
+// 20-Q UWorld blocks (matches the real USMLE Step 1 block size).
+// Targeted block: 30 min Qs + 45 min review = 1.25 hr. Random block: 30 min Qs + 10 min review ≈ 0.67 hr.
 function getStudyDayParams(hrs, hasAnki) {
   const b1Hrs = hasAnki ? (hrs >= 8 ? 1.0 : 0.75) : 0.5;
   // ≤3 hrs (short evening/morning): 20 targeted + 20 random, no lunch
-  if (hrs <= 3) return { b1Hrs: hasAnki ? 0.5 : 0.5,  b2Hrs: 0.33, b3QHrs: 0.5,  b3ReviewHrs: 0.33, lunchHrs: 0,    numRandom: 1, b5Hrs: 0.17, shortDay: true,  shortQs: 20 };
-  // 4–5 hrs (medium day): 40 targeted + 40 random, no lunch
-  if (hrs <= 5) return { b1Hrs: hasAnki ? 0.75 : 0.75, b2Hrs: 0.75, b3QHrs: 0.75, b3ReviewHrs: 1.0,  lunchHrs: 0,    numRandom: 1, b5Hrs: 0.25, shortDay: false, shortQs: null };
-  // 10+ h/day: 4 random blocks
-  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0, numRandom: 4, b5Hrs: 0.75, shortDay: false, shortQs: null };
-  // 8–9 h/day : 3 random blocks
-  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 1.0, b3ReviewHrs: 1.5, lunchHrs: 1.0, numRandom: 3, b5Hrs: 0.75, shortDay: false, shortQs: null };
-  // 6–7 h/day : 2 random blocks
-  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.75, b3ReviewHrs: 1.25, lunchHrs: 0.75, numRandom: 2, b5Hrs: 0.5, shortDay: false, shortQs: null };
+  if (hrs <= 3) return { b1Hrs: hasAnki ? 0.5 : 0.5,  b2Hrs: 0.33, b3QHrs: 0.5, b3ReviewHrs: 0.75, lunchHrs: 0,    numRandom: 1, b5Hrs: 0.17, shortDay: true,  shortQs: 20 };
+  // 4–5 hrs (medium day): 1 targeted + 2 random, no lunch
+  if (hrs <= 5) return { b1Hrs: hasAnki ? 0.75 : 0.75, b2Hrs: 0.75, b3QHrs: 0.5, b3ReviewHrs: 0.75, lunchHrs: 0,    numRandom: 2, b5Hrs: 0.25, shortDay: false, shortQs: null };
+  // 10+ h/day: 8 random blocks
+  if (hrs >= 10) return { b1Hrs, b2Hrs: 1.5,  b3QHrs: 0.5, b3ReviewHrs: 0.75, lunchHrs: 1.0, numRandom: 8, b5Hrs: 0.75, shortDay: false, shortQs: null };
+  // 8–9 h/day : 6 random blocks
+  if (hrs >= 8)  return { b1Hrs, b2Hrs: 1.25, b3QHrs: 0.5, b3ReviewHrs: 0.75, lunchHrs: 1.0, numRandom: 6, b5Hrs: 0.75, shortDay: false, shortQs: null };
+  // 6–7 h/day : 4 random blocks
+  return             { b1Hrs, b2Hrs: 1.0,  b3QHrs: 0.5, b3ReviewHrs: 0.75, lunchHrs: 0.75, numRandom: 4, b5Hrs: 0.5, shortDay: false, shortQs: null };
 }
 
 // ── Deck-aware helper functions ────────────────────────────────────────────
@@ -1151,12 +1153,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const topPriorities = priorities.filter(p => p.flagged || p.score <= 50);
   const midPriorities = priorities.filter(p => !p.flagged && p.score > 50 && p.score <= 70);
 
-  const qBlockSize = 40;
+  const qBlockSize = 20;
   // Anki block only if student has AnKing
   const ankiHrs = hasAnki ? Math.min(1, roundToQuarterHour(hrs * 0.12)) : 0;
 
-  const FOCUS_BLOCK_HRS = 2.5;   // 1h questions + 1.5h review
-  const RANDOM_BLOCK_HRS = 1.8;  // 1h questions + 0.8h review
+  const FOCUS_BLOCK_HRS = 1.25;  // 0.5h questions + 0.75h review
+  const RANDOM_BLOCK_HRS = 0.67; // 0.5h questions + ~0.17h review
   const MAX_CONTENT_HRS = 1.5;
 
   let focusCursor = 0, maintCursor = 0, studyDayNum = 0;
@@ -1285,22 +1287,21 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
         // Targeted questions — only for standard+ days (>5 hrs)
         if (reviewDayHrs > 5) {
-          const targetedQCount = reviewDayHrs <= 7 ? 20 : 40;
-          const targetedQHrs = reviewDayHrs <= 7 ? 1.25 : 2.0;
+          const targetedQCount = 20;
           reviewBlocks.push({
             type: "questions-focus",
             label: `${targetedQCount} Qs: ${weakSystemLabel}`,
             tasks: [
-              { resource: reviewQBank, activity: `${targetedQCount} Qs — filtered to ${weakSystemLabel} (weakest from ${testName}). Timed, test mode. First test of whether the morning's review actually stuck.`, hours: targetedQCount <= 20 ? 0.75 : 1.25 },
-              { resource: "Self-review", activity: `Thorough review of every wrong answer. Annotate the pattern, not the fact.`, hours: targetedQCount <= 20 ? 0.5 : 0.75 },
+              { resource: reviewQBank, activity: `${targetedQCount} Qs — filtered to ${weakSystemLabel} (weakest from ${testName}). Timed, test mode. First test of whether the morning's review actually stuck.`, hours: 0.5 },
+              { resource: "Self-review", activity: `Thorough review of every wrong answer. Annotate the pattern, not the fact.`, hours: 0.75 },
             ],
           });
 
           // Random maintenance block only for heavy days (>7 hrs)
           if (reviewDayHrs > 7) {
             reviewBlocks.push({ type: "questions-random", label: "Random maintenance: all systems", tasks: [
-              { resource: reviewQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage.`, hours: 0.75 },
-              { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max).", hours: 0.25 },
+              { resource: reviewQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage.`, hours: 0.5 },
+              { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max).", hours: 0.17 },
             ]});
           }
         }
@@ -1386,13 +1387,13 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
         { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.5 },
       ]});
-      // 2-3 random blocks based on available hours (targeting 80–120 Qs)
+      // 4-6 random blocks based on available hours (targeting 80–120 Qs at 20 Qs/block)
       const lockdownHrsAvail = lockdownDayHrs - lockdownAnkiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
-      const lockdownRandomBlocks = Math.max(2, Math.min(3, Math.round(lockdownHrsAvail / 1.5)));
+      const lockdownRandomBlocks = Math.max(4, Math.min(6, Math.round(lockdownHrsAvail / 0.67)));
       for (let rb = 0; rb < lockdownRandomBlocks; rb++) {
         lockdownBlocks.push({ type: "questions-random", label: `Random block ${rb + 1} — all systems`, tasks: [
-          { resource: examQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Simulate exam-day pacing.`, hours: 1.0 },
-          { resource: "Self-review", activity: "Wrong answers only — 2 min max per concept, then move on. Maintenance mode: no deep dives.", hours: 0.5 },
+          { resource: examQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Simulate exam-day pacing.`, hours: 0.5 },
+          { resource: "Self-review", activity: "Wrong answers only — 2 min max per concept, then move on. Maintenance mode: no deep dives.", hours: 0.17 },
         ]});
       }
       lockdownBlocks.push({ type: "rest", label: "Finish by 3 PM — rest the remainder", tasks: [
@@ -1481,8 +1482,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         ],
       });
       blocks.push({ type: "questions-random", label: "Random block: all systems", tasks: [
-        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Recovery day — keep the habit, don't push.`, hours: 0.75 },
-        { resource: "Self-review", activity: "Wrong answers only — quick flag and move on. Save energy for tomorrow.", hours: 0.25 },
+        { resource: primaryQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Recovery day — keep the habit, don't push.`, hours: 0.5 },
+        { resource: "Self-review", activity: "Wrong answers only — quick flag and move on. Save energy for tomorrow.", hours: 0.17 },
       ]});
     } else {
       // ── STANDARD STUDY DAY: Evidence-based 5-block sequence ──────────────
@@ -1545,7 +1546,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       // BLOCK 3 — Targeted question block on the SAME system as Block 2
       // Immediately tests whether the morning's content review stuck.
-      const effectiveQs = params.shortQs ?? qBlockSize; // 20 on short days, 40 on full days
+      const effectiveQs = params.shortQs ?? qBlockSize; // always 20 (matches real-exam block size)
       const prioritizeStr = top3Short.length > 0 ? `Prioritize: ${top3Short.join(", ")}` : "";
       blocks.push({
         type: "questions-focus",
@@ -1570,14 +1571,14 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       }
 
       // BLOCK 4 — Mixed random timed question blocks (afternoon execution mode)
-      // Two or three blocks of 40 Qs each (or 20 on short days). ALL systems, RANDOM.
+      // Multiple blocks of 20 Qs each — matches real-exam block size. ALL systems, RANDOM.
       for (let rb = 0; rb < params.numRandom; rb++) {
         const blockLabel = params.numRandom === 1
           ? "Random block: all systems"
           : `Random block ${rb + 1} of ${params.numRandom}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
-          { resource: primaryQBank, activity: `${effectiveQs} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: params.shortDay ? 0.5 : 0.75 },
-          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.25 },
+          { resource: primaryQBank, activity: `${effectiveQs} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: 0.5 },
+          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.17 },
         ]});
       }
 
@@ -1604,7 +1605,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       dayLabel: getDayLabel(availHrs, sched.dayStartTime),
       blocks,
       totalQuestions: isLight
-        ? (20 + qBlockSize)  // light day: 20 targeted + 40 random
+        ? (20 + qBlockSize)  // light day: 20 targeted + 20 random = 40
         : params2.shortDay
           ? ((params2.shortQs ?? 20) * 2)  // short day: 20 targeted + 20 random = 40
           : blocks.reduce((sum, b) => sum + (b.type.includes("questions") ? qBlockSize : 0), 0),
@@ -1624,8 +1625,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         rd.dayType = 'study';
         if (!rd.blocks || rd.blocks.length === 0) {
           rd.blocks = [{ type: "questions-random", label: "Random block: all systems", tasks: [
-            { resource: "Question bank", activity: `${qBlockSize} Qs — RANDOM, all systems, timed.`, hours: 0.75 },
-            { resource: "Self-review", activity: "Review wrong answers.", hours: 0.25 },
+            { resource: "Question bank", activity: `${qBlockSize} Qs — RANDOM, all systems, timed.`, hours: 0.5 },
+            { resource: "Self-review", activity: "Review wrong answers.", hours: 0.17 },
           ]}];
           rd.totalQuestions = qBlockSize;
         }
