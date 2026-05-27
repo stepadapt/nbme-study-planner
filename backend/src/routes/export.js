@@ -20,7 +20,7 @@ function getUserPlanData(userId) {
   const planStartDate = new Date(planRow.created_at);
 
   const assessmentRows = db.prepare(`
-    SELECT form_name, scores, sticking_points, gap_types, created_at
+    SELECT form_name, scores, sticking_points, created_at
     FROM assessments WHERE user_id = ? ORDER BY created_at ASC
   `).all(userId);
 

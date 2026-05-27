@@ -814,16 +814,15 @@ function getWeakestDisciplineInSubTopics(subTopics, scores) {
 }
 
 // Builds a discipline-aware Block 2 content review activity string.
-// discipline: string|null, system: string, subLabel: string, gapType: string,
+// discipline: string|null, system: string, subLabel: string,
 // resources: string[], b2Hrs: number, studyDayNum: number
-function getDisciplineAwareActivity(discipline, system, subLabel, gapType, resources, b2Hrs) {
+function getDisciplineAwareActivity(discipline, system, subLabel, resources, b2Hrs) {
   // Returns a compact summary line — the detailed step-by-step instructions live in
   // the ContentSequencePanel (rendered from block.contentSequence), not in this text.
-  const gapLabel = gapType === 'knowledge' ? 'Knowledge gap' : 'Application gap';
   if (subLabel) {
-    return `Sub-topics: ${subLabel}  ·  ${gapLabel}`;
+    return `Sub-topics: ${subLabel}`;
   }
-  return `${system}  ·  ${gapLabel}`;
+  return system;
 }
 
 // ── Per-day schedule helpers ──────────────────────────────────────────────
@@ -929,8 +928,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const weakness = Math.max(0, 100 - score);
     const yld = weights[cat] || 5;
     const flagged = effectiveStickingPoints.includes(cat);
-    // Auto-derive gap type: knowledge gap when score < 50, application gap otherwise
-    const gapType = score < 50 ? "knowledge" : "application";
     // Discipline crossover bonus: amplify system priority when the student is
     // also weak (< 60%) in the disciplines that dominate that system.
     // This ensures Cardiovascular + weak Pharmacology outranks GI + strong Pathology.
@@ -942,7 +939,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       }
     }
     const compositeScore = ((weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0)) * crossoverBonus;
-    priorities.push({ category: cat, score, weakness, yield: yld, flagged, compositeScore, gapType });
+    priorities.push({ category: cat, score, weakness, yield: yld, flagged, compositeScore });
   }
   priorities.sort((a, b) => b.compositeScore - a.compositeScore);
 
@@ -1462,7 +1459,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       // Block 1 (retention) → Block 2 (content, morning) → Block 3 (targeted Qs, same system) →
       // Lunch → Block 4 (random Qs, afternoon) → Block 5 (end-of-day review)
       const params = getStudyDayParams(availHrs, hasAnki);
-      const isKG = focusTopic?.gapType === "knowledge";
       const topSubs = focusTopic ? getTopSubTopics(focusTopic.category, 3, profile.subTopicProgress || {}, subTopicOffset) : [];
       const focusSubTopics = focusTopic ? getTopSubTopics(focusTopic.category, 5, profile.subTopicProgress || {}, subTopicOffset) : [];
       const top3Short = topSubs.map(s => s.topic.split("(")[0].trim());
@@ -1473,7 +1469,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       let b3ReviewHrs = params.b3ReviewHrs; // may grow if content review is shorter than params expected
       if (focusTopic) {
         // Build content sequence first — duration is computed from its steps, not hardcoded
-        const contentSeqFull = getContentSequence(focusTopic.category, focusTopic.gapType, profile.resources || [], topSubs);
+        const contentSeqFull = getContentSequence(focusTopic.category, profile.resources || [], topSubs);
         // Short days (≤3 hrs): truncate to first WATCH step only — no READ step
         if (params.shortDay && contentSeqFull?.sequence?.length > 1) {
           contentSeqFull.sequence = [contentSeqFull.sequence[0]];
@@ -1486,10 +1482,10 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         const seqMins = 30 + firstAidMins;
         const b2Hrs = seqMins > 0
           ? Math.ceil(seqMins / 5) * 5 / 60   // round up to nearest 5 min → hours
-          : (isKG ? 0.75 : 0.5);               // fallback if sequence is somehow empty
+          : 0.75;                              // fallback if sequence is somehow empty
         // Redistribute freed time → targeted Q review (skip on short days to preserve exact durations)
         if (!params.shortDay) {
-          const prevB2Hrs = isKG ? params.b2Hrs : Math.min(params.b2Hrs, 0.75);
+          const prevB2Hrs = params.b2Hrs;
           b3ReviewHrs = roundToQuarterHour(params.b3ReviewHrs + Math.max(0, prevB2Hrs - b2Hrs));
         }
         const subLabel = top3Short.length > 0 ? top3Short.slice(0, 3).join(", ") : focusTopic.category;
@@ -1500,7 +1496,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           weakestDisc,
           focusTopic.category,
           subLabel,
-          focusTopic.gapType,
           profile.resources || [],
           b2Hrs,
         );
@@ -1572,7 +1567,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const params2 = getStudyDayParams(availHrs, hasAnki); // re-fetch to get shortDay/shortQs
     currentWeek.days.push({
       calendarDay: sched.calendarDay, dayType: sched.type, focusTopic: focusTopic?.category,
-      focusGapType: focusTopic?.gapType, maintainTopics: [maint1, maint2].filter(Boolean).map(t => t.category),
+      maintainTopics: [maint1, maint2].filter(Boolean).map(t => t.category),
       startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
       dayLabel: getDayLabel(availHrs, sched.dayStartTime),
       blocks,

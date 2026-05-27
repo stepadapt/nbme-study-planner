@@ -147,7 +147,7 @@ router.post('/chat', async (req, res) => {
   const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(userId);
   const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(userId);
   const assessmentRows = db.prepare(`
-    SELECT id, form_name, scores, sticking_points, gap_types, created_at
+    SELECT id, form_name, scores, sticking_points, created_at
     FROM assessments
     WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL)
     ORDER BY created_at ASC
@@ -259,7 +259,7 @@ Return ONLY valid JSON (no markdown, no explanation) matching this exact schema:
     }
   },
   "priority_summary": {
-    "weak_systems": [{"system": "...", "score": 0, "gap_type": "knowledge", "top_sub_topics": ["..."]}],
+    "weak_systems": [{"system": "...", "score": 0, "top_sub_topics": ["..."]}],
     "top_5_opportunities": [{"system": "...", "sub_topic": "...", "yield": 10, "estimated_point_gain": "2-3 points"}],
     "sticky_weaknesses": []
   },
@@ -271,8 +271,7 @@ Rules:
 - "day_N" keys must match the calendarDay numbers from the base plan
 - Pathoma: ONLY for Pathology content — never for Physiology, Pharmacology, Anatomy, Biochemistry
 - Sketchy: ONLY for Pharmacology and Microbiology
-- Ninja Nerd: knowledge gaps (deep conceptual understanding, physiology, pathophysiology)
-- Dirty Medicine: application gaps (quick mnemonics, recall hooks, memorization)
+- Ninja Nerd: deep physiology and pathophysiology framework videos. Dirty Medicine: quick mnemonics and recall hooks for memorization-heavy topics. Recommend whichever fits the student's stated learning style and the topic.
 - youtube_search_query: include ONLY for YouTube resources (Ninja Nerd, Dirty Medicine, Armando Hasudungan, Randy Neil MD, HY Guru). OMIT for Pathoma, Sketchy, First Aid.
 - NEVER recommend watching an entire video or chapter — always specify which sub-topic and for how long
 - strategic_insight must reference the student's actual scores and trajectory — no generic advice

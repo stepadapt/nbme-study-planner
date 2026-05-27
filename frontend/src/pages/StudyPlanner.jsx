@@ -37,8 +37,7 @@ function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
 function ContentSequencePanel({ contentSequence, compact = false }) {
   if (!contentSequence || !contentSequence.sequence || contentSequence.sequence.length === 0) return null;
 
-  const { gapType, sequence } = contentSequence;
-  const tagLabel = gapType === 'knowledge' ? 'Knowledge gap — build the framework first' : 'Application gap — recall-first approach';
+  const { sequence } = contentSequence;
 
   // Map step action/type to display color
   const actionColor = (step) => {
@@ -50,9 +49,6 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
 
   return (
     <div style={{ marginTop: compact ? 8 : 10, paddingTop: compact ? 7 : 9, borderTop: '1px solid #f0ebe3' }}>
-      <div style={{ fontSize: sz.body, color: '#8a857e', fontFamily: 'Georgia, "Times New Roman", serif', marginBottom: compact ? 6 : 8, fontStyle: 'italic' }}>
-        📋 {tagLabel}
-      </div>
       {sequence.map((step, si) => {
         const act = step.action || (step.type === 'video' ? 'WATCH' : step.type === 'read' ? 'READ' : step.type === 'practice' ? 'PRACTICE' : 'REVIEW');
         const resource = step.resource || step.label;
@@ -3813,21 +3809,20 @@ export default function StudyPlanner({ onShowTerms }) {
                 {plan.priorities.slice(0, 12).map((p, i) => {
                   const isExpanded = expandedPriorityIdx === i;
                   const subs = getTopSubTopics(p.category, 4);
-                  const gapColor = p.gapType === 'critical' ? '#c0392b' : p.gapType === 'moderate' ? '#D85A30' : BRAND.green;
+                  const accent = BRAND.green;
                   return (
                     <div key={i}
-                      style={{ padding: '6px 0 6px 12px', borderLeft: `2.5px solid ${gapColor}40`, marginBottom: 3, cursor: 'pointer' }}
+                      style={{ padding: '6px 0 6px 12px', borderLeft: `2.5px solid ${accent}40`, marginBottom: 3, cursor: 'pointer' }}
                       onClick={() => setExpandedPriorityIdx(isExpanded ? null : i)}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#8a857e', fontFamily: S.f, minWidth: 20 }}>{i + 1}.</span>
                         <span style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816', flex: 1 }}>{p.category}</span>
-                        {p.gapType && <span style={{ ...S.tag, background: `${gapColor}12`, color: gapColor, fontSize: 10 }}>{p.gapType}</span>}
                         <span style={{ fontSize: 11, color: '#aaa9a6' }}>{isExpanded ? '▾' : '▸'}</span>
                       </div>
                       {isExpanded && subs.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, paddingRight: 8 }}>
                           {subs.map(s => (
-                            <span key={s.topic} style={{ ...S.tag, background: `${gapColor}10`, color: gapColor, fontSize: 10 }}>{s.topic}</span>
+                            <span key={s.topic} style={{ ...S.tag, background: `${accent}10`, color: accent, fontSize: 10 }}>{s.topic}</span>
                           ))}
                         </div>
                       )}

@@ -9,7 +9,7 @@ router.use(requireAuth);
 // Ordered by taken_at when available (historical imports), otherwise created_at
 router.get('/', (req, res) => {
   const rows = db.prepare(`
-    SELECT id, form_name, scores, sticking_points, gap_types, created_at, taken_at
+    SELECT id, form_name, scores, sticking_points, created_at, taken_at
     FROM assessments
     WHERE user_id = ? AND (is_archived = 0 OR is_archived IS NULL)
     ORDER BY COALESCE(taken_at, created_at) ASC
@@ -23,7 +23,6 @@ router.get('/', (req, res) => {
       date: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       scores: JSON.parse(row.scores),
       stickingPoints: JSON.parse(row.sticking_points),
-      gapTypes: JSON.parse(row.gap_types),
       createdAt: row.created_at,
       takenAt: row.taken_at || null,
     };
@@ -36,7 +35,7 @@ router.get('/', (req, res) => {
 // takenAt (optional ISO date string): the actual date the exam was taken —
 // used for historical imports where the exam was taken before app signup.
 router.post('/', (req, res) => {
-  const { formName, scores, stickingPoints, gapTypes, takenAt } = req.body;
+  const { formName, scores, stickingPoints, takenAt } = req.body;
   if (!scores || typeof scores !== 'object') {
     return res.status(400).json({ error: 'scores object required' });
   }
@@ -51,14 +50,13 @@ router.post('/', (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO assessments (user_id, form_name, scores, sticking_points, gap_types, taken_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO assessments (user_id, form_name, scores, sticking_points, taken_at)
+    VALUES (?, ?, ?, ?, ?)
   `).run(
     req.user.userId,
     formName || null,
     JSON.stringify(scores),
     JSON.stringify(stickingPoints || []),
-    JSON.stringify(gapTypes || {}),
     normalizedTakenAt
   );
 
@@ -71,7 +69,6 @@ router.post('/', (req, res) => {
       date: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       scores: JSON.parse(saved.scores),
       stickingPoints: JSON.parse(saved.sticking_points),
-      gapTypes: JSON.parse(saved.gap_types),
       createdAt: saved.created_at,
       takenAt: saved.taken_at || null,
     }
@@ -82,16 +79,16 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM assessments WHERE id = ? AND user_id = ?').get(req.params.id, req.user.userId);
   if (!row) return res.status(404).json({ error: 'Assessment not found' });
-  const { formName, scores, stickingPoints, gapTypes, takenAt } = req.body;
+  const { formName, scores, stickingPoints, takenAt } = req.body;
   if (!scores || typeof scores !== 'object') return res.status(400).json({ error: 'scores object required' });
   let normalizedTakenAt = null;
   if (takenAt) {
     const d = new Date(takenAt);
     if (!isNaN(d.getTime())) normalizedTakenAt = d.toISOString().split('T')[0];
   }
-  db.prepare(`UPDATE assessments SET form_name=?, scores=?, sticking_points=?, gap_types=?, taken_at=? WHERE id=?`).run(
+  db.prepare(`UPDATE assessments SET form_name=?, scores=?, sticking_points=?, taken_at=? WHERE id=?`).run(
     formName || null, JSON.stringify(scores), JSON.stringify(stickingPoints || []),
-    JSON.stringify(gapTypes || {}), normalizedTakenAt, req.params.id
+    normalizedTakenAt, req.params.id
   );
   const saved = db.prepare('SELECT * FROM assessments WHERE id = ?').get(req.params.id);
   const effectiveDate = saved.taken_at || saved.created_at;
@@ -99,7 +96,7 @@ router.put('/:id', (req, res) => {
     id: saved.id, formName: saved.form_name,
     date: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
     scores: JSON.parse(saved.scores), stickingPoints: JSON.parse(saved.sticking_points),
-    gapTypes: JSON.parse(saved.gap_types), createdAt: saved.created_at, takenAt: saved.taken_at || null,
+    createdAt: saved.created_at, takenAt: saved.taken_at || null,
   }});
 });
 

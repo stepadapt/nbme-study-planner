@@ -1,7 +1,6 @@
 // ── Content Recommendation Engine ─────────────────────────────────────────
 // Maps NBME CBSSA categories → specific YouTube resources + study sequences.
-// Knowledge gap  (score < 50): Watch → Read → Practice  (40 / 30 / 50 min)
-// Application gap (score ≥ 50): Practice → Watch → Annotate  (50 / 25 / 25 min)
+// Sequence per weak topic: Watch → (optional 2nd Watch if 2+ sub-topics) → Read First Aid.
 
 export const ytLink = (query) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -876,17 +875,16 @@ function validateRecommendation(resource, category) {
 
 // ── Main export ───────────────────────────────────────────────────────────
 /**
- * Returns a structured study sequence for the given category and gap type.
+ * Returns a structured study sequence for the given category.
  *
  * @param {string}   category    - NBME CBSSA category name
- * @param {string}   gapType     - "knowledge" | "application"
  * @param {string[]} resources   - student's selected resource IDs (from profile.resources)
  * @param {Array}    subTopics   - top sub-topic objects [{ topic, yield }]
- * @returns {{ gapType, sequence: Array<Step> }}
+ * @returns {{ sequence: Array<Step> }}
  */
-export function getContentSequence(category, gapType, resources = [], subTopics = []) {
+export function getContentSequence(category, resources = [], subTopics = []) {
   const bucket = CONTENT_MAP[category];
-  if (!bucket) return { gapType, sequence: [] };
+  if (!bucket) return { sequence: [] };
 
   const hasPathoma  = resources.includes('pathoma')  && !!bucket.pathoma  && validateRecommendation('pathoma', category);
   const hasSketchy  = resources.includes('sketchy')  && !!bucket.sketchy  && validateRecommendation('sketchy', category);
@@ -908,7 +906,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
 
   // Build the primary video recommendation (Pathoma Ch.1-3 / Sketchy override first)
   let primaryVideoStep;
-  let secondaryVideoStep = null; // Second WATCH step for YouTube knowledge gaps with 2+ sub-topics
+  let secondaryVideoStep = null; // Second WATCH step for YouTube when 2+ sub-topics
   if (hasPathoma) {
     // Pathoma ONLY for Ch. 1-3 topics (cell injury, inflammation, neoplasia)
     const pathomaLabel = bucket.pathoma.label.replace('Pathoma — ', '');
@@ -916,7 +914,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       type: 'video', emoji: '🔬',
       label: bucket.pathoma.label,
       action: 'WATCH', resource: 'Pathoma', topic: pathomaLabel,
-      timeLabel: gapType === 'knowledge' ? '~25 min' : '~15 min',
+      timeLabel: '~25 min',
       focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : 'Cell injury, inflammation, neoplasia principles',
       skip: null,
       instruction: topSubNames.length > 0
@@ -933,7 +931,7 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       type: 'video', emoji: '🎨',
       label: topSubTopic ? `Sketchy ${sketchyType}: ${topSubTopic}` : bucket.sketchy.label,
       action: 'WATCH', resource: `Sketchy ${sketchyType}`, topic: topSubTopic || category,
-      timeLabel: gapType === 'knowledge' ? '~25 min' : '~15 min',
+      timeLabel: '~25 min',
       focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : 'Key scenes and mnemonics',
       skip: null,
       instruction: `Open Sketchy ${sketchyType}${topSubNames.length > 0 ? ` — scenes for: ${topSubNames.slice(0, 2).join(', ')}` : ''}. Build the memory palace as you watch. After finishing, close and draw the scene from memory to test encoding.`,
@@ -946,44 +944,32 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
       ? [...subTopicMatches, ...bucket.mainVideos].slice(0, 4)
       : bucket.mainVideos.slice(0, 4);
 
-    // Application gap → prefer Dirty Medicine (recall/mnemonics)
-    // Knowledge gap → prefer B&B or Physeo if student has them, then Ninja Nerd
-    let finalList;
-    if (gapType === 'application') {
-      const dm = videoList.find(v => v.channel === 'Dirty Medicine');
-      finalList = dm
-        ? [dm, ...videoList.filter(v => v !== dm)].slice(0, 3)
-        : videoList.slice(0, 3);
-    } else {
-      const preferred = videoList.filter(v =>
-        (hasBnb    && v.channel.toLowerCase().includes('boards')) ||
-        (hasPhyseo && v.channel.toLowerCase().includes('physeo'))
-      );
-      finalList = preferred.length > 0
-        ? [...preferred, ...videoList.filter(v => !preferred.includes(v))].slice(0, 3)
-        : videoList.slice(0, 3);
-    }
+    // Prefer B&B or Physeo when the student owns them; otherwise use the default channel order.
+    const preferred = videoList.filter(v =>
+      (hasBnb    && v.channel.toLowerCase().includes('boards')) ||
+      (hasPhyseo && v.channel.toLowerCase().includes('physeo'))
+    );
+    const finalList = preferred.length > 0
+      ? [...preferred, ...videoList.filter(v => !preferred.includes(v))].slice(0, 3)
+      : videoList.slice(0, 3);
 
     const primaryChannel = finalList[0]?.channel || 'Ninja Nerd';
     primaryVideoStep = {
       type: 'video', emoji: '▶️',
       label: `Video: ${topSubNames[0] || category}`,
       action: 'WATCH', resource: primaryChannel, topic: topSubNames[0] || category,
-      timeLabel: gapType === 'knowledge' ? '~20 min' : '~15 min',
+      timeLabel: '~20 min',
       focus: topSubNames.length > 0 ? topSubNames.slice(0, 2).join(', ') : category,
-      skip: gapType === 'knowledge'
-        ? 'Detailed treatment protocols — learn those from questions'
-        : 'Deep mechanism explanations — focus on recall patterns',
+      skip: 'Detailed treatment protocols — learn those from questions',
       instruction: topSubNames.length > 0
         ? `Focus on: ${topSubNames.slice(0, 2).join(', ')}. Jump to those sections — you don't need to watch the full video. Take notes, not screenshots.`
         : 'Jump to the most relevant section — you don\'t need to watch the full video. Take notes, not screenshots.',
       links: buildLinks(finalList.slice(0, 2), topSubNames[0] || category),
     };
 
-    // Knowledge gap with 2+ sub-topics: add a second WATCH step (~15 min) for the next sub-topic
-    // With primary WATCH (~20 min) + secondary WATCH (~15 min) + READ (~15-20 min) ≈ 50-55 min → 1 hr block
-    // Application gaps stay at a single shorter video — no secondary step needed
-    if (gapType === 'knowledge' && topSubNames.length >= 2 && finalList.length >= 2) {
+    // 2+ sub-topics → add a second WATCH step (~15 min) for the next sub-topic
+    // Primary WATCH (~20 min) + secondary WATCH (~15 min) + READ (~15-20 min) ≈ 50-55 min → 1 hr block
+    if (topSubNames.length >= 2 && finalList.length >= 2) {
       const secChannel = finalList[1].channel;
       secondaryVideoStep = {
         type: 'video', emoji: '▶️',
@@ -1004,48 +990,22 @@ export function getContentSequence(category, gapType, resources = [], subTopics 
     type: 'read', emoji: '📕',
     label: `First Aid: ${faRef.section}`,
     action: 'READ', resource: 'First Aid', topic: faRef.section,
-    timeLabel: gapType === 'knowledge' ? '~15–20 min' : '~10–15 min',
+    timeLabel: '~15–20 min',
     focus: shortFocus(faRef.focus),
     skip: null,
     instruction: `${faRef.focus}${topSubNames.length > 0 ? ` Focus on: ${topSubNames.slice(0, 2).join(' and ')}.` : ''} Annotate anything from today's video not already in the book.`,
     links: [],
   } : null;
 
-  // Practice step — always last, references Block 3
-  const practiceStep = {
-    type: 'practice', emoji: '🎯',
-    label: `20 Qs — ${category}, timed`,
-    action: 'PRACTICE', resource: 'UWorld', topic: `20 Qs — ${category}, timed`,
-    timeLabel: '~1.25 hrs',
-    focus: 'Review every question — annotate First Aid for wrong answers',
-    skip: null,
-    instruction: gapType === 'knowledge'
-      ? 'Now apply what you learned — 20 timed Qs on this system. Read every explanation thoroughly.'
-      : '20 timed Qs on this system. When you miss one, go back immediately — annotate First Aid with the clinical reasoning.',
-    links: [],
-  };
-
-  // Annotate step (application gaps without First Aid)
-  const annotateStep = {
-    type: 'annotate', emoji: '✏️',
-    label: 'Wrong answer review',
-    action: 'REVIEW', resource: 'Notes', topic: 'Wrong answer review',
-    timeLabel: '~10 min',
-    focus: 'Every wrong answer → annotate your notes or unsuspend the AnKing card',
-    skip: null,
-    instruction: 'Go through every wrong answer. Find the concept and annotate it. If you use AnKing, search the deck browser by keyword and unsuspend the existing card — do NOT make your own cards.',
-    links: [],
-  };
-
-  // Sequence: WATCH → (WATCH for KG with 2+ sub-topics) → READ
+  // Sequence: WATCH → (WATCH if 2+ sub-topics) → READ
   // PRACTICE is NOT included here — it belongs to the dedicated Targeted Questions
   // block that appears as a separate daily block directly below Content Review.
   // Including PRACTICE here would create a visible duplicate.
   const sequence = [
     primaryVideoStep,
-    secondaryVideoStep,                                                   // null for Pathoma/Sketchy or <2 sub-topics
-    firstAidStep || (gapType === 'application' ? annotateStep : null),
+    secondaryVideoStep,  // null for Pathoma/Sketchy or <2 sub-topics
+    firstAidStep,        // null if the student doesn't own First Aid
   ].filter(Boolean);
 
-  return { gapType, sequence };
+  return { sequence };
 }

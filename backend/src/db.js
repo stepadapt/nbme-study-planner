@@ -37,7 +37,6 @@ db.exec(`
     form_name TEXT,
     scores TEXT NOT NULL DEFAULT '{}',
     sticking_points TEXT NOT NULL DEFAULT '[]',
-    gap_types TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -93,6 +92,12 @@ db.exec(`
 
 // ── Migrations (safe: no-op if column already exists) ────────────────
 const addCol = (sql) => { try { db.exec(sql); } catch { /* already exists */ } };
+const dropCol = (table, col) => {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some(c => c.name === col)) {
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${col}`);
+  }
+};
 addCol('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
 addCol('ALTER TABLE users ADD COLUMN verify_token TEXT');
 addCol('ALTER TABLE users ADD COLUMN verify_token_expires TEXT');
@@ -111,5 +116,8 @@ addCol('ALTER TABLE user_profiles ADD COLUMN weekly_schedule TEXT DEFAULT NULL')
 addCol('ALTER TABLE user_profiles ADD COLUMN scheduled_assessment_overrides TEXT DEFAULT "{}"');
 addCol('ALTER TABLE user_profiles ADD COLUMN skipped_assessment_ids TEXT DEFAULT "[]"');
 addCol('ALTER TABLE user_profiles ADD COLUMN skip_uwsa_nudge_dismissed INTEGER DEFAULT 0');
+
+// Remove the legacy gap_types column (knowledge-gap vs application-gap split was retired)
+dropCol('assessments', 'gap_types');
 
 module.exports = db;

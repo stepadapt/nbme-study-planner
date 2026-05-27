@@ -85,8 +85,9 @@ Sketchy is ONLY for Pharmacology and Microbiology. Never recommend Sketchy for a
 Pathoma is ONLY recommended for Chapters 1-3 (Cell Injury, Inflammation, Neoplasia). These cover general pathology principles that apply across all systems. For system-specific pathology (Ch. 4-17 — cardiovascular, respiratory, renal, GI, etc.), use Ninja Nerd for deep understanding or Dirty Medicine for mnemonics. Never recommend Pathoma Ch. 4-17. Never recommend Pathoma for Physiology, Pharmacology, Anatomy, or Biochemistry.
 YouTube channel specialization:
 
-Ninja Nerd: Deep conceptual understanding. Best for physiology, pathophysiology, complex disease mechanisms. Recommend for KNOWLEDGE GAPS where the student needs to build a framework from scratch.
-Dirty Medicine: Quick mnemonics and high-yield recall hooks. Best for memorization-heavy content (drug side effects, storage diseases, lab patterns). Recommend for APPLICATION GAPS where the student understands the concept but can't recall details under test conditions.
+Ninja Nerd: Deep conceptual understanding. Best for physiology, pathophysiology, complex disease mechanisms.
+Dirty Medicine: Quick mnemonics and high-yield recall hooks. Best for memorization-heavy content (drug side effects, storage diseases, lab patterns).
+Recommend whichever fits the student's stated learning style and the topic.
 Armando Hasudungan: Visual disease overviews with clean illustrations. Good for pathology overviews when the student does not have Pathoma.
 Randy Neil MD: Biochemistry and metabolic pathways.
 HY Guru (Dr. Rahul Damania): Question interpretation and test-taking strategy.
@@ -125,13 +126,7 @@ If multiple assessments are provided, identify trajectory: improving (5+ points 
 Flag "sticky weaknesses" — systems that remain weak across 2+ assessments despite being in the focus plan
 For sticky weaknesses, recommend a resource change: if the student has been using First Aid, suggest switching to video. If they've been watching videos, suggest switching to a different channel or doing teach-back exercises.
 
-2. Gap Type Classification
-For each weak system, determine the gap type:
-
-Knowledge gap: The student has not learned the material. They need content FIRST (video → First Aid → questions). Content review block is longer (1.5 hrs). Video resource should be Ninja Nerd for deep understanding. Use Pathoma only if the topic is general pathology (Ch. 1-3: cell injury, inflammation, or neoplasia) — never for system-specific content.
-Application gap: The student knows the concepts but misses questions. They need MORE QUESTIONS with targeted review. Content review block is shorter (45 min). Video resource should be Dirty Medicine for recall hooks. Focus block gets 25 Qs instead of 20 if time allows.
-
-3. Plan Generation
+2. Plan Generation
 Generate plans that are:
 
 Specific: "UWorld: 20 Qs — Cardiovascular, filtered to Heart Failure + Valvular Disease" not "do Cardio questions"
@@ -139,7 +134,7 @@ Time-bound: every block has a start time, end time, and duration, all on quarter
 Resource-explicit: every content review block names the exact resource, the exact sub-topic within that resource, what to focus on, and what to skip
 Question-count explicit: every day shows total questions (e.g., "140 Qs today: 20 targeted + 120 random")
 
-4. Edge Case Handling
+3. Edge Case Handling
 Score plateau despite high effort:
 
 Check if the student is doing questions in tutor mode instead of timed — switch to timed
@@ -149,7 +144,7 @@ Consider whether they have test-taking strategy issues rather than content gaps 
 
 Strong content base but poor NBME performance:
 
-This usually indicates an application gap or test-taking issue, not a content gap
+This usually indicates a test-taking issue rather than a content gap
 Increase random block volume (more exam simulation)
 Reduce content review time, increase question time
 Recommend practice under strict timed conditions
@@ -179,7 +174,7 @@ CRITICAL RULES
 
 You are NOT a generic study planner. You are a tutor who has seen hundreds of students through Step 1 and knows exactly which topics show up on test day.
 Specificity over generality. "Study Cardio" is never acceptable output. "Watch Ninja Nerd HF Pathophysiology (30 min), then review First Aid HF section (20 min), then do 20 UWorld Cardio Qs filtered to HF + Valvular" is the standard.
-Questions over content. If forced to choose between a student doing 20 more questions or watching one more video, always choose questions. The only exception is a student with a true knowledge gap who has never been exposed to the material.
+Questions over content. If forced to choose between a student doing 20 more questions or watching one more video, always choose questions. The only exception is a student who has never been exposed to the material at all.
 Respect the student's time. Every minute of the plan must have a clear purpose. If a block does not directly contribute to score improvement, remove it.
 Be honest about trajectory. If a student at 52% with 10 days remaining asks if they'll pass, do not give false hope. Give them the best possible plan for those 10 days and be direct about the math.
 Adapt, don't repeat. If something has not worked for 2+ weeks (same system, same score), change the approach. A different resource, a different angle, a different study method. Doing the same thing and expecting different results is the most common failure mode in Step 1 prep.
@@ -327,7 +322,6 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
       createdAt: effectiveDate,
       scores: isTotalOnly ? {} : scores,
       stickingPoints: JSON.parse(a.sticking_points || '[]'),
-      gapTypes: JSON.parse(a.gap_types || '{}'),
       avg,
       isTotalOnly,
     };
@@ -400,9 +394,6 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
   if (latest.stickingPoints?.length) {
     lines.push(`- Student-flagged sticking points: ${latest.stickingPoints.join(', ')}`);
   }
-  if (Object.keys(latest.gapTypes).length) {
-    lines.push(`- Gap types: ${Object.entries(latest.gapTypes).map(([k, v]) => `${k} = ${v} gap`).join(', ')}`);
-  }
 
   // ── Sticky weaknesses (weak in 2+ assessments) ────────────────────────────
   if (parsed.length >= 2) {
@@ -448,12 +439,6 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
       ? nextNbme.calendarDay - todayCalendarDay
       : null;
 
-    // Plan priorities (gap types from plan engine)
-    const gapTypes = {};
-    for (const p of (planData.priorities || [])) {
-      if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
-    }
-
     lines.push('');
     lines.push(`CURRENT PLAN (generated ${new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}):`);
     lines.push(`- Progress: Day ${Math.max(1, todayCalendarDay)} of ${totalDays} (${percentDone}% complete)`);
@@ -470,7 +455,7 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
       }[todayDay.dayType] || todayDay.dayType;
       lines.push(`- Today (Day ${todayCalendarDay}): ${dayTypeLabel}`);
       if (todayDay.focusTopic) {
-        lines.push(`- Today's focus system: ${todayDay.focusTopic}${todayDay.focusGapType ? ` (${todayDay.focusGapType} gap)` : ''}`);
+        lines.push(`- Today's focus system: ${todayDay.focusTopic}`);
       }
       if (todayDay.totalQuestions > 0) {
         lines.push(`- Questions target today: ${todayDay.totalQuestions}`);
@@ -491,10 +476,6 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
     if (nextNbme) {
       lines.push(`- Next scheduled practice exam: ${nextNbme.assessmentLabel || nextNbme.assessmentTest || 'Practice exam'} in ${daysToNbme} day${daysToNbme === 1 ? '' : 's'}`);
     }
-
-    if (Object.keys(gapTypes).length) {
-      lines.push(`- Plan gap-type priorities: ${Object.entries(gapTypes).map(([k, v]) => `${k} (${v})`).join(', ')}`);
-    }
   } else {
     lines.push('');
     lines.push('CURRENT PLAN: No active plan. Encourage the student to generate one from the dashboard.');
@@ -508,7 +489,7 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
 // Kept for the /api/ai/plan-intelligence endpoint which still uses frontend data.
 function buildContextAppendix(ctx) {
   if (!ctx) return '';
-  const { profile, assessments, plan } = ctx;
+  const { profile, assessments } = ctx;
   const examDate = profile?.examDate || null;
   const daysRemaining = examDate
     ? Math.max(0, Math.round((new Date(examDate) - new Date()) / 86400000))
@@ -525,14 +506,10 @@ function buildContextAppendix(ctx) {
     .filter(([, s]) => s < COHORT_THRESHOLD).sort((a, b) => a[1] - b[1]).map(([sys]) => sys);
   const strongSystems = Object.entries(latestScores)
     .filter(([, s]) => s >= COHORT_THRESHOLD).sort((a, b) => b[1] - a[1]).map(([sys]) => sys);
-  const gapTypes = {};
-  for (const p of plan?.priorities || []) {
-    if (p.category && p.gapType) gapTypes[p.category] = p.gapType;
-  }
   return `\n\nCURRENT STUDENT CONTEXT:\n${JSON.stringify({
     exam_date: examDate, days_remaining: daysRemaining,
     nbme_scores: nbmeScores, weak_systems: weakSystems, strong_systems: strongSystems,
-    sticking_points: latest?.stickingPoints || [], gap_types: gapTypes,
+    sticking_points: latest?.stickingPoints || [],
     study_hours_per_day: profile?.hoursPerDay || 8, resources_available: profile?.resources || [],
   }, null, 2)}`;
 }

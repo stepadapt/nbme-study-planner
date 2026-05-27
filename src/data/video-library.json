@@ -22,14 +22,14 @@
       "website": "https://www.ninjanerd.org",
       "type": "free",
       "strength": "deep conceptual, pathophysiology, mechanisms",
-      "best_for": "knowledge gaps, system pathology, physiology"
+      "best_for": "system pathology, physiology, deep conceptual learning"
     },
     "dirty_medicine": {
       "name": "Dirty Medicine",
       "url": "https://www.youtube.com/@dirtymedicine",
       "type": "free",
       "strength": "quick mnemonics, high-yield recall, ethics, biostats",
-      "best_for": "application gaps, drug side effects, storage diseases, biostats, ethics, MSK, psych",
+      "best_for": "drug side effects, storage diseases, biostats, ethics, MSK, psych",
       "video_count_captured": 236
     },
     "armando_hasudungan": {
