@@ -197,22 +197,26 @@ export function getQbankFilterTip(primaryQBank, category, topSubTopics) {
 }
 
 // ── Practice test scheduler ───────────────────────────────────────────
-// Builds the assessment sequence with graduated spacing.
+// Builds the assessment sequence with a newest-first, backward-from-Free-120 walk.
 //
 // SCHEDULING PRINCIPLES:
-// 1. NBME 26 ALWAYS first (oldest form — saves newer, more predictive forms for later).
-//    Exception: if NBME 26 already taken, use the lowest available form as first slot.
-// 2. Highest numbered untaken form ALWAYS occupies the LAST NBME slot before Free 120.
-// 3. Wider gaps early (student still building) → tighter late (frequent calibration).
-//    Transition at ~60% through the plan.
+// 1. Highest numbered untaken NBME (typically 33) ALWAYS occupies the LAST NBME
+//    slot before Free 120, anchored at LAST_ASSESSMENT_DAY (T-5).
+// 2. Second-highest untaken NBME (typically 32) occupies the SECOND-TO-LAST slot,
+//    ~1 week earlier. The remaining untaken forms (31, 30, 29, 28, 27, 26) fill
+//    earlier slots in descending order — older forms only get a slot if calendar
+//    room remains after newer forms are placed. NBME 26 is "included only if room".
+// 3. TARGET gap between consecutive practice exams = 7 days (weekly cadence).
+//    MIN gap = 3 days (hard floor — no back-to-back exams).
 // 4. Assessments ONLY on days with ≥6 study hours (uses eligibleCalendarDays pool).
-// 5. Short dedicated (≤21 days): skip older forms 27-29, go straight to newer (30-33).
-// 6. Free 120 (2024) MANDATORY at exactly T-2, never moved.
-// 7. UWSA2/UWSA1 only after ALL 8 NBMEs taken (existing gate unchanged).
-//    Exception: for 45+ day plans, UWSA2 fills a gap ≥10 days between last NBME and Free 120.
-// 8. If student has ANY prior assessment data (takenAssessments.length > 0), the first
-//    scheduled NBME is delayed by earlyGapDays (~2 weeks) and labeled "Progress check".
-//    Only students with ZERO prior data get a "Baseline diagnostic" placed early.
+// 5. Free 120 (2026) MANDATORY at exactly T-2, never moved.
+// 6. UWSA2/UWSA1 only after ALL 8 NBMEs taken (existing STEP 4b gate unchanged).
+//    The "UWSA in gap between last NBME and Free 120" branch (STEP 8) is retained
+//    but rarely fires under the new design — the highest NBME is anchored at T-5,
+//    leaving only 3 days to Free 120, less than its 10-day gap requirement.
+// 7. If student has ANY prior assessment data (takenAssessments.length > 0), the
+//    chronologically-first scheduled NBME is labeled "Progress check". Only
+//    students with ZERO prior data get a "Baseline diagnostic" label on slot 0.
 
 export function scheduleAssessments(profile, totalCalendarDays, hasExistingScores = false, eligibleCalendarDays = null, currentPlanDay = 1, overrideDayByTestId = null) {
   const takenList = profile.takenAssessments || [];
@@ -380,30 +384,13 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     }
   }
 
-  // ── STEP 3: Graduated spacing parameters ──────────────────────────────
-  // earlyGapDays / lateGapDays = minimum calendar days between consecutive assessments.
-  // Transition at ~60% through the plan.
-  const transitionDay = Math.floor(totalCalendarDays * 0.6);
-
-  // Detect working student: ≤2 unique assessment-eligible days of the week
-  const ws = migrateToWeeklySchedule(profile);
-  const eligibleDowCount = Object.values(ws).filter(c => (c.studyHours || 0) >= 6).length;
-  const hasLimitedDays = eligibleDowCount > 0 && eligibleDowCount <= 2;
-
-  let earlyGapDays, lateGapDays;
-  if (hasLimitedDays) {
-    // Working student: compute average calendar days between eligible days
-    const avgGap = eligiblePool.length > 1
-      ? Math.round((eligiblePool[eligiblePool.length - 1] - eligiblePool[0]) / (eligiblePool.length - 1))
-      : 7;
-    earlyGapDays = avgGap * 2; // every other eligible day (e.g., every other Saturday = ~14 days)
-    lateGapDays  = avgGap;     // every eligible day (e.g., every Saturday = ~7 days)
-  } else {
-    if (totalCalendarDays > 60) { earlyGapDays = 14; lateGapDays = 7;  }
-    else if (totalCalendarDays > 42) { earlyGapDays = 10; lateGapDays = 5; }
-    else if (totalCalendarDays > 21) { earlyGapDays = 8;  lateGapDays = 4; }
-    else                             { earlyGapDays = 5;  lateGapDays = 2; }
-  }
+  // ── STEP 3: Spacing parameters ────────────────────────────────────────
+  // Uniform TARGET = 7 days (ideal weekly cadence), MIN = 3 days (hard floor).
+  // For working students (≤2 eligible study days/week), the MIN floor stays at 3
+  // but the natural sparsity of eligiblePool means consecutive eligible days are
+  // already ≥3 apart, so behavior degrades gracefully without special-casing.
+  const TARGET_GAP = 7;
+  const MIN_GAP    = 3;
 
   // Find the next eligible pool day ≥ afterDay + minGapDays.
   // Falls back to the nearest available day after afterDay if the gap cannot be satisfied
@@ -420,107 +407,92 @@ export function scheduleAssessments(profile, totalCalendarDays, hasExistingScore
     return null;
   };
 
-  // ── STEP 4a: Schedule NBMEs (untaken forms remain) ────────────────────
-  // Exclude any NBME the student has already pinned in Phase 0 — those are placed.
+  // Find the latest eligible pool day ≤ ceilingDay that's not already claimed and
+  // is at least minGapDays before laterPlacedDay (if provided). Used by the
+  // backward walk in STEP 4a — never falls back without the gap (we'd rather
+  // drop an older NBME than place two exams back-to-back).
+  const findPrevEligible = (ceilingDay, laterPlacedDay, minGapDays) => {
+    for (let i = eligiblePool.length - 1; i >= 0; i--) {
+      const d = eligiblePool[i];
+      if (d > ceilingDay) continue;
+      if (isClaimed(d)) continue;
+      if (laterPlacedDay != null && (laterPlacedDay - d) < minGapDays) continue;
+      return d;
+    }
+    return null;
+  };
+
+  // ── STEP 4a: Schedule NBMEs — newest-first, backward walk ─────────────
+  // Strategy: sort untaken NBMEs DESCENDING by number, then walk backward
+  // from LAST_ASSESSMENT_DAY. This guarantees:
+  //   - Highest untaken (typically 33) lands in the final slot before Free 120
+  //   - Second-highest (typically 32) lands in the second-to-last slot
+  //   - Older forms (down to 26) fill earlier slots in descending order
+  //   - NBME 26 is "included only if calendar room remains" — falls off first
+  // Older forms drop off because they're at the tail of the descending list
+  // and the walk simply runs out of calendar before reaching them.
   const schedulableNBMEs = untakenNBMEs.filter(t => !overriddenIds.has(t.id));
+  let lastPlacedNBMEDay = 0;
   if (schedulableNBMEs.length > 0) {
-    const sortedByNum = [...schedulableNBMEs].sort((a, b) => a.number - b.number);
+    const sortedDesc = [...schedulableNBMEs].sort((a, b) => b.number - a.number);
 
-    // NBME 26 is ALWAYS first unless already taken
-    const firstNBME  = sortedByNum.find(t => t.id === 'nbme26') || sortedByNum[0];
-    const remaining  = sortedByNum.filter(t => t.id !== firstNBME.id);
-
-    let middleForms, lastNBME;
-    if (remaining.length === 0) {
-      middleForms = []; lastNBME = null;
-    } else {
-      lastNBME    = remaining[remaining.length - 1]; // highest numbered form → last slot
-      let middle  = remaining.slice(0, -1);
-      // Short dedicated (≤21 days): skip old forms 27-29; use newer 30-33 only in middle
-      if (totalCalendarDays <= 21) middle = middle.filter(t => t.number >= 30);
-      middleForms = middle;
+    // Walk backwards: anchor highest NBME at LAST_ASSESSMENT_DAY, step back
+    // by TARGET_GAP per slot, enforce MIN_GAP against the already-placed slot.
+    const placed = []; // collected reverse-chronologically: latest exam first
+    let nextCeiling   = LAST_ASSESSMENT_DAY;
+    let laterPlacedDay = null;
+    for (const nbme of sortedDesc) {
+      const day = findPrevEligible(nextCeiling, laterPlacedDay, MIN_GAP);
+      if (day == null) break; // out of calendar — remaining (older) forms drop off
+      placed.push({ nbme, day });
+      claimDay(day);
+      laterPlacedDay = day;
+      // Walk left by TARGET_GAP for the next attempt (but never re-use this day)
+      nextCeiling = Math.min(day - 1, day - TARGET_GAP);
     }
 
-    // ── STEP 5: Place first NBME ──────────────────────────────────────
+    // Reverse so we label/emit in chronological order (oldest exam first)
+    placed.reverse();
+
     // hasBaseline = student already has at least one prior assessment on record,
-    // OR has pinned NBME 26 via override (treat the pinned exam as the baseline).
-    // No baseline → place early (2nd–4th study day), labeled "Baseline diagnostic".
-    // Has baseline → push out by earlyGapDays (~2 weeks) so the student has time
-    //   to actually improve before the next data point. Labeled "Progress check".
+    // OR has pinned NBME 26 via override. Determines whether the chronologically-
+    // first placed NBME is labeled "Baseline diagnostic" or "Progress check".
     const hasBaseline = takenList.length > 0 || overriddenIds.has('nbme26');
 
-    let firstDay;
-    if (!hasBaseline) {
-      // New student — place baseline diagnostic soon after study begins
-      const initialGap = hasLimitedDays ? 0 : Math.min(3, Math.floor(totalCalendarDays * 0.07));
-      firstDay = findNextEligible(initialGap, 1);
-    } else {
-      // Student has prior data — delay first progress check by a full earlyGapDays
-      firstDay = findNextEligible(0, earlyGapDays);
-      // Fallback: gap impossible near exam — take first available eligible day
-      if (!firstDay) firstDay = findNextEligible(0, 1);
+    for (let i = 0; i < placed.length; i++) {
+      const { nbme, day } = placed[i];
+      const isFirstSlot = (i === 0);
+      const isLastSlot  = (i === placed.length - 1);
+
+      let label, reason;
+      if (isFirstSlot && !hasBaseline) {
+        label = 'Baseline diagnostic';
+        reason = nbme.id === 'nbme26'
+          ? `NBME 26 is your baseline — the oldest form, chosen intentionally so newer, more predictive forms are saved for later. Most students feel underprepared at this point — that's expected and irrelevant. The score doesn't define where you'll land; the system breakdown becomes the blueprint for your entire plan.`
+          : `NBME ${nbme.number} is your baseline. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for everything that follows.`;
+      } else if (isLastSlot && nbme.number >= 32) {
+        label  = `Progress check — NBME ${nbme.number}`;
+        reason = `NBME ${nbme.number} — the highest numbered form, saved for this final slot because it's most representative of current Step 1 content. Your score here directly predicts exam-day performance.`;
+      } else if (isLastSlot) {
+        label  = `Progress check — NBME ${nbme.number}`;
+        reason = `NBME ${nbme.number} — final NBME before exam week. Use the system breakdown to confirm whether your targeted weak areas have moved since your last assessment.`;
+      } else if (nbme.number >= 32) {
+        label  = `Progress check — NBME ${nbme.number}`;
+        reason = `NBME ${nbme.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`;
+      } else if (nbme.number >= 30) {
+        label  = `Progress check — NBME ${nbme.number}`;
+        reason = `NBME ${nbme.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`;
+      } else {
+        label  = `Progress check — NBME ${nbme.number}`;
+        reason = `NBME ${nbme.number} — progress check. The total score matters less than the direction of movement in your weak systems since your last assessment.`;
+      }
+
+      result.push({ day, test: nbme, label, reason, reviewHours: 2.0 });
     }
 
-    if (firstDay) {
-      let label, reason;
-      if (!hasBaseline) {
-        label = 'Baseline diagnostic';
-        reason = firstNBME.id === 'nbme26'
-          ? `NBME 26 is your baseline — the oldest form, chosen intentionally so newer, more predictive forms are saved for later. Most students feel underprepared at this point — that's expected and irrelevant. The score doesn't define where you'll land; the system breakdown becomes the blueprint for your entire plan.`
-          : `Your first NBME before dedicated study kicks in. Most students feel underprepared at this stage — that's expected. What matters is the system breakdown, which becomes the blueprint for everything that follows.`;
-      } else {
-        label = `Progress check — NBME ${firstNBME.number}`;
-        reason = firstNBME.number >= 32
-          ? `NBME ${firstNBME.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`
-          : firstNBME.number >= 30
-            ? `NBME ${firstNBME.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`
-            : `NBME ${firstNBME.number} — your first progress check. You already have baseline data; what matters here is the direction of movement in your weak systems since your last assessment.`;
-      }
-      result.push({ day: firstDay, test: firstNBME, label, reason, reviewHours: 2.0 });
-      claimDay(firstDay);
-
-      // ── STEP 6: Place middle forms with graduated spacing ──────────────
-      let prevDay = firstDay;
-      for (const nbme of middleForms) {
-        const gap     = prevDay >= transitionDay ? lateGapDays : earlyGapDays;
-        const nextDay = findNextEligible(prevDay, gap);
-        if (!nextDay) break;
-
-        let label, reason;
-        if (nbme.number >= 32) {
-          label  = `Progress check — NBME ${nbme.number}`;
-          reason = `NBME ${nbme.number} — one of the newest forms and most representative of current Step 1 content. Your score here is a strong prediction signal for your actual exam.`;
-        } else if (nbme.number >= 30) {
-          label  = `Progress check — NBME ${nbme.number}`;
-          reason = `NBME ${nbme.number} — a newer form, well-aligned with current Step 1 content. Check whether your weak areas are improving; the system breakdown matters more than the total score.`;
-        } else {
-          label  = `Progress check — NBME ${nbme.number}`;
-          reason = `NBME ${nbme.number} — progress check. The total score matters less than the direction of movement in your weak systems since your last assessment.`;
-        }
-
-        result.push({ day: nextDay, test: nbme, label, reason, reviewHours: 2.0 });
-        claimDay(nextDay);
-        prevDay = nextDay;
-      }
-
-      // ── STEP 7: Place highest form in the last NBME slot ──────────────
-      if (lastNBME) {
-        const gap     = prevDay >= transitionDay ? lateGapDays : earlyGapDays;
-        const lastDay = findNextEligible(prevDay, gap);
-        if (lastDay) {
-          let label, reason;
-          if (lastNBME.number >= 32) {
-            label  = `Progress check — NBME ${lastNBME.number}`;
-            reason = `NBME ${lastNBME.number} — the highest numbered form, saved for this final slot because it's most representative of current Step 1 content. Your score here directly predicts exam-day performance.`;
-          } else {
-            label  = `Progress check — NBME ${lastNBME.number}`;
-            reason = `NBME ${lastNBME.number} — final NBME before exam week. Use the system breakdown to confirm whether your targeted weak areas have moved since your last assessment.`;
-          }
-          result.push({ day: lastDay, test: lastNBME, label, reason, reviewHours: 2.0 });
-          claimDay(lastDay);
-          prevDay = lastDay;
-        }
-      }
+    lastPlacedNBMEDay = placed.length > 0 ? placed[placed.length - 1].day : 0;
+    if (lastPlacedNBMEDay > 0) {
+      const prevDay = lastPlacedNBMEDay;
 
       // ── STEP 8: UWSA in gap between last NBME and Free 120 ────────────
       // Only for 45+ day plans when there's a meaningful gap (≥10 days).

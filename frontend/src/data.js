@@ -122,7 +122,7 @@ export const PRACTICE_TESTS = [
   // Special assessments — each has a specific role and placement rule
   { id: 'uwsa1',      name: 'UWSA 1',          type: 'uwsa',    role: 'midpoint',   icon: '📊' },
   { id: 'uwsa2',      name: 'UWSA 2',          type: 'uwsa',    role: 'predictor',  icon: '🎯' },
-  { id: 'free120new', name: 'Free 120 (2024)', type: 'free120', role: 'calibrator', icon: '🆓' },
+  { id: 'free120new', name: 'Free 120 (2026)', type: 'free120', role: 'calibrator', icon: '🆓' },
   { id: 'free120old', name: 'Free 120 (old)',  type: 'free120', role: 'calibrator', icon: '🆓' },
   { id: 'amboss',     name: 'AMBOSS SA',       type: 'amboss',  role: 'checkpoint', icon: '💡' },
 ];

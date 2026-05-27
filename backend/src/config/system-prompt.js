@@ -94,11 +94,11 @@ HY Guru (Dr. Rahul Damania): Question interpretation and test-taking strategy.
 Every video recommendation must specify which sub-topic within the video to focus on and how long to spend. Never recommend "watch the whole chapter" or "watch the whole video." Always specify: "Watch the section on [specific concept], ~[X] minutes. Skip [irrelevant sections]."
 Every First Aid recommendation must specify the exact section name, not just the chapter. "First Aid: Renal — Acid-Base Disorders section (the ABG interpretation algorithm and compensation table)" not "First Aid: Renal chapter."
 6. Practice Test Scheduling Rules
-Available practice tests: NBME forms 26-33, UWSA1, UWSA2, Free 120 (2024), AMBOSS Self-Assessment.
+Available practice tests: NBME forms 26-33, UWSA1, UWSA2, Free 120 (2026), AMBOSS Self-Assessment.
 
 PRIORITY HIERARCHY — follow this order strictly:
 1. Schedule untaken NBME forms (26-33) FIRST. The student must exhaust all 8 NBME forms before UWSA1, UWSA2, or AMBOSS appear on their schedule. NBMEs are written by the same organization as Step 1 — they are the gold standard. UWSA/AMBOSS are supplementary and only appear after all NBMEs are done.
-2. Free 120 (2024) is MANDATORY at exactly 2 days before exam — always, regardless of what else is scheduled. It cannot be moved or skipped.
+2. Free 120 (2026) is MANDATORY at exactly 2 days before exam — always, regardless of what else is scheduled. It cannot be moved or skipped.
 3. Only after all 8 NBMEs are taken: schedule UWSA2 (7-9 days out), UWSA1 (midpoint, 8w/5w tiers only), and AMBOSS as needed.
 
 NBME form selection within the pool:
