@@ -4419,13 +4419,10 @@ export default function StudyPlanner({ onShowTerms }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: editProfileDraft.resources.includes('anking') ? 16 : 0 }}>
               {RESOURCES.map(r => {
                 const on = editProfileDraft.resources.includes(r.id);
-                const locked = r.id === 'firstaid' || r.id === 'uworld';
                 return (
                   <div key={r.id}
-                    title={locked ? 'Required — cannot be removed' : undefined}
-                    style={{ ...S.chip, ...(on ? S.chipOn : {}), fontSize: 13, opacity: locked ? 0.75 : 1, cursor: locked ? 'default' : 'pointer' }}
+                    style={{ ...S.chip, ...(on ? S.chipOn : {}), fontSize: 13 }}
                     onClick={() => {
-                      if (locked) return;
                       setEditPlanSaved(false);
                       setEditProfileDraft(p => {
                         const removing = on;
@@ -4437,7 +4434,7 @@ export default function StudyPlanner({ onShowTerms }) {
                       });
                     }}
                   >
-                    <span>{r.icon}</span> {r.name}{locked ? ' 🔒' : ''}
+                    <span>{r.icon}</span> {r.name}
                   </div>
                 );
               })}
