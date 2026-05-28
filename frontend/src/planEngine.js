@@ -657,11 +657,22 @@ function getUnsuspendInstruction(ankiDeck) {
 // hasAnki: whether the student selected AnKing as a resource
 // hours: block duration in hours
 // isFirstStudyDay: true on calendarDay == 1 (triggers setup guide for new users)
-function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, ankiDeck = 'anking') {
-  // No Anki selected — use UWorld incorrects for spaced repetition
+function buildMorningRetentionBlock(ankiLevel, hasAnki, hours, isFirstStudyDay, ankiDeck = 'anking', hasUWorld = true, hasAmboss = false, hasFirstAid = true) {
+  // No Anki selected — use qbank incorrects for spaced repetition (or neutral retention if no qbank)
   if (!hasAnki) {
-    return { type: 'anki', label: 'Morning retention — UWorld review', tasks: [
-      { resource: 'UWorld incorrect review', activity: 'Revisit 15–20 previously missed UWorld questions. Read the full explanation for each — focus on WHY you got it wrong, not just the right answer. Flag any concept you miss twice for First Aid annotation.', hours },
+    const annotationTarget = hasFirstAid ? 'First Aid annotation' : 'your notes';
+    if (hasUWorld) {
+      return { type: 'anki', label: 'Morning retention — UWorld review', tasks: [
+        { resource: 'UWorld incorrect review', activity: `Revisit 15–20 previously missed UWorld questions. Read the full explanation for each — focus on WHY you got it wrong, not just the right answer. Flag any concept you miss twice for ${annotationTarget}.`, hours },
+      ]};
+    }
+    if (hasAmboss) {
+      return { type: 'anki', label: 'Morning retention — AMBOSS review', tasks: [
+        { resource: 'AMBOSS incorrect review', activity: `Revisit 15–20 previously missed AMBOSS questions. Read the full explanation for each — focus on WHY you got it wrong, not just the right answer. Flag any concept you miss twice for ${annotationTarget}.`, hours },
+      ]};
+    }
+    return { type: 'anki', label: 'Morning retention — yesterday\'s wrongs', tasks: [
+      { resource: 'Yesterday\'s wrongs', activity: 'Revisit 15–20 concepts you missed yesterday. For each, identify WHY you got it wrong and capture the pattern in your notes. Flag anything you miss twice for tomorrow\'s morning session.', hours },
     ]};
   }
 
@@ -1115,6 +1126,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   };
   const rn = (id) => RESOURCES.find(r => r.id === id)?.name || id;
   const hasAnki = profile.resources.includes("anking");
+  const hasFirstAid = profile.resources.includes("firstaid");
+  const hasUWorld = profile.resources.includes("uworld");
+  const hasAmboss = profile.resources.includes("amboss");
   // "none" = Anki not selected (UWorld incorrects) OR selected but never used (→ setup guide on day 1)
   const ankiLevel = hasAnki ? (profile.anki_experience_level || "none") : "none";
   const ankiDeck = hasAnki ? (profile.ankiDeck || 'anking') : 'anking';
@@ -1178,7 +1192,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         predictorNote: ai?.predictorNote,
         blocks: [{ type: "nbme", label: testName, tasks: [
           { resource: testName, activity: 'Full-length exam — timed, test-day conditions, no interruptions', hours: 4 },
-          { resource: 'Self-review', activity: `Thorough review of every wrong answer — understand the concept, annotate patterns in First Aid.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed — do NOT make your own cards.` : ' Star flagged First Aid pages for your morning review sessions.'}`, hours: reviewHrs },
+          { resource: 'Self-review', activity: `Thorough review of every wrong answer — understand the concept, ${hasFirstAid ? 'annotate patterns in First Aid' : 'capture patterns in your notes'}.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed — do NOT make your own cards.` : ` ${hasFirstAid ? 'Star flagged First Aid pages' : 'Star flagged notes'} for your morning review sessions.`}`, hours: reviewHrs },
         ]}],
       });
       continue;
@@ -1195,9 +1209,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
       // ── Short review day (≤3 hrs) — compressed structure ──────────────
       if (reviewDayHrs <= 3) {
-        reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, Math.min(0.5, reviewDayHrs * 0.15), false, ankiDeck));
+        reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, Math.min(0.5, reviewDayHrs * 0.15), false, ankiDeck, hasUWorld, hasAmboss, hasFirstAid));
         reviewBlocks.push({ type: "questions-focus", label: `${testName} — deep wrong-answer review`,
-          tasks: [{ resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each: identify the concept, look it up in First Aid, annotate the margin.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed.` : ''}`, hours: Math.max(0.5, reviewDayHrs - 0.75) }],
+          tasks: [{ resource: "Self-review", activity: `System-by-system review of every wrong answer from ${testName}. For each: identify the concept, ${hasFirstAid ? 'look it up in First Aid, annotate the margin' : 'look it up in your reference material and capture the pattern in your notes'}.${hasAnki ? ` ${getUnsuspendInstruction(ankiDeck).charAt(0).toUpperCase() + getUnsuspendInstruction(ankiDeck).slice(1)} for any concept you missed.` : ''}`, hours: Math.max(0.5, reviewDayHrs - 0.75) }],
         });
         reviewBlocks.push({ type: "end-review", label: "Flag patterns for tomorrow",
           tasks: [{ resource: "Notes", activity: "Flag any recurring patterns for tomorrow's morning retention session.", hours: 0.25 }],
@@ -1224,14 +1238,14 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       // Short days skip content review and questions entirely
 
       const retentionHrs = reviewDayHrs <= 3 ? Math.min(0.5, reviewDayHrs * 0.15) : (reviewDayHrs <= 7 ? 0.75 : 1.0);
-      reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, retentionHrs, false, ankiDeck));
+      reviewBlocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, retentionHrs, false, ankiDeck, hasUWorld, hasAmboss, hasFirstAid));
 
       // Deep wrong-answer review — scales with available time
       const deepReviewHrs = reviewDayHrs <= 3 ? Math.max(0.5, reviewDayHrs - retentionHrs - 0.25)
         : reviewDayHrs <= 5 ? 2.0
         : reviewDayHrs <= 7 ? 2.5
         : 3.0;
-      const deepReviewActivity = `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept, (2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern${hasAnki ? `, (4) ${getUnsuspendInstruction(ankiDeck)} — do NOT create your own cards` : ', (4) star or flag the page for tomorrow\'s morning review'}. Work slowly — this review session is worth more than any single study day.`;
+      const deepReviewActivity = `System-by-system review of every wrong answer from ${testName}. For each missed question: (1) identify the exact concept, ${hasFirstAid ? '(2) look it up in First Aid — read the full section, not just the answer, (3) annotate the margin with the specific wrong-answer pattern' : '(2) look it up in your reference material — read the full section, not just the answer, (3) capture the specific wrong-answer pattern in your notes'}${hasAnki ? `, (4) ${getUnsuspendInstruction(ankiDeck)} — do NOT create your own cards` : `, (4) ${hasFirstAid ? 'star or flag the page' : 'star or flag the note'} for tomorrow's morning review`}. Work slowly — this review session is worth more than any single study day.`;
       reviewBlocks.push({ type: "catchup", label: `${testName} — deep wrong-answer review`,
         tasks: [{ resource: "Self-review", activity: deepReviewActivity, hours: deepReviewHrs }],
       });
@@ -1250,8 +1264,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
         // Content review — focused on weakest NBME system
         const contentHrs = reviewDayHrs <= 5 ? 0.5 : reviewDayHrs <= 7 ? 0.75 : 1.0;
+        const contentResource = hasFirstAid ? "First Aid" : "Reference notes";
+        const contentActivity = hasFirstAid
+          ? `Review the ${weakSystemLabel} section in First Aid, focusing on the specific sub-topics where you had the most wrong answers on ${testName}. Read actively — annotate patterns you missed.`
+          : `Review the ${weakSystemLabel} concepts you missed on ${testName} using whichever reference material you study from. Focus on the specific sub-topics that tripped you up — write the pattern down so you can search for it later.`;
         reviewBlocks.push({ type: "content", label: `Content review: ${weakSystemLabel} (weakest from ${testName})`,
-          tasks: [{ resource: "First Aid", activity: `Review the ${weakSystemLabel} section in First Aid, focusing on the specific sub-topics where you had the most wrong answers on ${testName}. Read actively — annotate patterns you missed.`, hours: contentHrs }],
+          tasks: [{ resource: contentResource, activity: contentActivity, hours: contentHrs }],
         });
 
         // Targeted questions — only for standard+ days (>5 hrs)
@@ -1270,7 +1288,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           if (reviewDayHrs > 7) {
             reviewBlocks.push({ type: "questions-random", label: "Random maintenance: all systems", tasks: [
               { resource: reviewQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Maintains broad coverage.`, hours: 0.5 },
-              { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max).", hours: 0.17 },
+              { resource: "Self-review", activity: `Wrong answers only — ${hasFirstAid ? 'quick First Aid lookup per concept' : 'quick lookup per concept'} (2 min max).`, hours: 0.17 },
             ]});
           }
         }
@@ -1323,7 +1341,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         { resource: "Self-review", activity: "Skim wrong answers briefly — note patterns, don't start studying new concepts.", hours: 0.25 },
       ]});
       eveBlocks.push({ type: "content-reactive", label: "Personal high-yield notes review", tasks: [
-        { resource: "Your notes + First Aid", activity: "Flip through your personal high-yield notes and flagged cards from past NBMEs. 30 min max — nothing new, only familiar material.", hours: 0.5 },
+        { resource: hasFirstAid ? "Your notes + First Aid" : "Your notes", activity: `Flip through your personal high-yield notes${hasFirstAid ? ' and flagged First Aid pages' : ''} and flagged cards from past NBMEs. 30 min max — nothing new, only familiar material.`, hours: 0.5 },
       ]});
       eveBlocks.push({ type: "rest", label: "Exam-eve protocol", tasks: [
         { resource: "Logistics", activity: "Pack your ID, confirmation email, water, and snacks. Know the route and travel time. Set two alarms.", hours: 0.25 },
@@ -1354,7 +1372,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         ]});
       }
       lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
-        { resource: "First Aid + flagged notes", activity: "Quick pass through annotated notes and flagged cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.", hours: 0.5 },
+        { resource: hasFirstAid ? "First Aid + flagged notes" : "Flagged notes", activity: `Quick pass through ${hasFirstAid ? 'annotated First Aid pages and ' : ''}your flagged notes and cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.`, hours: 0.5 },
       ]});
       // 4-6 random blocks based on available hours (targeting 80–120 Qs at 20 Qs/block)
       const lockdownHrsAvail = lockdownDayHrs - lockdownAnkiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
@@ -1385,13 +1403,24 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         studentRestBlocks.push({ type: "anki", label: "Anki reviews only", tasks: [
           { resource: getDeckName(ankiDeck), activity: "Due reviews only — 30–45 min max. No new cards. Stop at 45 minutes even if cards remain.", hours: 0.75 },
         ]});
-      } else {
+      } else if (hasFirstAid) {
         studentRestBlocks.push({ type: "content-reactive", label: "Light First Aid review only", tasks: [
           { resource: "First Aid", activity: "Flip through only your starred/flagged weak pages. No deep reading. No new material. Skim only. Stop at 45 minutes.", hours: 0.75 },
         ]});
+      } else {
+        studentRestBlocks.push({ type: "rest", label: "Full rest day", tasks: [
+          { resource: "Self", activity: "Today is a full rest day. Your brain consolidates during rest — this is productive.", hours: 0.75 },
+        ]});
       }
+      const restNoList = [
+        'No questions',
+        hasFirstAid ? 'No First Aid' : null,
+        (!hasAnki && hasUWorld) ? 'No UWorld' : null,
+        (!hasAnki && !hasUWorld && hasAmboss) ? 'No AMBOSS' : null,
+        'No videos',
+      ].filter(Boolean).join('. ');
       studentRestBlocks.push({ type: "rest", label: "Rest of day OFF", tasks: [
-        { resource: "Self", activity: `The rest of today is OFF. No questions. No First Aid.${hasAnki ? '' : ' No UWorld.'} No videos. Go outside, exercise, see friends, sleep. Your brain consolidates during rest — this is productive.`, hours: 0.5 },
+        { resource: "Self", activity: `The rest of today is OFF. ${restNoList}. Go outside, exercise, see friends, sleep. Your brain consolidates during rest — this is productive.`, hours: 0.5 },
       ]});
       currentWeek.days.push({
         calendarDay: sched.calendarDay, dayType: "student-rest",
@@ -1434,7 +1463,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     // ── BLOCK 1: Morning retention — always first, every day ──────────────
     // Content and duration vary by Anki experience level (see buildMorningRetentionBlock).
     const b1Hrs = hasAnki ? dayAnkiHrs : (availHrs <= 3 ? 0.5 : availHrs <= 5 ? 0.75 : 1.0);
-    blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1, ankiDeck));
+    blocks.push(buildMorningRetentionBlock(ankiLevel, hasAnki, b1Hrs, studyDayNum === 1, ankiDeck, hasUWorld, hasAmboss, hasFirstAid));
 
     if (isLight) {
       // ── LIGHT DAY: Block 1 + shortened targeted Qs + 1 random block ──────
@@ -1523,7 +1552,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
         qbankFilterTip,
         tasks: [
           { resource: primaryQBank, activity: `${effectiveQs} Qs — ${focusTopic?.category || "focus system"} only, timed, test mode${prioritizeStr ? " · " + prioritizeStr : ""}`, hours: params.b3QHrs },
-          { resource: "Review", activity: "Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · Annotate First Aid for each missed concept", hours: b3ReviewHrs },
+          { resource: "Review", activity: `Every question — right and wrong · For wrongs: identify the gap (mechanism, presentation, or recall) · ${hasFirstAid ? 'Annotate First Aid for each missed concept' : 'Capture each missed concept in your notes'}`, hours: b3ReviewHrs },
         ],
       });
 
@@ -1545,16 +1574,18 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
           : `Random block ${rb + 1} of ${params.numRandom}: all systems`;
         blocks.push({ type: "questions-random", label: blockLabel, tasks: [
           { resource: primaryQBank, activity: `${effectiveQs} Qs — RANDOM, all systems, timed. Context-switching between systems is the point — exam-day simulation.`, hours: 0.5 },
-          { resource: "Self-review", activity: "Wrong answers only — quick First Aid lookup per concept (2 min max). Flag anything unclear for tomorrow's morning retention session.", hours: 0.17 },
+          { resource: "Self-review", activity: `Wrong answers only — ${hasFirstAid ? 'quick First Aid lookup per concept' : 'quick lookup per concept'} (2 min max). Flag anything unclear for tomorrow's morning retention session.`, hours: 0.17 },
         ]});
       }
 
       // BLOCK 5 — End-of-day review: consolidate the day, triage misses, prep tomorrow's retention
       const b5AnkiNote = hasAnki
         ? `For any concept you keep missing: ${getUnsuspendInstruction(ankiDeck)} — do NOT make your own cards.`
-        : 'Star or annotate flagged First Aid pages — these become tomorrow\'s morning review targets.';
+        : hasFirstAid
+          ? 'Star or annotate flagged First Aid pages — these become tomorrow\'s morning review targets.'
+          : 'Note flagged concepts in your reference for tomorrow\'s morning review.';
       blocks.push({ type: "end-review", label: "End-of-day review", tasks: [
-        { resource: "Self-review", activity: `Review ALL wrong answers from today's random blocks. Quick First Aid lookup for each missed concept (2 min max). ${b5AnkiNote} Flag patterns for tomorrow's retention session.`, hours: params.b5Hrs },
+        { resource: "Self-review", activity: `Review ALL wrong answers from today's random blocks. ${hasFirstAid ? 'Quick First Aid lookup for each missed concept' : 'Quick lookup for each missed concept'} (2 min max). ${b5AnkiNote} Flag patterns for tomorrow's retention session.`, hours: params.b5Hrs },
       ]});
     }
 
