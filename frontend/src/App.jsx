@@ -25,6 +25,40 @@ function clearUrlParams() {
   window.history.replaceState({}, '', window.location.pathname);
 }
 
+// Shown only when an admin has impersonated a student. Lets them swap their
+// own session token back in with one click.
+function ImpersonationBanner() {
+  const backup = typeof window !== 'undefined' ? localStorage.getItem('nbme_token_admin_backup') : null;
+  if (!backup) return null;
+  const exit = () => {
+    localStorage.setItem('nbme_token', backup);
+    localStorage.removeItem('nbme_token_admin_backup');
+    window.location.href = '/';
+  };
+  const exitNoRestore = () => {
+    localStorage.removeItem('nbme_token');
+    localStorage.removeItem('nbme_token_admin_backup');
+    window.location.href = '/';
+  };
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0,
+      background: '#1a1814', color: '#fff', padding: '8px 16px',
+      fontFamily: '"DM Sans", sans-serif', fontSize: 13, zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+    }}>
+      <span>👁️ Viewing as student (admin session). All actions affect this account.</span>
+      <button onClick={exit} style={{ background: '#1D9E75', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+        Exit student view
+      </button>
+      <button onClick={exitNoRestore} title="Sign out completely" style={{ background: 'transparent', color: '#fff', border: '1px solid #fff5', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+        Sign out
+      </button>
+    </div>
+  );
+}
+
 function VerifyBanner({ token, onVerified }) {
   const [status, setStatus] = useState('verifying'); // 'verifying' | 'success' | 'error'
   const [message, setMessage] = useState('');
@@ -122,6 +156,7 @@ function AppContent() {
 
   return (
     <>
+      {user && <ImpersonationBanner />}
       {showVerifyBanner && urlToken && (
         <VerifyBanner token={urlToken} onVerified={handleVerified} />
       )}

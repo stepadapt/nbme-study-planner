@@ -24,6 +24,20 @@ async function adminFetch(path, adminKey) {
   return res.json();
 }
 
+async function adminPost(path, adminKey, body) {
+  const res = await fetch(`${API_BASE}/api/admin${path}`, {
+    method: 'POST',
+    headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  if (res.status === 401) throw new Error('Invalid admin key.');
+  if (res.status === 503) throw new Error('Admin access is not configured on the server.');
+  let data = null;
+  try { data = await res.json(); } catch { /* ignore */ }
+  if (!res.ok) throw new Error((data && data.error) || `Server error (${res.status})`);
+  return data;
+}
+
 // ── Stat card ─────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color = DARK }) {
   return (
@@ -63,12 +77,59 @@ function UserDetailModal({ userId, adminKey, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [actionBusy, setActionBusy] = useState('');
+  const [actionMsg, setActionMsg] = useState('');
+  const [actionErr, setActionErr] = useState('');
+  const [resetLink, setResetLink] = useState('');
 
   useState(() => {
     adminFetch(`/users/${userId}`, adminKey)
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setErr(e.message); setLoading(false); });
   });
+
+  const handleImpersonate = async () => {
+    if (!data) return;
+    if (!window.confirm(`View as ${data.user.email}? Your current session (if any) will be set aside and you can return to it from the banner shown on the student's plan.`)) return;
+    setActionBusy('impersonate'); setActionErr(''); setActionMsg('');
+    try {
+      const r = await adminPost('/impersonate', adminKey, { userId });
+      // Back up the admin's own token (if logged in as a normal user) so they can return
+      const existing = localStorage.getItem('nbme_token');
+      if (existing && existing !== r.token) {
+        localStorage.setItem('nbme_token_admin_backup', existing);
+      }
+      localStorage.setItem('nbme_token', r.token);
+      window.location.href = '/';
+    } catch (e) {
+      setActionErr(e.message);
+      setActionBusy('');
+    }
+  };
+
+  const handleSendReset = async () => {
+    if (!data) return;
+    setActionBusy('reset'); setActionErr(''); setActionMsg(''); setResetLink('');
+    try {
+      const r = await adminPost(`/users/${userId}/password-reset`, adminKey);
+      setResetLink(r.resetLink || '');
+      setActionMsg(`Reset link generated and emailed to ${r.email}. Valid for 1 hour.`);
+    } catch (e) {
+      setActionErr(e.message);
+    } finally {
+      setActionBusy('');
+    }
+  };
+
+  const copyResetLink = async () => {
+    if (!resetLink) return;
+    try {
+      await navigator.clipboard.writeText(resetLink);
+      setActionMsg('Reset link copied to clipboard.');
+    } catch {
+      setActionMsg('Could not copy. Select the link manually.');
+    }
+  };
 
   const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   const avgScore = (scores) => {
@@ -105,6 +166,42 @@ function UserDetailModal({ userId, adminKey, onClose }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: DARK, marginTop: 2, fontFamily: '"DM Sans", sans-serif', wordBreak: 'break-all' }}>{v}</div>
                 </div>
               ))}
+            </div>
+
+            <div style={{ border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 14, marginBottom: 20, background: BG }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: LIGHT, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Admin actions</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleImpersonate}
+                  disabled={!!actionBusy}
+                  style={{ background: G, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: actionBusy ? 'wait' : 'pointer', fontFamily: '"DM Sans", sans-serif', opacity: actionBusy ? 0.7 : 1 }}
+                >
+                  {actionBusy === 'impersonate' ? 'Signing in…' : 'View as student'}
+                </button>
+                <button
+                  onClick={handleSendReset}
+                  disabled={!!actionBusy}
+                  style={{ background: WHITE, color: DARK, border: `1px solid ${MID}`, borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: actionBusy ? 'wait' : 'pointer', fontFamily: '"DM Sans", sans-serif', opacity: actionBusy ? 0.7 : 1 }}
+                >
+                  {actionBusy === 'reset' ? 'Generating…' : 'Send password reset'}
+                </button>
+              </div>
+              {actionMsg && <div style={{ marginTop: 10, fontSize: 12, color: G2, fontFamily: '"DM Sans", sans-serif' }}>{actionMsg}</div>}
+              {actionErr && <div style={{ marginTop: 10, fontSize: 12, color: DANGER, fontFamily: '"DM Sans", sans-serif' }}>{actionErr}</div>}
+              {resetLink && (
+                <div style={{ marginTop: 10, display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                  <input
+                    readOnly
+                    value={resetLink}
+                    onFocus={(e) => e.target.select()}
+                    style={{ flex: 1, fontSize: 11, padding: '6px 8px', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 6, background: WHITE, fontFamily: 'monospace', color: DARK }}
+                  />
+                  <button onClick={copyResetLink} style={{ background: DARK, color: WHITE, border: 'none', borderRadius: 6, padding: '0 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: '"DM Sans", sans-serif' }}>Copy</button>
+                </div>
+              )}
+              <div style={{ marginTop: 10, fontSize: 10, color: LIGHT, fontFamily: '"DM Sans", sans-serif' }}>
+                Plaintext passwords cannot be retrieved — they're stored as one-way bcrypt hashes. Use "Send password reset" to help a locked-out student.
+              </div>
             </div>
 
             {data.assessments.length > 0 && (

@@ -81,6 +81,14 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    target_user_id INTEGER,
+    ip TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_assessments_user ON assessments(user_id);
   CREATE INDEX IF NOT EXISTS idx_plans_user ON study_plans(user_id);
   CREATE INDEX IF NOT EXISTS idx_schedule_user ON class_schedule(user_id);
@@ -88,6 +96,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_feedback_type ON feedback(feedback_type);
   CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+  CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
 `);
 
 // ── Migrations (safe: no-op if column already exists) ────────────────

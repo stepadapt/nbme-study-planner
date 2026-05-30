@@ -1,6 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
+const { signToken } = require('../auth');
+const { sendPasswordResetEmail } = require('../utils/email');
+
+const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // ── Admin auth middleware ──────────────────────────────────────────────────
 // Validates the X-Admin-Key header against the ADMIN_SECRET env variable.
@@ -391,6 +396,78 @@ router.get('/plan-stats', (req, res) => {
   } catch (err) {
     console.error('[admin/plan-stats]', err);
     res.status(500).json({ error: 'Failed to load plan stats.' });
+  }
+});
+
+// ── POST /api/admin/impersonate ───────────────────────────────────────────
+// Mints a JWT for any user. Used by the instructor to "View as student" so
+// they can see a student's plan without needing the student's password.
+// JWTs are stateless — the student stays logged in on their own device.
+router.post('/impersonate', (req, res) => {
+  try {
+    const userId = parseInt(req.body && req.body.userId, 10);
+    if (isNaN(userId)) return res.status(400).json({ error: 'userId required.' });
+
+    const user = db.prepare('SELECT id, email, name, email_verified FROM users WHERE id = ?').get(userId);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const token = signToken({ userId: user.id, email: user.email });
+
+    db.prepare(
+      'INSERT INTO admin_audit_log (action, target_user_id, ip) VALUES (?, ?, ?)'
+    ).run('impersonate', user.id, req.ip || null);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        emailVerified: user.email_verified === 1,
+      },
+    });
+  } catch (err) {
+    console.error('[admin/impersonate]', err);
+    res.status(500).json({ error: 'Failed to mint impersonation token.' });
+  }
+});
+
+// ── POST /api/admin/users/:id/password-reset ──────────────────────────────
+// Generates a one-hour reset token for the target user, emails them the link,
+// and also returns the link in the response so the admin can DM it directly.
+// Mirrors the reset-token block in routes/auth.js#forgot-password.
+router.post('/users/:id/password-reset', (req, res) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (isNaN(userId)) return res.status(400).json({ error: 'Invalid user id.' });
+
+    const user = db.prepare('SELECT id, email FROM users WHERE id = ?').get(userId);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    db.prepare(
+      'UPDATE users SET reset_token = ?, reset_token_expires = ? WHERE id = ?'
+    ).run(resetToken, resetExpires, user.id);
+
+    sendPasswordResetEmail(user.email, resetToken).catch(err =>
+      console.error('[admin/password-reset] email failed:', err.message)
+    );
+
+    db.prepare(
+      'INSERT INTO admin_audit_log (action, target_user_id, ip) VALUES (?, ?, ?)'
+    ).run('password_reset_triggered', user.id, req.ip || null);
+
+    const resetLink = `${APP_URL}?action=reset&token=${resetToken}`;
+    res.json({
+      message: 'Reset link generated. Email dispatched.',
+      resetLink,
+      email: user.email,
+    });
+  } catch (err) {
+    console.error('[admin/password-reset]', err);
+    res.status(500).json({ error: 'Failed to generate reset link.' });
   }
 });
 
