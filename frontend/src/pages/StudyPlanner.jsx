@@ -3942,6 +3942,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <span style={{ fontSize: 12, fontFamily: S.f, color: "#8a857e" }}>{a.date}</span>
                         <span style={{ marginLeft: "auto", fontSize: 14, fontWeight: 700, fontFamily: S.f, color: "#1a1816" }}>Avg: {avg}%</span>
                         <button onClick={() => startEditAssessment(a)} title="Edit assessment" style={{ padding: '5px 10px', fontSize: 12, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 7, cursor: 'pointer', color: '#6b6560', fontFamily: S.f, lineHeight: 1, whiteSpace: 'nowrap' }}>✏️ Edit</button>
+                        <button onClick={() => setDeleteConfirmId(a.id)} title="Delete assessment" style={{ padding: '5px 8px', fontSize: 12, background: '#fff', border: '1px solid #f8e8e8', borderRadius: 7, cursor: 'pointer', color: '#c0392b', fontFamily: S.f, lineHeight: 1, flexShrink: 0 }}>🗑️</button>
                       </div>
                       <div style={{ display: "flex", gap: 2, marginTop: 4 }}>
                         {cats.map(c => { const v = a.scores[c] || 0; return <div key={c} title={`${c}: ${v}%`} style={{ flex: 1, height: 4, borderRadius: 2, background: v <= 30 ? "#c0392b" : v <= 50 ? "#e67e22" : v <= 70 ? "#2980b9" : "#27ae60", opacity: 0.7 }} />; })}
@@ -4020,6 +4021,24 @@ export default function StudyPlanner({ onShowTerms }) {
       {assessmentActionMsg && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1816', color: '#fff', padding: '12px 22px', borderRadius: 12, fontSize: 13, fontFamily: S.f, zIndex: 2000, boxShadow: '0 4px 20px #0000002a', maxWidth: 460, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
           {assessmentActionMsg}
+        </div>
+      )}
+
+      {/* ── Delete confirmation dialog ── */}
+      {deleteConfirmId !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
+            <div style={{ fontSize: 22, marginBottom: 10 }}>🗑️</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 8 }}>Delete this assessment?</div>
+            <div style={{ fontSize: 13, color: '#6b6560', lineHeight: 1.5, marginBottom: 22 }}>This will permanently remove the assessment and immediately recalculate your study plan. This action cannot be undone.</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteConfirmId(null)} disabled={assessmentActionLoading} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+              <button onClick={() => handleDeleteAssessment(deleteConfirmId)} disabled={assessmentActionLoading}
+                style={{ ...S.btn, flex: 1, background: '#c0392b', color: '#fff', border: 'none', opacity: assessmentActionLoading ? 0.6 : 1 }}>
+                {assessmentActionLoading ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
