@@ -1145,8 +1145,28 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const ankiLevel = hasAnki ? (profile.anki_experience_level || "none") : "none";
   const ankiDeck = hasAnki ? (profile.ankiDeck || 'anking') : 'anking';
 
-  const topPriorities = priorities.filter(p => p.flagged || p.score <= 50);
-  const midPriorities = priorities.filter(p => !p.flagged && p.score > 50 && p.score <= 70);
+  // Always rotate through the 5 weakest reported categories (or all of them if
+  // fewer than 5 reported). The previous `score <= 50` cutoff collapsed to a
+  // singleton whenever only one category dipped sub-50, which pinned the focus
+  // topic to that one category for the entire plan.
+  const focusPool = priorities.slice(0, Math.min(5, priorities.length));
+
+  // Yield-weighted slot allocation: highest-yield member in the pool gets ~2
+  // consecutive study-day slots, lowest gets 1, others interpolate. yields range
+  // 4–10 in HIGH_YIELD_WEIGHTS (data.js).
+  const _yieldsInPool = focusPool.map(p => p.yield);
+  const _maxY = _yieldsInPool.length ? Math.max(..._yieldsInPool) : 1;
+  const _minY = _yieldsInPool.length ? Math.min(..._yieldsInPool) : 1;
+  const _span = Math.max(1, _maxY - _minY);
+  const focusRotation = [];
+  for (const p of focusPool) {
+    const raw = _maxY === _minY ? 1 : 1 + (p.yield - _minY) / _span;
+    const slots = Math.min(2, Math.max(1, Math.round(raw)));  // clamp to 1 or 2
+    for (let i = 0; i < slots; i++) focusRotation.push(p);
+  }
+
+  // Anything outside the focus pool is fair game as a secondary "maintenance" topic.
+  const midPriorities = priorities.filter(p => !focusPool.includes(p));
 
   const qBlockSize = 20;
   // Anki block only if student has AnKing
@@ -1410,16 +1430,21 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const availHrs = isLight ? Math.round(dayHrs * 0.6 * 10) / 10 : dayHrs;
     const dayAnkiHrs = hasAnki ? Math.min(1, roundToQuarterHour(availHrs * 0.12)) : 0;
 
-    const focusTopic = topPriorities.length > 0 ? topPriorities[focusCursor % topPriorities.length]
-      : midPriorities.length > 0 ? midPriorities[focusCursor % midPriorities.length] : priorities[0];
-    const secondFocus = topPriorities.length > 1 ? topPriorities[(focusCursor + 1) % topPriorities.length]
-      : midPriorities.length > 0 ? midPriorities[maintCursor % midPriorities.length] : null;
+    const focusTopic = focusRotation.length > 0
+      ? focusRotation[focusCursor % focusRotation.length]
+      : priorities[0];
+    const secondFocus = focusRotation.length > 1
+      ? focusRotation[(focusCursor + 1) % focusRotation.length]
+      : (midPriorities[0] || null);
 
     const focusCats = [focusTopic?.category, secondFocus?.category].filter(Boolean);
     const maintPool = priorities.filter(p => !focusCats.includes(p.category));
     const maint1 = maintPool[maintCursor % Math.max(1, maintPool.length)];
     const maint2 = maintPool[(maintCursor + 1) % Math.max(1, maintPool.length)];
-    if (studyDayNum % 2 === 0) focusCursor++;
+    // Advance focusCursor once per study day so each slot in focusRotation = 1 study day.
+    // Combined with the yield-weighted slot count, the highest-yield pool member
+    // gets ~2 consecutive days; the lowest gets 1.
+    focusCursor++;
     maintCursor += 2;
 
     // Subtopic offset: each visit to the same category shifts 3 positions in the
@@ -1625,7 +1650,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     + totalLightDays * (20 + qBlockSize);
   const nbmeDays = assessmentSchedule.length;
 
-  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, topPriorities, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay,
+  return { priorities, weeks, totalCalendarDays, totalWeeks, totalStudyDays, totalQEstimate, nbmeDays, focusPool, midPriorities, timelineMode, contentRampDays, assessmentSchedule, noAssessmentEligibleDay: !hasAssessmentEligibleDay,
     nextAssessment: nextAssessmentItem ? { day: nextAssessmentDay, test: nextAssessmentItem.test, label: nextAssessmentItem.label } : null,
     subTopicCursors };
 }
