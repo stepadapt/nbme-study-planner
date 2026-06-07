@@ -1065,10 +1065,8 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   for (let d = 0; d < totalCalendarDays; d++) {
     const calendarDay = d + 1;
     const isLastDay = d === totalCalendarDays - 1;
-    // Exam-week lockdown: applies only for plans ≥ 14 days, covers the 7 days before exam-eve + eve itself
-    const isInLockdown = totalCalendarDays >= 14 && calendarDay >= totalCalendarDays - 8 && !isLastDay;
-    const isExamEve = isInLockdown && calendarDay === totalCalendarDays - 1;
-    const isExamWeekDay = isInLockdown && !isExamEve;
+    // Exam-eve: the single day immediately before the final rest day (real Step 1 day).
+    const isExamEve = totalCalendarDays >= 14 && calendarDay === totalCalendarDays - 1;
     // Per-day hours and start time from weeklySchedule
     const dayDate = new Date(planStartDate);
     dayDate.setDate(planStartDate.getDate() + d);
@@ -1077,13 +1075,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     const isStudentRest = dayHours === 0 && !assessmentDayMap.has(calendarDay) && !reviewDayMap.has(calendarDay);
     const dayItem = assessmentDayMap.get(calendarDay);
     // "Locked" = past the next unscored practice exam, but not the final exam wind-down.
-    // The wind-down (exam-week / exam-eve / final rest) is tied to the real Step 1 date,
+    // The wind-down (exam-eve / final rest) is tied to the real Step 1 date,
     // not to any NBME breakdown — it stays visible regardless of lock state.
     const isLocked = nextAssessmentDay !== null
       && calendarDay > nextAssessmentDay
       && !isLastDay
-      && !isExamEve
-      && !isExamWeekDay;
+      && !isExamEve;
 
     if (isLastDay) {
       daySchedule.push({ calendarDay, type: "rest", dayHours, dayStartTime });
@@ -1096,8 +1093,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       daySchedule.push({ calendarDay, type: "nbme", assessItem: dayItem, dayHours, dayStartTime });
     } else if (isExamEve) {
       daySchedule.push({ calendarDay, type: "exam-eve", dayHours, dayStartTime });
-    } else if (isExamWeekDay) {
-      daySchedule.push({ calendarDay, type: "exam-week", dayHours, dayStartTime });
     } else if (isLocked) {
       // Placeholder: blocks intentionally empty. UI renders a single locked card.
       daySchedule.push({
@@ -1356,46 +1351,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       continue;
     }
 
-    // ── Exam-week day (lockdown mode — no new content) ────────────────
-    if (sched.type === "exam-week") {
-      studyDayNum++;
-      const firstPri = priorities[0];
-      const firstRes = firstPri ? getRes(firstPri.category) : { practice: [] };
-      const examQBank = firstRes.practice.length > 0 ? rn(firstRes.practice[0]) : "Question bank";
-      // Per-day hours for exam-week block sizing
-      const lockdownDayHrs = sched.dayHours ?? hrs;
-      const lockdownAnkiHrs = hasAnki ? Math.min(1, roundToQuarterHour(lockdownDayHrs * 0.12)) : 0;
-      const lockdownBlocks = [];
-      if (hasAnki) {
-        lockdownBlocks.push({ type: "anki", label: "Morning retention", tasks: [
-          { resource: getDeckName(ankiDeck), activity: "Due reviews only — quick streak maintenance.", hours: lockdownAnkiHrs },
-        ]});
-      }
-      lockdownBlocks.push({ type: "content-reactive", label: "Most-missed concepts review", tasks: [
-        { resource: hasFirstAid ? "First Aid + flagged notes" : "Flagged notes", activity: `Quick pass through ${hasFirstAid ? 'annotated First Aid pages and ' : ''}your flagged notes and cards from past NBMEs. 30–45 min max — only familiar review, no new reading. Focus on patterns that have tripped you up more than once.`, hours: 0.5 },
-      ]});
-      // 4-6 random blocks based on available hours (targeting 80–120 Qs at 20 Qs/block)
-      const lockdownHrsAvail = lockdownDayHrs - lockdownAnkiHrs - 0.5 - 1.5; // minus anki, review, free-time buffer
-      const lockdownRandomBlocks = Math.max(4, Math.min(6, Math.round(lockdownHrsAvail / 0.67)));
-      for (let rb = 0; rb < lockdownRandomBlocks; rb++) {
-        lockdownBlocks.push({ type: "questions-random", label: `Random block ${rb + 1} — all systems`, tasks: [
-          { resource: examQBank, activity: `${qBlockSize} Qs — RANDOM, all systems, timed. Simulate exam-day pacing.`, hours: 0.5 },
-          { resource: "Self-review", activity: "Wrong answers only — 2 min max per concept, then move on. Maintenance mode: no deep dives.", hours: 0.17 },
-        ]});
-      }
-      lockdownBlocks.push({ type: "rest", label: "Finish by 3 PM — rest the remainder", tasks: [
-        { resource: "Self", activity: "Done for the day. Finish all study by 3 PM. Rest, exercise, socialise — protect your sleep schedule and mental energy for exam day.", hours: 1 },
-      ]});
-      const lockdownTotalQs = lockdownRandomBlocks * qBlockSize;
-      currentWeek.days.push({
-        calendarDay: sched.calendarDay, dayType: "exam-week",
-        startTime: sched.dayStartTime || profile.studyStartTime || '07:00',
-        dayLabel: getDayLabel(lockdownDayHrs, sched.dayStartTime),
-        blocks: lockdownBlocks, totalQuestions: lockdownTotalQs,
-      });
-      continue;
-    }
-
     // ── Student-selected rest day ─────────────────────────────────────
     if (sched.type === "student-rest") {
       const studentRestBlocks = [];
@@ -1634,7 +1589,7 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
 
   const totalWeeks = weeks.length;
   weeks.forEach((w, i) => {
-    const hasLockdown = w.days.some(d => d.dayType === 'exam-week' || d.dayType === 'exam-eve');
+    const hasLockdown = w.days.some(d => d.dayType === 'exam-eve');
     if (hasLockdown) {
       w.phase = "Exam week — maintenance and confidence mode";
       w.isLockdown = true;

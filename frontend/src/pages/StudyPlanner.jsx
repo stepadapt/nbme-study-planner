@@ -1602,7 +1602,7 @@ export default function StudyPlanner({ onShowTerms }) {
             ) : (
               <>
               <div style={{ display: 'grid', gap: 8 }}>
-                {/* Exam-week / exam-eve lockdown banner */}
+                {/* Exam-eve banner */}
                 {todayData.day.dayType === 'review' && (
                   <div style={{ padding: '11px 14px', borderRadius: 10, background: '#d9770608', border: '1px solid #d9770625', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
                     <span style={{ fontSize: 18, flexShrink: 0 }}>🔍</span>
@@ -1616,17 +1616,15 @@ export default function StudyPlanner({ onShowTerms }) {
                     </div>
                   </div>
                 )}
-                {(todayData.day.dayType === 'exam-week' || todayData.day.dayType === 'exam-eve') && (
+                {todayData.day.dayType === 'exam-eve' && (
                   <div style={{ padding: '11px 14px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0 }}>{todayData.day.dayType === 'exam-eve' ? '🌙' : '🔒'}</span>
+                    <span style={{ fontSize: 18, flexShrink: 0 }}>🌙</span>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 2 }}>
-                        {todayData.day.dayType === 'exam-eve' ? 'Exam eve — light review and early rest' : 'Exam week — maintenance and confidence mode'}
+                        Exam eve — light review and early rest
                       </div>
                       <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f }}>
-                        {todayData.day.dayType === 'exam-eve'
-                          ? 'Pack your bag. Light dinner. No new content. In bed by 10 PM.'
-                          : 'No new content. Random blocks only. Finish all study by 3 PM.'}
+                        Pack your bag. Light dinner. No new content. In bed by 10 PM.
                       </div>
                     </div>
                   </div>
@@ -3483,13 +3481,12 @@ export default function StudyPlanner({ onShowTerms }) {
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
                   {day.dayType === 'student-rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>🌿 Rest day</span>}
                   {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
-                  {day.dayType === 'exam-week' && <span style={{ ...S.tag, background: '#7c3aed18', color: '#7c3aed' }}>⚡ Exam week</span>}
                   {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75' }}>🌙 Exam eve</span>}
                   {day.dayLabel && !['Rest', 'NBME'].includes(day.dayLabel) && day.dayType === 'study' && (
                     <span style={{ ...S.tag, background: '#8a857e18', color: '#6b6560' }}>{day.dayLabel}</span>
                   )}
                   {day.dayType === 'review' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>📋 Review day</span>}
-                  {!special && day.dayType !== 'exam-week' && day.dayType !== 'exam-eve' && day.focusTopic && (
+                  {!special && day.dayType !== 'exam-eve' && day.focusTopic && (
                     <span style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f }}>Focus: <strong style={{ color: '#1a1816' }}>{day.focusTopic}</strong></span>
                   )}
                   {day.totalQuestions > 0 && <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816', marginLeft: 'auto' }}>{day.totalQuestions} Qs</span>}
@@ -3611,7 +3608,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <div style={{ fontSize: 12, color: week.isLockdown ? '#7c3aed' : '#8a857e', fontFamily: S.f, marginTop: 2 }}>{week.phase}</div>
                       </div>
                       {week.days.map((day, di) => {
-                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'exam-week' ? '#7c3aed' : day.dayType === 'locked' ? '#8a857e' : '#1a1816';
+                        const rowColor = day.dayType === 'nbme' ? '#c0392b' : (day.dayType === 'rest' || day.dayType === 'student-rest') ? '#27ae60' : day.dayType === 'review' ? '#d97706' : day.dayType === 'locked' ? '#8a857e' : '#1a1816';
                         const dayDate = getPlanDayDate(day.calendarDay);
                         const isTodayDay = isToday(dayDate);
                         return (
@@ -3625,7 +3622,7 @@ export default function StudyPlanner({ onShowTerms }) {
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
-                                  {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-week' ? '⚡ Exam week' : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.dayType === 'locked' ? '🔒 Locked' : day.focusTopic || 'Study day'}
+                                  {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.dayType === 'locked' ? '🔒 Locked' : day.focusTopic || 'Study day'}
                                 </div>
                                 {isTodayDay && <span style={{ fontSize: 10, fontWeight: 700, color: '#1D9E75', background: '#1D9E7518', padding: '1px 6px', borderRadius: 6, fontFamily: S.f }}>TODAY</span>}
                               </div>

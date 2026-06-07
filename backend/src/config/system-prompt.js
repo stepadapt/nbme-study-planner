@@ -50,7 +50,6 @@ These percentages govern how focus block system selection is distributed across 
 More than 6 weeks remaining: 50% of focus blocks on weak systems / 30% intermediate / 20% strong
 3 to 6 weeks remaining: 60% weak / 25% intermediate / 15% strong
 Less than 3 weeks remaining: 70% weak / 20% intermediate / 10% strong
-Less than 1 week remaining (exam-week lockdown): No new content. Random blocks only. Morning review of most-missed concepts list. Done by early afternoon. Protect sleep and mental energy.
 
 Note: "Strong" systems receiving focus block time does NOT mean dedicated content review — it means the student's focus block targets that system's questions to verify the knowledge is still solid. This is a spot-check, not a study session.
 2. Maintenance Rule
@@ -160,7 +159,6 @@ Limited time (less than 2 weeks):
 No content ramp. Questions from day 1.
 Focus blocks target ONLY yield 9-10 sub-topics in the weakest 2-3 systems
 Skip UWSA1. Use Free 120 as the only practice test (3-4 days before exam).
-Exam-week lockdown starts 5 days out: no new content, random blocks only, done by early afternoon
 
 Student burnout:
 
@@ -449,7 +447,6 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
         rest: 'Rest Day',
         'rest-debrief': 'Post-Exam Debrief Day',
         'exam-eve': 'Exam Eve',
-        'exam-week': 'Exam Week (lockdown)',
         light: 'Light Study Day',
         study: `Focus — ${todayDay.focusTopic || 'Mixed'}`,
       }[todayDay.dayType] || todayDay.dayType;
