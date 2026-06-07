@@ -933,20 +933,37 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     effectiveStickingPoints = [...new Set([...stickingPoints, ...weakSystemsFallback])];
   }
 
+  // Only categories with a real score signal compete to be the day's focus topic.
+  // Most NBME forms only break out the ~8 system categories, not all 9 disciplines —
+  // a hardcoded fallback (e.g. 50) made unreported high-yield disciplines like
+  // Gross Anatomy & Embryology dominate every day's ranking. Categories without
+  // a reported score still appear inside system days via contentEngine sub-topics.
+  const reportedCategories = new Set();
+  for (const cat of STEP1_CATEGORIES) {
+    const v = effectiveScores[cat];
+    if (v !== undefined && v !== null && v !== '' && !Number.isNaN(Number(v))) {
+      reportedCategories.add(cat);
+    }
+  }
+
   let priorities = [];
   for (const cat of STEP1_CATEGORIES) {
-    const score = effectiveScores[cat] ?? 50;
+    if (!reportedCategories.has(cat)) continue;
+    const score = Number(effectiveScores[cat]);
     const weakness = Math.max(0, 100 - score);
     const yld = weights[cat] || 5;
     const flagged = effectiveStickingPoints.includes(cat);
     // Discipline crossover bonus: amplify system priority when the student is
     // also weak (< 60%) in the disciplines that dominate that system.
     // This ensures Cardiovascular + weak Pharmacology outranks GI + strong Pathology.
-    // Only applies to system categories (not discipline categories themselves).
+    // Only applies to system categories (not discipline categories themselves),
+    // and only when the discipline was actually reported low.
     let crossoverBonus = 1.0;
     if (!STEP1_DISCIPLINE_CATEGORIES.includes(cat)) {
       for (const disc of getDominantDisciplinesForSystem(cat)) {
-        if ((effectiveScores[disc] ?? 50) < 60) crossoverBonus = Math.min(crossoverBonus + 0.15, 1.5);
+        if (reportedCategories.has(disc) && Number(effectiveScores[disc]) < 60) {
+          crossoverBonus = Math.min(crossoverBonus + 0.15, 1.5);
+        }
       }
     }
     const compositeScore = ((weakness * 0.4) + (yld * 8 * 0.35) + (flagged ? 25 : 0)) * crossoverBonus;

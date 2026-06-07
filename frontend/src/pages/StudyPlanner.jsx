@@ -21,6 +21,34 @@ function matchPracticeTest(name) {
   return null;
 }
 
+// Preserve historical (already-passed) days from the prior plan so days the
+// student has already worked through don't silently change when a new score
+// triggers regeneration. Compares calendarDay against today's offset from
+// planStartDate. Returns newPlan unchanged when priorPlan or planStartDate
+// is missing.
+function freezePastDays(newPlan, priorPlan, planStartDate) {
+  if (!newPlan?.weeks || !priorPlan?.weeks || !planStartDate) return newPlan;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(planStartDate); start.setHours(0, 0, 0, 0);
+  const todayCalDay = Math.round((today.getTime() - start.getTime()) / 86400000) + 1;
+  if (todayCalDay <= 1) return newPlan;
+
+  const frozen = new Map();
+  for (const w of priorPlan.weeks) {
+    for (const d of (w.days || [])) {
+      if (d?.calendarDay && d.calendarDay < todayCalDay) frozen.set(d.calendarDay, d);
+    }
+  }
+  if (frozen.size === 0) return newPlan;
+  return {
+    ...newPlan,
+    weeks: newPlan.weeks.map(w => ({
+      ...w,
+      days: (w.days || []).map(d => frozen.has(d.calendarDay) ? frozen.get(d.calendarDay) : d),
+    })),
+  };
+}
+
 function ProgressBar({ value, max = 100, color = "#2980b9", height = 8 }) {
   return (
     <div style={{ width: "100%", background: "rgba(128,128,128,0.15)", borderRadius: height / 2, height, overflow: "hidden" }}>
@@ -491,16 +519,17 @@ export default function StudyPlanner({ onShowTerms }) {
         try {
           const recoveredPlan = generatePlan(profileForPlan, regenScores, regenStickingPoints,
             { planStartDate: recoveryStartDate, subTopicCursors: plan?.subTopicCursors || {} });
+          const mergedRecovered = freezePastDays(recoveredPlan, plan, recoveryStartDate);
           const recoveryCreatedAt = recoveryStartDate.toISOString();
           api.plans.update(latestPlanMeta.id, {
-            planData: recoveredPlan,
+            planData: mergedRecovered,
             profileSnapshot: profile,
             engineVersion: PLAN_ENGINE_VERSION,
             createdAt: recoveryCreatedAt,
           }).then(result => {
             if (!result?.id) return;
             sessionStorage.setItem(recoveryFlagKey, '1'); // set AFTER success only
-            setPlan(recoveredPlan);
+            setPlan(mergedRecovered);
             setLatestPlanMeta(prev => ({ ...prev, createdAt: recoveryCreatedAt, engineVersion: PLAN_ENGINE_VERSION }));
           }).catch(err => {
             console.error('[plan-regen] Recovery save failed — will retry on next load:', err);
@@ -526,15 +555,16 @@ export default function StudyPlanner({ onShowTerms }) {
         ? generateFirstTimerPlan(profile, latestPlanMeta?.firstTimerWeakSystems || [], null)
         : generatePlan(profileForPlan, regenScores, regenStickingPoints,
             { planStartDate: originalStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [], subTopicCursors: plan?.subTopicCursors || {} });
+      const mergedRegen = freezePastDays(regeneratedPlan, plan, originalStartDate);
 
       // PUT (not POST) — updates plan_data + engine_version, preserves created_at
       api.plans.update(latestPlanMeta.id, {
-        planData: regeneratedPlan,
+        planData: mergedRegen,
         profileSnapshot: profile,
         engineVersion: PLAN_ENGINE_VERSION,
       }).then(result => {
         if (!result?.id) return;
-        setPlan(regeneratedPlan);
+        setPlan(mergedRegen);
         // Keep the original createdAt — that's what keeps the day numbers correct
         setLatestPlanMeta(prev => ({ ...prev, engineVersion: PLAN_ENGINE_VERSION }));
         const changes = getChangesSince(oldVersion);
@@ -767,14 +797,20 @@ export default function StudyPlanner({ onShowTerms }) {
       d.setHours(0, 0, 0, 0);
       return d;
     })() : null;
+    // Use the latest assessment's sticking points (not stale React state).
+    // Mirrors the background-regen pattern earlier in this file.
+    const regenStickingPoints = last?.stickingPoints || last?.sticking_points || stickingPoints || [];
     const generatedPlan = updatedAssessments.length === 0
       ? generateFirstTimerPlan(effectiveProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
-      : generatePlan(profileForPlan, newScores, stickingPoints, {
+      : generatePlan(profileForPlan, newScores, regenStickingPoints, {
         ...(existingStartDate ? { planStartDate: existingStartDate } : {}),
         weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [],
         subTopicCursors: plan?.subTopicCursors || {},
       });
-    setPlan(generatedPlan);
+    // Preserve historical (calendarDay < today) days from the prior plan so days
+    // the student has already passed don't silently change when a new score regens.
+    const mergedPlan = freezePastDays(generatedPlan, plan, existingStartDate);
+    setPlan(mergedPlan);
     if (Object.keys(catScores).length > 0) setScores(catScores);
     // Persist pruned override map / skip list back to profile so next session starts clean
     if (profileNeedsPersist) {
@@ -783,10 +819,10 @@ export default function StudyPlanner({ onShowTerms }) {
     }
     // Use PUT (update) to preserve created_at — never POST (save) which resets day position
     if (latestPlanMeta?.id) {
-      api.plans.update(latestPlanMeta.id, { planData: generatedPlan, profileSnapshot: effectiveProfile, engineVersion: PLAN_ENGINE_VERSION })
+      api.plans.update(latestPlanMeta.id, { planData: mergedPlan, profileSnapshot: effectiveProfile, engineVersion: PLAN_ENGINE_VERSION })
         .catch(() => {});
     } else {
-      api.plans.save({ planData: generatedPlan, profileSnapshot: effectiveProfile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
+      api.plans.save({ planData: mergedPlan, profileSnapshot: effectiveProfile, assessmentId: null, engineVersion: PLAN_ENGINE_VERSION })
         .then(result => { if (result?.id) setLatestPlanMeta(prev => ({ ...prev, id: result.id, engineVersion: PLAN_ENGINE_VERSION })); })
         .catch(() => {});
     }
