@@ -1145,14 +1145,24 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
   const ankiLevel = hasAnki ? (profile.anki_experience_level || "none") : "none";
   const ankiDeck = hasAnki ? (profile.ankiDeck || 'anking') : 'anking';
 
-  // Always rotate through the 5 weakest reported categories (or all of them if
-  // fewer than 5 reported). The previous `score <= 50` cutoff collapsed to a
-  // singleton whenever only one category dipped sub-50, which pinned the focus
-  // topic to that one category for the entire plan.
-  const focusPool = priorities.slice(0, Math.min(5, priorities.length));
+  // These three disciplines are integrative — students don't study them in
+  // isolation; they emerge naturally from working on system content (and already
+  // surface as sub-topics inside every system day via contentEngine.js). They
+  // stay in `priorities` for ranking/display but never headline a day and never
+  // appear as a named maintenance topic.
+  const HEADLINE_EXCLUDED_DISCIPLINES = new Set(['Pathology', 'Physiology', 'Pharmacology']);
+
+  // Always rotate through the 5 weakest *headline-eligible* reported categories.
+  // The previous `score <= 50` cutoff collapsed to a singleton whenever only one
+  // category dipped sub-50, pinning focus to that one category for the entire plan.
+  const headlineEligible = priorities.filter(p => !HEADLINE_EXCLUDED_DISCIPLINES.has(p.category));
+  // Fallback: if a student somehow reports ONLY excluded disciplines, fall back
+  // to the unfiltered priorities so we always have a rotation to drive day construction.
+  const _focusSource = headlineEligible.length > 0 ? headlineEligible : priorities;
+  const focusPool = _focusSource.slice(0, Math.min(5, _focusSource.length));
 
   // Yield-weighted slot allocation: highest-yield member in the pool gets ~2
-  // consecutive study-day slots, lowest gets 1, others interpolate. yields range
+  // consecutive study-day slots, lowest gets 1, clamped to [1, 2]. yields range
   // 4–10 in HIGH_YIELD_WEIGHTS (data.js).
   const _yieldsInPool = focusPool.map(p => p.yield);
   const _maxY = _yieldsInPool.length ? Math.max(..._yieldsInPool) : 1;
@@ -1165,8 +1175,12 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
     for (let i = 0; i < slots; i++) focusRotation.push(p);
   }
 
-  // Anything outside the focus pool is fair game as a secondary "maintenance" topic.
-  const midPriorities = priorities.filter(p => !focusPool.includes(p));
+  // Secondary "maintenance" pool: anything outside the focus pool AND outside
+  // the integrative disciplines (so Pathology/Physiology/Pharmacology never get
+  // named as a maint slot either).
+  const midPriorities = priorities.filter(p =>
+    !focusPool.includes(p) && !HEADLINE_EXCLUDED_DISCIPLINES.has(p.category)
+  );
 
   const qBlockSize = 20;
   // Anki block only if student has AnKing
@@ -1438,7 +1452,9 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       : (midPriorities[0] || null);
 
     const focusCats = [focusTopic?.category, secondFocus?.category].filter(Boolean);
-    const maintPool = priorities.filter(p => !focusCats.includes(p.category));
+    const maintPool = priorities.filter(p =>
+      !focusCats.includes(p.category) && !HEADLINE_EXCLUDED_DISCIPLINES.has(p.category)
+    );
     const maint1 = maintPool[maintCursor % Math.max(1, maintPool.length)];
     const maint2 = maintPool[(maintCursor + 1) % Math.max(1, maintPool.length)];
     // Advance focusCursor once per study day so each slot in focusRotation = 1 study day.
