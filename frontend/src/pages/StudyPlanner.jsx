@@ -92,7 +92,7 @@ function ContentSequencePanel({ contentSequence, compact = false }) {
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 3, fontFamily: 'Georgia, "Times New Roman", serif' }}>
               <span style={{ fontSize: sz.label, fontWeight: 600, color: '#888', minWidth: 16 }}>{si + 1}.</span>
               <span style={{ fontSize: sz.action, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: col }}>{act}:</span>
-              <span style={{ fontSize: sz.label, fontWeight: 600, color: '#1D9E75' }}>{resource}</span>
+              <span style={{ fontSize: sz.label, fontWeight: 600, color: '#2db882' }}>{resource}</span>
               {topic && <><span style={{ fontSize: sz.label, color: '#ccc' }}>—</span><span style={{ fontSize: sz.label, color: '#1a1816' }}>{topic}</span></>}
               <span style={{ marginLeft: 'auto', fontSize: sz.time, color: '#999', whiteSpace: 'nowrap', paddingLeft: 6 }}>{timeStr}</span>
             </div>
@@ -299,10 +299,21 @@ export default function StudyPlanner({ onShowTerms }) {
   const [uworldPct, setUworldPct] = useState('');       // first-timer self-assessment
   const [stickingPoints, setStickingPoints] = useState([]);
   const [plan, setPlan] = useState(null);
+  const [page, setPage] = useState('dashboard'); // sidebar page within the app shell: dashboard | full-plan | edit-plan | add-assessment | past-exams | my-stats
+  const [checkedBlocks, setCheckedBlocks] = useState(new Set()); // dashboard today's-schedule check-off (visual only)
+  const [regenConfirm, setRegenConfirm] = useState(false); // Edit Plan regenerate confirmation dialog
+  const [assessStep, setAssessStep] = useState(1); // Add Assessment 3-step flow: 1 upload | 2 review | 3 confirmed
+  const [assessEditing, setAssessEditing] = useState(false); // Add Assessment step-2 editable-inputs toggle
+  const [planPopover, setPlanPopover] = useState(null); // Full Plan calendar pill popover: { day } or null
+  const [fullPlanView, setFullPlanView] = useState('calendar'); // Full Plan layout: 'calendar' | 'list'
+  const [fullPlanWeek, setFullPlanWeek] = useState(null); // Full Plan calendar week index (null = auto to current week)
+  const [fullPlanOpenDay, setFullPlanOpenDay] = useState(null); // Full Plan list expanded day (calendarDay) or null
+  const [expandedExam, setExpandedExam] = useState(null); // Past Exams expanded card id
   const [expandedWeek, setExpandedWeek] = useState(0);
   const [animIn, setAnimIn] = useState(true);
   const [assessments, setAssessments] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768); // app shell → bottom nav on mobile
 
   // ── Plan view state ────────────────────────────────────────────────
   const [planViewMode, setPlanViewMode] = useState('day'); // 'day' | 'week' | 'full'
@@ -436,9 +447,19 @@ export default function StudyPlanner({ onShowTerms }) {
   // Auto-route to dashboard once data is loaded
   useEffect(() => {
     if (!dataLoaded) return;
-    if (plan) setScreen("dashboard");
+    if (plan) { setScreen("app"); setPage("dashboard"); }
     // else stay on "welcome" for new users
   }, [dataLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initialize the Edit Plan draft when navigating to the page via the sidebar
+  useEffect(() => {
+    if (screen === 'app' && page === 'edit-plan' && !editProfileDraft && profile) {
+      setEditProfileDraft({ ...profile });
+      setEditQfMode('custom');
+      setEditPlanSaved(false);
+      setEditPlanChanges([]);
+    }
+  }, [screen, page, editProfileDraft, profile]);
 
   // ── Silent background plan regeneration ────────────────────────────────
   // Runs once after data loads. Handles two cases:
@@ -693,8 +714,25 @@ export default function StudyPlanner({ onShowTerms }) {
     }
   };
 
+  // Track viewport for responsive app shell (sidebar ⇄ bottom nav)
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // ── Navigation ────────────────────────────────────────────────────
-  const navigate = (s) => { setAnimIn(false); setTimeout(() => { setScreen(s); setAnimIn(true); }, 200); };
+  // Sidebar targets render inside the two-column app shell (screen === "app");
+  // everything else (onboarding/flow screens) renders full-screen via `screen`.
+  const PAGE_MAP = { dashboard: 'dashboard', plan: 'full-plan', 'edit-plan': 'edit-plan', 'add-assessment': 'add-assessment', 'past-exams': 'past-exams', 'my-stats': 'my-stats' };
+  const navigate = (s) => {
+    setAnimIn(false);
+    setTimeout(() => {
+      if (PAGE_MAP[s]) { setScreen('app'); setPage(PAGE_MAP[s]); }
+      else { setScreen(s); }
+      setAnimIn(true);
+    }, 200);
+  };
   const selectedExam = { categories: STEP1_CATEGORIES };
   const previousAssessment = assessments.length > 0 ? assessments[assessments.length - 1] : null;
 
@@ -1199,28 +1237,62 @@ export default function StudyPlanner({ onShowTerms }) {
   // Chat context is now fetched server-side on every message — no planContext needed here.
 
   // ── Brand colors ──────────────────────────────────────────────────
-  const BRAND = { green: '#1D9E75', darkGreen: '#0F6E56', orange: '#D85A30' };
+  const BRAND = { green: '#2db882', darkGreen: '#1a5c40', orange: '#D85A30' };
+
+  // ── Redesign tokens (mint-green palette, sans-serif, Tabler icons) ──
+  const T = {
+    pageBg: '#eaf6ef', cardBg: '#fff',
+    border: '#b6d9c8', mid: '#caeada', soft: '#d4f0e3',
+    accent: '#2db882', dark: '#1a5c40', deeper: '#1a3d2b',
+    text: '#3d7a5c', muted: '#5a9e7a', faint: '#7ab89a', pale: '#9fe1cb',
+    font: '-apple-system, BlinkMacSystemFont, "Segoe UI", "DM Sans", sans-serif',
+  };
+  // Tabler icon helper: <Icon name="cards" size={14} color="#085041" />
+  const Icon = ({ name, size = 14, color, style }) => (
+    <i className={`ti ti-${name}`} style={{ fontSize: size, color, lineHeight: 1, ...style }} />
+  );
+  // Block-type visual treatment (reference palette). Maps engine block `type` → colors + Tabler icon.
+  const BLOCK_STYLE = {
+    anki:               { bg: '#e0f7ee', title: '#085041', res: '#0f6e56', iconBg: '#9fe1cb', iconColor: '#085041', icon: 'cards' },
+    content:            { bg: '#eeedfd', title: '#3c3489', res: '#534ab7', iconBg: '#cecbf6', iconColor: '#3c3489', icon: 'video' },
+    'content-reactive': { bg: '#eeedfd', title: '#3c3489', res: '#534ab7', iconBg: '#cecbf6', iconColor: '#3c3489', icon: 'video' },
+    'questions-focus':  { bg: '#e6f1fb', title: '#0c447c', res: '#185fa5', iconBg: '#b5d4f4', iconColor: '#0c447c', icon: 'list-check' },
+    'questions-random': { bg: '#e6f1fb', title: '#0c447c', res: '#185fa5', iconBg: '#b5d4f4', iconColor: '#0c447c', icon: 'list-check' },
+    questions:          { bg: '#e6f1fb', title: '#0c447c', res: '#185fa5', iconBg: '#b5d4f4', iconColor: '#0c447c', icon: 'list-check' },
+    'end-review':       { bg: '#faeeda', title: '#633806', res: '#854f0b', iconBg: '#fac775', iconColor: '#633806', icon: 'moon' },
+    review:             { bg: '#faeeda', title: '#633806', res: '#854f0b', iconBg: '#fac775', iconColor: '#633806', icon: 'moon' },
+    catchup:            { bg: '#faeeda', title: '#633806', res: '#854f0b', iconBg: '#fac775', iconColor: '#633806', icon: 'refresh' },
+    lunch:              { bg: '#f4f3ef', title: '#444441', res: '#888780', iconBg: '#d3d1c7', iconColor: '#5f5e5a', icon: 'coffee' },
+    break:              { bg: '#f4f3ef', title: '#444441', res: '#888780', iconBg: '#d3d1c7', iconColor: '#5f5e5a', icon: 'coffee' },
+    nbme:               { bg: '#e0f7ee', title: '#085041', res: '#0f6e56', iconBg: '#9fe1cb', iconColor: '#085041', icon: 'clipboard-check' },
+    'nbme-review':      { bg: '#e0f7ee', title: '#085041', res: '#0f6e56', iconBg: '#9fe1cb', iconColor: '#085041', icon: 'clipboard-check' },
+    rest:               { bg: '#f4f3ef', title: '#444441', res: '#888780', iconBg: '#d3d1c7', iconColor: '#5f5e5a', icon: 'bed' },
+  };
+  const blockStyleFor = (type) => BLOCK_STYLE[type] || BLOCK_STYLE.content;
+  // Category performance color (reference): good ≥65, mid 50–64, warn <50
+  const catColor = (pct) => pct >= 65 ? '#2db882' : pct >= 50 ? '#efca27' : '#d85a30';
+  const catTextColor = (pct) => pct >= 65 ? '#0f6e56' : pct >= 50 ? '#854f0b' : '#c05a1a';
 
   // ── Styles ────────────────────────────────────────────────────────
   const S = {
-    app: { fontFamily: '"Source Serif 4", Georgia, serif', minHeight: "100vh", background: "linear-gradient(170deg, #f4fbf8 0%, #edf7f3 100%)", color: "#2c2a26" },
+    app: { fontFamily: T.font, minHeight: "100vh", background: "linear-gradient(170deg, #f4fbf8 0%, #eaf6ef 100%)", color: T.deeper },
     wrap: { maxWidth: 640, margin: "0 auto", padding: "24px 20px 80px", opacity: animIn ? 1 : 0, transform: animIn ? "translateY(0)" : "translateY(12px)", transition: "all 0.3s ease" },
-    card: { background: "#fff", borderRadius: 16, padding: "28px", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 12px 40px rgba(29,158,117,0.06)", border: "1px solid rgba(29,158,117,0.10)", marginBottom: 16 },
-    h1: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 6px", lineHeight: 1.2, color: "#1a1816" },
-    h3: { fontSize: 16, fontWeight: 600, margin: "0 0 8px", color: "#1a1816" },
-    sub: { fontSize: 15, color: "#6b6560", margin: "0 0 24px", lineHeight: 1.5, fontFamily: '"DM Sans", sans-serif' },
-    label: { fontSize: 13, fontWeight: 600, color: "#8a857e", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "block", fontFamily: '"DM Sans", sans-serif' },
-    input: { width: "100%", padding: "12px 14px", borderRadius: 10, border: "1.5px solid #e0dcd6", fontSize: 15, fontFamily: '"DM Sans", sans-serif', background: "#fafffe", outline: "none", boxSizing: "border-box", color: "#2c2a26" },
-    btn: { padding: "13px 28px", borderRadius: 10, border: "none", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: '"DM Sans", sans-serif', transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8 },
-    pri: { background: BRAND.green, color: "#fff" }, sec: { background: "transparent", color: "#1a1816", border: "1.5px solid #d5d0c9" }, ghost: { background: "transparent", color: "#6b6560", padding: "8px 16px" },
-    chip: { display: "inline-flex", alignItems: "center", padding: "8px 16px", borderRadius: 20, fontSize: 14, fontFamily: '"DM Sans", sans-serif', cursor: "pointer", transition: "all 0.2s", border: "1.5px solid #e0dcd6", background: "#fff", gap: 6, userSelect: "none" },
+    card: { background: "#fff", borderRadius: 16, padding: "28px", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 12px 40px rgba(45,184,130,0.07)", border: `1px solid ${T.border}`, marginBottom: 16 },
+    h1: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 6px", lineHeight: 1.2, color: T.deeper },
+    h3: { fontSize: 16, fontWeight: 600, margin: "0 0 8px", color: T.deeper },
+    sub: { fontSize: 15, color: T.text, margin: "0 0 24px", lineHeight: 1.5, fontFamily: T.font },
+    label: { fontSize: 13, fontWeight: 600, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, display: "block", fontFamily: T.font },
+    input: { width: "100%", padding: "12px 14px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 15, fontFamily: T.font, background: "#fafffe", outline: "none", boxSizing: "border-box", color: T.deeper },
+    btn: { padding: "13px 28px", borderRadius: 10, border: "none", fontSize: 15, fontWeight: 600, cursor: "pointer", fontFamily: T.font, transition: "all 0.2s", display: "inline-flex", alignItems: "center", gap: 8 },
+    pri: { background: BRAND.green, color: "#fff" }, sec: { background: "transparent", color: T.deeper, border: `1.5px solid ${T.border}` }, ghost: { background: "transparent", color: T.muted, padding: "8px 16px" },
+    chip: { display: "inline-flex", alignItems: "center", padding: "8px 16px", borderRadius: 20, fontSize: 14, fontFamily: T.font, cursor: "pointer", transition: "all 0.2s", border: `1.5px solid ${T.border}`, background: "#fff", gap: 6, userSelect: "none" },
     chipOn: { background: BRAND.green, color: "#fff", borderColor: BRAND.green },
-    tag: { display: "inline-block", padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: '"DM Sans", sans-serif' },
-    hr: { height: 1, background: "#ece8e2", margin: "20px 0", border: "none" },
-    muted: { fontSize: 13, color: "#8a857e", fontFamily: '"DM Sans", sans-serif' },
+    tag: { display: "inline-block", padding: "3px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: T.font },
+    hr: { height: 1, background: T.mid, margin: "20px 0", border: "none" },
+    muted: { fontSize: 13, color: T.muted, fontFamily: T.font },
     topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", maxWidth: 640, margin: "0 auto" },
-    dot: (a) => ({ width: a ? 24 : 8, height: 8, borderRadius: 4, background: a ? BRAND.green : "#d5d0c9", transition: "all 0.3s" }),
-    f: '"DM Sans", sans-serif',
+    dot: (a) => ({ width: a ? 24 : 8, height: 8, borderRadius: 4, background: a ? BRAND.green : T.pale, transition: "all 0.3s" }),
+    f: T.font,
   };
 
   const blockColors = {
@@ -1285,8 +1357,237 @@ export default function StudyPlanner({ onShowTerms }) {
     </div>
   );
 
+  // ─── REDESIGN SHARED SHELL ─────────────────────────────────────────
+  // Persistent left sidebar (190px). Logo + 3 nav groups + exam countdown chip.
+  const Sidebar = () => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const examDate = profile.examDate ? new Date(profile.examDate) : null;
+    if (examDate) examDate.setHours(0, 0, 0, 0);
+    const daysLeft = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
+
+    const navItem = (label, target, iconName) => {
+      const active = (PAGE_MAP[target] || target) === page;
+      return (
+        <button onClick={() => navigate(target)} style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+          padding: '7px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+          fontFamily: T.font, fontSize: 13, fontWeight: active ? 500 : 400,
+          background: active ? T.soft : 'transparent', color: active ? T.dark : T.text,
+          transition: 'background 0.15s',
+        }}>
+          <Icon name={iconName} size={16} /> {label}
+        </button>
+      );
+    };
+    const navLabel = (txt) => (
+      <div style={{ fontSize: 10, fontWeight: 500, color: T.faint, padding: '10px 8px 3px', letterSpacing: '0.07em', textTransform: 'uppercase', fontFamily: T.font }}>{txt}</div>
+    );
+    const divider = <div style={{ height: '0.5px', background: '#d4ead9', margin: '8px 0' }} />;
+
+    return (
+      <div style={{
+        width: 190, flexShrink: 0, background: '#fff', borderRight: `0.5px solid ${T.mid}`,
+        padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: 3,
+        position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
+      }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: T.dark, padding: '2px 8px 14px', display: 'flex', alignItems: 'center', gap: 8, fontFamily: T.font }}>
+          <span style={{ width: 22, height: 22, borderRadius: 6, background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="bolt" size={13} color="#fff" />
+          </span>
+          StepAdapt
+        </div>
+
+        {navLabel('Plan')}
+        {navItem('Dashboard', 'dashboard', 'layout-dashboard')}
+        {navItem('Full plan', 'plan', 'calendar-week')}
+        {navItem('Edit plan', 'edit-plan', 'pencil')}
+        {divider}
+        {navLabel('Assessments')}
+        {navItem('Add assessment', 'add-assessment', 'upload')}
+        {navItem('Past exams', 'past-exams', 'history')}
+        {divider}
+        {navLabel('Stats')}
+        {navItem('My stats', 'my-stats', 'chart-line')}
+
+        {/* Exam countdown chip — pinned to bottom */}
+        <div style={{ marginTop: 'auto', background: T.pageBg, borderRadius: 10, padding: 12, border: `0.5px solid ${T.border}` }}>
+          <div style={{ fontSize: 10, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2, fontFamily: T.font }}>Exam in</div>
+          {daysLeft !== null ? (
+            <>
+              <div style={{ fontSize: 28, fontWeight: 500, color: T.dark, lineHeight: 1, fontFamily: T.font }}>{daysLeft}</div>
+              <div style={{ fontSize: 11, color: T.muted, marginTop: 3, fontFamily: T.font }}>days remaining</div>
+              <div style={{ fontSize: 11, color: T.faint, marginTop: 1, fontFamily: T.font }}>
+                {examDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </div>
+            </>
+          ) : (
+            <button onClick={() => navigate('edit-plan')} style={{ ...S.btn, background: T.accent, color: '#fff', padding: '6px 10px', fontSize: 12, marginTop: 6, fontFamily: T.font }}>Set date</button>
+          )}
+        </div>
+
+        {/* User / sign out */}
+        <div style={{ paddingTop: 10, marginTop: 6, borderTop: '0.5px solid #d4ead9' }}>
+          <div style={{ fontSize: 11, color: T.faint, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: T.font }} title={user?.email}>{user?.email}</div>
+          <button onClick={logout} style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '6px 10px', borderRadius: 8, border: `0.5px solid ${T.border}`, background: '#fff', color: T.text, cursor: 'pointer', fontFamily: T.font }}>
+            <Icon name="logout" size={14} /> Sign out
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Shared modals/toasts that should render on every app page.
+  const GlobalOverlays = () => (
+    <>
+      {/* ── Assessment action toast ── */}
+      {assessmentActionMsg && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1816', color: '#fff', padding: '12px 22px', borderRadius: 12, fontSize: 13, fontFamily: T.font, zIndex: 2000, boxShadow: '0 4px 20px #0000002a', maxWidth: 460, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+          {assessmentActionMsg}
+        </div>
+      )}
+
+      {/* ── Delete confirmation dialog ── */}
+      {deleteConfirmId !== null && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: T.font }}>
+            <Icon name="trash" size={22} color="#c0392b" />
+            <div style={{ fontSize: 16, fontWeight: 600, color: T.deeper, margin: '10px 0 8px' }}>Delete this assessment?</div>
+            <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5, marginBottom: 22 }}>This will permanently remove the assessment and immediately recalculate your study plan. This action cannot be undone.</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setDeleteConfirmId(null)} disabled={assessmentActionLoading} style={{ flex: 1, padding: '9px 14px', borderRadius: 9, border: `0.5px solid ${T.border}`, background: '#fff', color: T.text, fontSize: 13, fontFamily: T.font, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => handleDeleteAssessment(deleteConfirmId)} disabled={assessmentActionLoading}
+                style={{ flex: 1, padding: '9px 14px', borderRadius: 9, background: '#c0392b', color: '#fff', border: 'none', fontSize: 13, fontFamily: T.font, cursor: 'pointer', opacity: assessmentActionLoading ? 0.6 : 1 }}>
+                {assessmentActionLoading ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit assessment modal ── */}
+      {editingAssessment && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: T.font, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: T.deeper, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}><Icon name="pencil" size={17} color={T.accent} /> Edit assessment</div>
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.faint, display: 'block', marginBottom: 6 }}>Form name</label>
+                <input value={editFormName} onChange={e => setEditFormName(e.target.value)} placeholder="e.g. NBME 26"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `0.5px solid ${T.border}`, fontSize: 13, fontFamily: T.font, boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.faint, display: 'block', marginBottom: 6 }}>Date taken</label>
+                <input type="date" value={editTakenAt} onChange={e => setEditTakenAt(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: `0.5px solid ${T.border}`, fontSize: 13, fontFamily: T.font, boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+              {Object.keys(editScores).length > 0 && (
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.faint, display: 'block', marginBottom: 8 }}>Scores (%)</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {Object.keys(editScores).map(cat => (
+                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: T.pageBg, borderRadius: 8 }}>
+                        <span style={{ fontSize: 11, color: T.muted, flex: 1, lineHeight: 1.3 }}>{cat}</span>
+                        <input type="number" min="0" max="100" value={editScores[cat] ?? ''}
+                          onChange={e => setEditScores(prev => ({ ...prev, [cat]: Number(e.target.value) }))}
+                          style={{ width: 54, padding: '4px 6px', borderRadius: 6, border: `0.5px solid ${T.border}`, fontSize: 13, fontFamily: T.font, textAlign: 'right', outline: 'none' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button onClick={() => setEditingAssessment(null)} disabled={editSaving} style={{ flex: 1, padding: '9px 14px', borderRadius: 9, border: `0.5px solid ${T.border}`, background: '#fff', color: T.text, fontSize: 13, fontFamily: T.font, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={saveEditAssessment} disabled={editSaving}
+                style={{ flex: 1, padding: '9px 14px', borderRadius: 9, background: T.accent, color: '#fff', border: 'none', fontSize: 13, fontFamily: T.font, cursor: 'pointer', opacity: editSaving ? 0.6 : 1 }}>
+                {editSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  // Two-column wrapper. `children` render in the scrollable main pane.
+  // Fixed bottom navigation — replaces the sidebar on narrow viewports
+  const MobileNav = () => {
+    const items = [
+      ['Home', 'dashboard', 'layout-dashboard'],
+      ['Plan', 'plan', 'calendar-week'],
+      ['Edit', 'edit-plan', 'pencil'],
+      ['Add', 'add-assessment', 'upload'],
+      ['Exams', 'past-exams', 'history'],
+      ['Stats', 'my-stats', 'chart-line'],
+    ];
+    return (
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, background: '#fff',
+        borderTop: `0.5px solid ${T.mid}`, display: 'flex', zIndex: 1400, boxShadow: '0 -2px 10px rgba(0,0,0,0.04)',
+      }}>
+        {items.map(([label, target, icon]) => {
+          const active = (PAGE_MAP[target] || target) === page;
+          return (
+            <button key={target} onClick={() => navigate(target)} style={{
+              flex: 1, border: 'none', background: 'none', cursor: 'pointer', display: 'flex',
+              flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+              color: active ? T.dark : T.faint, fontFamily: T.font,
+            }}>
+              <Icon name={icon} size={19} color={active ? T.accent : T.faint} />
+              <span style={{ fontSize: 10, fontWeight: active ? 600 : 400 }}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const AppShell = ({ children }) => (
+    <div style={{ display: 'flex', minHeight: '100vh', background: T.pageBg, color: T.deeper, fontFamily: T.font }}>
+      {!isMobile && <Sidebar />}
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh' }}>
+        <div style={{ padding: isMobile ? '14px 14px 84px' : '18px 20px 80px', display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 920, opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.25s ease' }}>
+          {children}
+        </div>
+      </div>
+      {isMobile && <MobileNav />}
+      <GlobalOverlays />
+    </div>
+  );
+
+  const PageHeader = ({ title, sub, right }) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 17, fontWeight: 500, color: T.deeper, fontFamily: T.font }}>{title}</div>
+        {sub && <div style={{ fontSize: 12, color: T.muted, marginTop: 2, fontFamily: T.font }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  );
+
+  // Reusable category-performance bar (name, % bar, optional trend note)
+  const CatBar = ({ name, pct, trend, barHeight = 5 }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontFamily: T.font }}>
+        <span style={{ color: T.text }}>{name}</span>
+        <span style={{ color: catTextColor(pct), fontWeight: 500 }}>{pct}%</span>
+      </div>
+      <div style={{ height: barHeight, background: T.pageBg, borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, pct))}%`, background: catColor(pct), borderRadius: 3 }} />
+      </div>
+      {trend && (
+        <div style={{ fontSize: 10, marginTop: 1, fontFamily: T.font, color: trend.dir === 'up' ? '#0f6e56' : trend.dir === 'down' ? '#c05a1a' : T.border }}>
+          {trend.dir === 'up' ? `↑ +${trend.value}%` : trend.dir === 'down' ? `↓ −${Math.abs(trend.value)}%` : '→ no change'}{trend.dir !== 'flat' ? ' from last exam' : ''}
+        </div>
+      )}
+    </div>
+  );
+
+  // Reusable card matching the reference .card style
+  const tCard = (extra = {}) => ({ background: T.cardBg, border: `0.5px solid ${T.mid}`, borderRadius: 12, padding: 16, ...extra });
+
   // ─── DASHBOARD ─────────────────────────────────────────────────────
-  if (screen === "dashboard") {
+  if (screen === "app" && page === "dashboard") {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const examDate = profile.examDate ? new Date(profile.examDate) : null;
@@ -1325,8 +1626,8 @@ export default function StudyPlanner({ onShowTerms }) {
     // Category heatmap from latest assessment
     const latestAssessmentForHeatmap = assessments.length > 0 ? assessments[assessments.length - 1] : null;
     const heatmapCats = selectedExamLocal?.categories || [];
-    const heatColor = (s) => s <= 40 ? '#c0392b' : s <= 60 ? '#D85A30' : s <= 80 ? '#2980b9' : '#1D9E75';
-    const heatBg = (s) => s <= 40 ? '#c0392b0d' : s <= 60 ? '#D85A300d' : s <= 80 ? '#2980b90d' : '#1D9E750d';
+    const heatColor = (s) => s <= 40 ? '#c0392b' : s <= 60 ? '#D85A30' : s <= 80 ? '#2980b9' : '#2db882';
+    const heatBg = (s) => s <= 40 ? '#c0392b0d' : s <= 60 ? '#D85A300d' : s <= 80 ? '#2980b90d' : '#2db8820d';
 
     // Block icons
     const blockIcon = (type) => {
@@ -1374,21 +1675,86 @@ export default function StudyPlanner({ onShowTerms }) {
       );
     };
 
-    return (
-      <div style={S.app}>
-        <VerifyBanner />
-        {/* Top bar */}
-        <div style={{ ...S.topBar, borderBottom: '1px solid #e8f5f0', paddingBottom: 12 }}>
-          <LogoMark />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {plan && <button style={{ ...S.btn, ...S.sec, padding: '8px 16px', fontSize: 13 }} onClick={() => navigate("plan")}>📅 Full plan</button>}
-            {plan && <button style={{ ...S.btn, ...S.sec, padding: '8px 16px', fontSize: 13 }} onClick={() => { setEditProfileDraft({ ...profile }); setEditQfMode('custom'); setEditPlanSaved(false); setEditPlanChanges([]); navigate("edit-plan"); }}>✏️ Edit plan</button>}
-            <button style={{ ...S.btn, ...S.ghost, padding: '8px 14px', fontSize: 13, color: '#8a857e' }} onClick={() => navigate("reset")}>↺ Start fresh</button>
-            <UserBar />
-          </div>
-        </div>
+    // Greeting + header sub
+    const emailName = (user?.email || '').split('@')[0].split(/[._-]/)[0];
+    const firstName = emailName ? emailName.charAt(0).toUpperCase() + emailName.slice(1) : 'there';
+    const hr = new Date().getHours();
+    const greeting = `${hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'}, ${firstName}`;
+    const weekdayLong = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const totalWeeks = plan?.weeks?.length || (progress ? Math.ceil(progress.totalDays / 7) : null);
+    const curWeek = todayData ? Math.ceil(todayData.day.calendarDay / 7) : null;
+    const workIdxs = todayBlocksWithTimes.map((b, i) => ({ b, i })).filter(x => x.b.type !== 'break' && x.b.type !== 'lunch').map(x => x.i);
+    const blocksDone = workIdxs.filter(i => checkedBlocks.has(i)).length;
+    const headerSub = [
+      weekdayLong,
+      curWeek && totalWeeks ? `Week ${curWeek} of ${totalWeeks}` : null,
+      workIdxs.length ? `${blocksDone} of ${workIdxs.length} blocks done` : null,
+    ].filter(Boolean).join(' · ');
 
-        <div style={{ maxWidth: 760, margin: '0 auto', padding: '20px 20px 80px', opacity: animIn ? 1 : 0, transform: animIn ? 'translateY(0)' : 'translateY(12px)', transition: 'all 0.3s ease' }}>
+    // Avg gain per week across assessments
+    let gainPerWeek = null;
+    if (scoreTrend.length >= 2) {
+      const f = scoreTrend[0], l = scoreTrend[scoreTrend.length - 1];
+      const wk = Math.max(1, (new Date(l.date) - new Date(f.date)) / (7 * 86400000));
+      gainPerWeek = (l.avg - f.avg) / wk;
+    }
+
+    const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    // Block times are 12-hour display strings (e.g. "7:00 AM") from assignBlockTimes.
+    const parse12 = (s) => {
+      if (!s) return NaN;
+      const m = s.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!m) return NaN;
+      let h = (+m[1]) % 12; if (/PM/i.test(m[3])) h += 12;
+      return h * 60 + (+m[2]);
+    };
+    const fmtDur = (mins) => {
+      if (!mins || mins <= 0) return '';
+      const h = Math.floor(mins / 60), mm = mins % 60;
+      return h ? `${h}h${mm ? ` ${mm}m` : ''}` : `${mm}m`;
+    };
+    const totalHours = todayData ? (todayData.day.dayHours ?? profile.hoursPerDay ?? 8) : null;
+
+    // One schedule block row (reference .block grid)
+    const ScheduleRow = ({ block, idx }) => {
+      const bs = blockStyleFor(block.type);
+      const isBreak = block.type === 'break' || block.type === 'lunch';
+      const checkable = !isBreak && todayData?.day.dayType !== 'student-rest' && todayData?.day.dayType !== 'rest';
+      const done = checkedBlocks.has(idx);
+      const active = todayData && !isBreak && nowMin >= parse12(block.startTime) && nowMin < parse12(block.endTime);
+      const resText = block.tasks?.length
+        ? ([...new Set(block.tasks.map(t => t.resource).filter(Boolean))].join(' · ') || block.tasks[0].activity)
+        : null;
+      const toggle = () => setCheckedBlocks(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: '50px 30px 1fr auto', alignItems: 'center', gap: 10, padding: '10px 12px', background: bs.bg, borderRadius: 10, outline: active ? `1.5px solid ${T.accent}` : 'none', opacity: done ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+          <span style={{ fontSize: 11, color: bs.res, fontVariantNumeric: 'tabular-nums', fontFamily: T.font }}>{block.startTime}</span>
+          <span style={{ width: 28, height: 28, borderRadius: 8, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name={bs.icon} size={15} color={bs.iconColor} />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: bs.title, fontFamily: T.font, textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
+            {resText && <div style={{ fontSize: 11, color: bs.res, fontFamily: T.font, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 11, color: bs.res, fontFamily: T.font, whiteSpace: 'nowrap' }}>{fmtDur(block.durationMinutes)}</span>
+            {checkable && (
+              <button onClick={toggle} title={done ? 'Mark not done' : 'Mark done'} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${done ? T.accent : bs.iconBg}`, background: done ? T.accent : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
+                {done && <Icon name="check" size={12} color="#fff" />}
+              </button>
+            )}
+          </div>
+          {block.contentSequence && <div style={{ gridColumn: '3 / -1' }}><ContentSequencePanel contentSequence={block.contentSequence} compact={true} /></div>}
+        </div>
+      );
+    };
+
+    return (
+      <AppShell>
+        <VerifyBanner />
+        <PageHeader title={greeting} sub={headerSub} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* First-timer nudge banner */}
           {plan?.firstTimer && assessments.length === 0 && (
@@ -1407,51 +1773,56 @@ export default function StudyPlanner({ onShowTerms }) {
           {planUpdateBanner && (
             <div style={{ marginBottom: 14, padding: '10px 14px', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 10, display: 'flex', alignItems: 'flex-start', gap: 10, fontFamily: S.f, fontSize: 13 }}>
               <span style={{ flex: 1 }}>
-                <strong style={{ color: '#1D9E75' }}>✨ Your study plan has been updated</strong>
+                <strong style={{ color: '#2db882' }}>✨ Your study plan has been updated</strong>
                 <span style={{ color: '#4a4540', display: 'block', marginTop: 2 }}>{planUpdateBanner.join(' · ')}</span>
               </span>
               <button onClick={() => setPlanUpdateBanner(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8a857e', fontSize: 18, lineHeight: 1, padding: 0, marginTop: -1 }}>×</button>
             </div>
           )}
 
-          {/* Row 1: Exam countdown + Score improvement */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            {/* Exam countdown */}
-            <div style={{ ...S.card, marginBottom: 0, textAlign: 'center', padding: '20px 16px' }}>
-              {daysUntilExam !== null ? (
+          {/* Stat cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {/* Latest score */}
+            <div style={tCard()}>
+              <div style={{ fontSize: 11, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: T.font }}>Latest score</div>
+              {latestAvg !== null ? (
                 <>
-                  <div style={{ fontSize: 52, fontWeight: 800, color: urgencyColor, lineHeight: 1, fontFamily: S.f }}>{daysUntilExam}</div>
-                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>days until exam</div>
-                  {daysUntilExam <= 14 && daysUntilExam > 0 && <div style={{ marginTop: 8, fontSize: 11, color: '#c0392b', fontFamily: S.f, fontWeight: 600 }}>⚡ Final push — every session counts</div>}
-                  {daysUntilExam === 0 && <div style={{ marginTop: 8, fontSize: 12, color: BRAND.green, fontFamily: S.f }}>🎉 Exam day!</div>}
+                  <div style={{ fontSize: 28, fontWeight: 500, color: T.deeper, lineHeight: 1.1, marginTop: 6, fontFamily: T.font }}>{latestAvg}%</div>
+                  <div style={{ fontSize: 12, marginTop: 4, fontFamily: T.font, color: scoreDelta === null ? T.muted : scoreDelta >= 0 ? '#0f6e56' : '#c05a1a' }}>
+                    {scoreDelta === null ? 'first assessment' : `${scoreDelta >= 0 ? '↑ +' : '↓ −'}${Math.abs(scoreDelta)} pts from previous`}
+                  </div>
+                </>
+              ) : (
+                <button onClick={() => navigate('add-assessment')} style={{ ...S.btn, background: T.accent, color: '#fff', padding: '7px 12px', fontSize: 12, marginTop: 10, fontFamily: T.font }}>Add first score →</button>
+              )}
+            </div>
+            {/* Avg gain per week */}
+            <div style={tCard()}>
+              <div style={{ fontSize: 11, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: T.font }}>Avg gain / week</div>
+              {gainPerWeek !== null ? (
+                <>
+                  <div style={{ fontSize: 28, fontWeight: 500, color: T.deeper, lineHeight: 1.1, marginTop: 6, fontFamily: T.font }}>{gainPerWeek >= 0 ? '+' : ''}{gainPerWeek.toFixed(1)}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4, fontFamily: T.font }}>points per week</div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>📅</div>
-                  <div style={{ ...S.muted, marginBottom: 12 }}>No exam date set</div>
-                  <button style={{ ...S.btn, ...S.sec, padding: '7px 14px', fontSize: 13 }} onClick={() => navigate("onboarding")}>Set exam date →</button>
+                  <div style={{ fontSize: 28, fontWeight: 500, color: T.pale, lineHeight: 1.1, marginTop: 6, fontFamily: T.font }}>—</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4, fontFamily: T.font }}>need 2+ assessments</div>
                 </>
               )}
             </div>
-            {/* Score improvement */}
-            <div style={{ ...S.card, marginBottom: 0, textAlign: 'center', padding: '20px 16px' }}>
-              {scoreDelta !== null ? (
+            {/* Plan progress */}
+            <div style={tCard()}>
+              <div style={{ fontSize: 11, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: T.font }}>Plan progress</div>
+              {progress ? (
                 <>
-                  <div style={{ fontSize: 52, fontWeight: 800, color: scoreDelta >= 0 ? BRAND.green : '#c0392b', lineHeight: 1, fontFamily: S.f }}>{scoreDelta > 0 ? '+' : ''}{scoreDelta}</div>
-                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>avg score change</div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>Latest avg: {latestAvg}%</div>
-                </>
-              ) : latestAvg !== null ? (
-                <>
-                  <div style={{ fontSize: 52, fontWeight: 800, color: BRAND.green, lineHeight: 1, fontFamily: S.f }}>{latestAvg}%</div>
-                  <div style={{ ...S.muted, marginTop: 4, fontSize: 13 }}>current average</div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#8a857e', fontFamily: S.f }}>Add another assessment to track changes</div>
+                  <div style={{ fontSize: 28, fontWeight: 500, color: T.deeper, lineHeight: 1.1, marginTop: 6, fontFamily: T.font }}>{progress.percent}%</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4, fontFamily: T.font }}>Day {progress.completedDays} of {progress.totalDays}</div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-                  <div style={{ ...S.muted, marginBottom: 12 }}>No scores yet</div>
-                  <button style={{ ...S.btn, ...S.sec, padding: '7px 14px', fontSize: 13 }} onClick={() => navigate("onboarding")}>Add first assessment →</button>
+                  <div style={{ fontSize: 28, fontWeight: 500, color: T.pale, lineHeight: 1.1, marginTop: 6, fontFamily: T.font }}>—</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4, fontFamily: T.font }}>no plan yet</div>
                 </>
               )}
             </div>
@@ -1459,7 +1830,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
           {/* Widget F — Post-exam follow-up */}
           {postExamFbkVisible && !postExamFbkDone && (
-            <div style={{ ...S.card, marginBottom: 14, background: '#f0fdf4', border: '1.5px solid #1D9E7530' }}>
+            <div style={{ ...S.card, marginBottom: 14, background: '#f0fdf4', border: '1.5px solid #2db88230' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1816', fontFamily: S.f, marginBottom: 14 }}>🎓 How did Step 1 go?</div>
               {[
                 { key: 'feeling', label: 'How did you feel walking out?', opts: [['felt_prepared','Felt prepared'],['it_was_ok','It was OK'],['felt_unprepared','Felt unprepared']] },
@@ -1544,385 +1915,1113 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           )}
 
-          {/* Row 2: Today's schedule */}
-          <div style={{ ...S.card, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          {/* Today's schedule */}
+          <div style={tCard()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#8a857e', fontFamily: S.f, marginBottom: 4 }}>Today's Schedule</div>
-                {todayData ? (
-                  <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1816' }}>
-                    Day {todayData.day.calendarDay}
-                    {fmtDayDate(getPlanDayDate(todayData.day.calendarDay)) && <span style={{ fontSize: 13, fontWeight: 500, color: '#8a857e', marginLeft: 6, fontFamily: S.f }}>{fmtDayDate(getPlanDayDate(todayData.day.calendarDay))}</span>}
-                    {todayData.day.focusTopic && <span style={{ fontSize: 13, fontWeight: 400, color: '#6b6560', marginLeft: 8, fontFamily: S.f }}>Focus: {todayData.day.focusTopic}</span>}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1816' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div>
-                )}
+                <div style={{ fontSize: 14, fontWeight: 500, color: T.deeper, fontFamily: T.font }}>Today's schedule</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 2, fontFamily: T.font }}>
+                  {todayData
+                    ? `${fmtDayDate(getPlanDayDate(todayData.day.calendarDay)) || new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}${totalHours ? ` · ${totalHours}h total` : ''}${todayData.day.focusTopic ? ` · Focus: ${todayData.day.focusTopic}` : ''}`
+                    : new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </div>
               </div>
               {todayData?.day.dayType === 'student-rest' && (
-                <div style={{ background: '#27ae6012', color: '#166534', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, fontFamily: S.f }}>
-                  🌿 Rest day
-                </div>
+                <span style={{ background: T.soft, color: T.dark, borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 500, fontFamily: T.font, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="leaf" size={13} /> Rest day</span>
               )}
               {todayData?.day.totalQuestions > 0 && todayData?.day.dayType !== 'student-rest' && (
-                <div style={{ background: '#b4530912', color: '#b45309', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700, fontFamily: S.f }}>
-                  {todayData.day.totalQuestions} Qs today
-                </div>
+                <span style={{ background: '#e6f1fb', color: '#0c447c', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 500, fontFamily: T.font }}>{todayData.day.totalQuestions} Qs today</span>
               )}
             </div>
 
             {examPassed ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 16, color: BRAND.green }}>Exam has passed — great work! 🎉</div>
+              <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 14, color: T.dark, fontFamily: T.font }}>Exam has passed — great work!</div>
             ) : !plan ? (
               <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div style={{ ...S.muted, marginBottom: 16 }}>No study plan yet. Generate one to see your daily schedule.</div>
-                <button style={{ ...S.btn, ...S.pri }} onClick={() => navigate("onboarding")}>Generate your first plan →</button>
+                <div style={{ color: T.muted, fontSize: 13, marginBottom: 14, fontFamily: T.font }}>No study plan yet. Generate one to see your daily schedule.</div>
+                <button style={{ ...S.btn, background: T.accent, color: '#fff', fontFamily: T.font }} onClick={() => navigate("onboarding")}>Generate your first plan →</button>
               </div>
             ) : !todayData ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: '#8a857e', fontFamily: S.f, fontSize: 14 }}>
-                Today is outside your current plan window. <button style={{ ...S.btn, ...S.ghost, fontSize: 13, display: 'inline', padding: '4px 8px' }} onClick={() => navigate("onboarding")}>Generate a new plan →</button>
-              </div>
-            ) : todayData.day.dayType === 'student-rest' ? (
-              <div style={{ padding: '4px 0' }}>
-                <div style={{ padding: '14px 16px', background: '#27ae6008', borderRadius: 10, border: '1px solid #27ae6025', marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontSize: 20 }}>🌿</span>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#166534', fontFamily: S.f }}>Rest day</div>
-                  </div>
-                  <div style={{ fontSize: 13, color: '#2c2a26', fontFamily: S.f, lineHeight: 1.5, marginBottom: 8 }}>
-                    {todayData.day.blocks?.[0]?.label} — then you're done for the day.
-                  </div>
-                  <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5, fontStyle: 'italic' }}>
-                    You've been working hard. Rest is part of the process. Your brain consolidates what you've learned during downtime — this is productive.
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {todayBlocksWithTimes.map((block, i) => {
-                    const bc = blockColors[block.type] || blockColors['catchup'];
-                    return (
-                      <div key={i} style={{ padding: '12px 14px', background: bc.bg, borderRadius: 10, borderLeft: `3px solid ${bc.border}` }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: block.tasks?.length > 0 ? 8 : 0 }}>
-                          <span style={{ fontSize: 15 }}>{blockIcon(block.type)}</span>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{block.label}</span>
-                          <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, marginLeft: 'auto' }}>{block.startTime} – {block.endTime}</span>
-                        </div>
-                        {block.tasks?.map((task, j) => (
-                          <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
-                            <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
-                            {task.setupLink && (
-                              <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
+              <div style={{ textAlign: 'center', padding: '16px 0', color: T.muted, fontFamily: T.font, fontSize: 13 }}>
+                Today is outside your current plan window. <button style={{ background: 'none', border: 'none', color: T.accent, cursor: 'pointer', fontFamily: T.font, fontSize: 13 }} onClick={() => navigate("onboarding")}>Generate a new plan →</button>
               </div>
             ) : todayData.day.dayType === 'locked' ? (
-              <div style={{ padding: '24px 18px', background: '#f5f3ef', borderRadius: 12, border: '1px dashed #c5c0b8', textAlign: 'center' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🔒</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#6b6560', fontFamily: S.f, marginBottom: 6 }}>
-                  Locked
-                </div>
-                <div style={{ fontSize: 13, color: '#8a857e', fontFamily: S.f, lineHeight: 1.6, maxWidth: 380, margin: '0 auto' }}>
+              <div style={{ padding: '24px 18px', background: T.pageBg, borderRadius: 12, border: `1px dashed ${T.border}`, textAlign: 'center' }}>
+                <Icon name="lock" size={28} color={T.faint} />
+                <div style={{ fontSize: 14, fontWeight: 500, color: T.text, fontFamily: T.font, margin: '8px 0 6px' }}>Locked</div>
+                <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, lineHeight: 1.6, maxWidth: 380, margin: '0 auto' }}>
                   This day unlocks after you enter your score for{' '}
-                  <strong style={{ color: '#2c2a26' }}>{todayData.day.lockedByTest?.name || 'your next practice exam'}</strong>
+                  <strong style={{ color: T.dark }}>{todayData.day.lockedByTest?.name || 'your next practice exam'}</strong>
                   {todayData.day.lockedByDay && (() => {
-                    const d = getPlanDayDate(todayData.day.lockedByDay);
-                    const lbl = fmtDayDate(d);
-                    return lbl ? <> on <strong style={{ color: '#2c2a26' }}>{lbl}</strong></> : null;
+                    const lbl = fmtDayDate(getPlanDayDate(todayData.day.lockedByDay));
+                    return lbl ? <> on <strong style={{ color: T.dark }}>{lbl}</strong></> : null;
                   })()}.
                 </div>
               </div>
             ) : (
               <>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {/* Exam-eve banner */}
+                {todayData.day.dayType === 'student-rest' && (
+                  <div style={{ padding: '12px 14px', background: T.soft, borderRadius: 10, marginBottom: 10, fontSize: 12, color: T.dark, fontFamily: T.font, lineHeight: 1.5 }}>
+                    Rest is part of the process — your brain consolidates what you've learned during downtime.{todayData.day.blocks?.[0]?.label ? ` ${todayData.day.blocks[0].label}, then you're done for the day.` : ''}
+                  </div>
+                )}
                 {todayData.day.dayType === 'review' && (
-                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#d9770608', border: '1px solid #d9770625', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0 }}>🔍</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#d97706', fontFamily: S.f, marginBottom: 2 }}>
-                        Post-exam review day — {todayData.day.triageFor || 'yesterday\'s exam'}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f }}>
-                        Full study day. Morning: deep wrong-answer review. Afternoon: 80 targeted + random questions. This is your highest-leverage study day of the week.
-                      </div>
-                    </div>
+                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#faeeda', marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#633806', fontFamily: T.font, marginBottom: 2 }}>Post-exam review day — {todayData.day.triageFor || "yesterday's exam"}</div>
+                    <div style={{ fontSize: 11, color: '#854f0b', fontFamily: T.font }}>Morning: deep wrong-answer review. Afternoon: targeted + random questions. Your highest-leverage study day.</div>
                   </div>
                 )}
                 {todayData.day.dayType === 'exam-eve' && (
-                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#7c3aed08', border: '1px solid #7c3aed25', display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 2 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0 }}>🌙</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', fontFamily: S.f, marginBottom: 2 }}>
-                        Exam eve — light review and early rest
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f }}>
-                        Pack your bag. Light dinner. No new content. In bed by 10 PM.
-                      </div>
-                    </div>
+                  <div style={{ padding: '11px 14px', borderRadius: 10, background: '#eeedfd', marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#3c3489', fontFamily: T.font, marginBottom: 2 }}>Exam eve — light review and early rest</div>
+                    <div style={{ fontSize: 11, color: '#534ab7', fontFamily: T.font }}>Pack your bag. Light dinner. No new content. In bed by 10 PM.</div>
                   </div>
                 )}
-                {todayBlocksWithTimes.map((block, i) => {
-                  if (block.type === 'break' || block.type === 'lunch') {
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#faf8f5', borderRadius: 8, opacity: 0.7 }}>
-                        <span style={{ fontSize: 14 }}>{block.type === 'lunch' || block.label === 'Lunch break' ? '☕' : '⏸'}</span>
-                        <span style={{ flex: 1, fontSize: 13, color: '#8a857e', fontFamily: S.f }}>{block.label}</span>
-                        <span style={{ fontSize: 12, color: '#aaa9a6', fontFamily: S.f }}>{block.startTime} – {block.endTime}</span>
-                      </div>
-                    );
-                  }
-                  const bc = blockColors[block.type] || blockColors['catchup'];
-                  return (
-                    <div key={i} style={{ padding: '12px 14px', background: bc.bg, borderRadius: 10, borderLeft: `3px solid ${bc.border}` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: block.tasks?.length > 0 ? 8 : 0, flexWrap: 'wrap', gap: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 15 }}>{blockIcon(block.type)}</span>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{block.label}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {todayBlocksWithTimes.map((block, i) => <ScheduleRow key={i} block={block} idx={i} />)}
+                </div>
+                {/* Daily rating */}
+                {!dailyRatingDone && todayData.day.dayType !== 'rest' && todayData.day.dayType !== 'student-rest' && todayData.day.dayType !== 'nbme' && (
+                  <div style={{ borderTop: `0.5px solid ${T.mid}`, paddingTop: 12, marginTop: 12 }}>
+                    {dailyRatingThanks ? (
+                      <div style={{ fontSize: 12, color: T.dark, fontFamily: T.font, textAlign: 'center' }}>Thanks for the feedback!</div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, color: T.muted, fontFamily: T.font }}>How was today's plan?</span>
+                          {[['😟', 1], ['😐', 2], ['🙂', 3], ['🤩', 4]].map(([emoji, val]) => (
+                            <button key={val} onClick={() => {
+                              setDailyRatingValue(val);
+                              if (val >= 3) {
+                                submitFeedback({ feedback_type: 'daily_rating', rating: val, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                                localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
+                                setDailyRatingThanks(true);
+                                setTimeout(() => { setDailyRatingDone(true); setDailyRatingThanks(false); }, 2000);
+                              } else {
+                                setDailyRatingShowInput(true);
+                              }
+                            }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '2px 4px', lineHeight: 1, transition: 'transform 0.1s', transform: dailyRatingValue === val ? 'scale(1.25)' : 'scale(1)' }}>
+                              {emoji}
+                            </button>
+                          ))}
                         </div>
-                        <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, flexShrink: 0 }}>{block.startTime} – {block.endTime}</span>
-                      </div>
-                      {block.tasks?.map((task, j) => (
-                        <div key={j} style={{ fontSize: 12, color: '#6b6560', fontFamily: S.f, paddingLeft: 23, lineHeight: 1.5, marginBottom: 2 }}>
-                          <span style={{ fontWeight: 600, color: '#2c2a26' }}>{task.resource}</span> — {task.activity}
-                          {task.setupLink && (
-                            <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
-                          )}
-                        </div>
-                      ))}
-
-                      {block.contentSequence && <ContentSequencePanel contentSequence={block.contentSequence} compact={true} />}
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Widget A — daily rating */}
-              {!dailyRatingDone && todayData.day.dayType !== 'rest' && todayData.day.dayType !== 'student-rest' && todayData.day.dayType !== 'nbme' && (
-                <div style={{ borderTop: '1px solid #f0ece6', paddingTop: 12, marginTop: 4 }}>
-                  {dailyRatingThanks ? (
-                    <div style={{ fontSize: 13, color: BRAND.green, fontFamily: S.f, textAlign: 'center', padding: '4px 0' }}>Thanks for the feedback! 🙏</div>
-                  ) : (
-                    <>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f, fontWeight: 600 }}>How was today's plan?</span>
-                        {[['😟', 1], ['😐', 2], ['🙂', 3], ['🤩', 4]].map(([emoji, val]) => (
-                          <button key={val} onClick={() => {
-                            setDailyRatingValue(val);
-                            if (val >= 3) {
-                              submitFeedback({ feedback_type: 'daily_rating', rating: val, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                        {dailyRatingShowInput && (
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                            <input value={dailyRatingComment} onChange={e => setDailyRatingComment(e.target.value)} placeholder="What felt off? (optional)"
+                              style={{ flex: 1, fontSize: 12, padding: '7px 10px', borderRadius: 8, border: `0.5px solid ${T.border}`, fontFamily: T.font, background: '#fff', outline: 'none', color: T.deeper }} />
+                            <button onClick={() => {
+                              submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, responses: { comment: dailyRatingComment }, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
                               localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
                               setDailyRatingThanks(true);
                               setTimeout(() => { setDailyRatingDone(true); setDailyRatingThanks(false); }, 2000);
-                            } else {
-                              setDailyRatingShowInput(true);
-                            }
-                          }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '2px 4px', lineHeight: 1, borderRadius: 6, transition: 'transform 0.1s', transform: dailyRatingValue === val ? 'scale(1.3)' : 'scale(1)' }}>
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                      {dailyRatingShowInput && (
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                          <input
-                            value={dailyRatingComment}
-                            onChange={e => setDailyRatingComment(e.target.value)}
-                            placeholder="What felt off? (optional)"
-                            style={{ flex: 1, fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid #e0dcd6', fontFamily: S.f, background: '#fafaf8', outline: 'none', color: '#1a1816' }}
-                          />
-                          <button onClick={() => {
-                            submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, responses: { comment: dailyRatingComment }, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
-                            localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
-                            setDailyRatingThanks(true);
-                            setTimeout(() => { setDailyRatingDone(true); setDailyRatingThanks(false); }, 2000);
-                          }} style={{ ...S.btn, ...S.pri, padding: '7px 14px', fontSize: 12, flexShrink: 0 }}>Send</button>
-                          <button onClick={() => {
-                            submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
-                            localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
-                            setDailyRatingDone(true);
-                          }} style={{ ...S.btn, ...S.ghost, padding: '7px 10px', fontSize: 12, color: '#aaa9a6', flexShrink: 0 }}>Skip</button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+                            }} style={{ ...S.btn, background: T.accent, color: '#fff', padding: '7px 14px', fontSize: 12, flexShrink: 0, fontFamily: T.font }}>Send</button>
+                            <button onClick={() => {
+                              submitFeedback({ feedback_type: 'daily_rating', rating: dailyRatingValue, plan_day: todayData?.day?.calendarDay, focus_system: todayData?.day?.focusTopic });
+                              localStorage.setItem(`sa_daily_rated_${user?.id}_${new Date().toISOString().slice(0,10)}`, '1');
+                              setDailyRatingDone(true);
+                            }} style={{ background: 'none', border: 'none', padding: '7px 10px', fontSize: 12, color: T.faint, flexShrink: 0, cursor: 'pointer', fontFamily: T.font }}>Skip</button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
 
-          {/* Row 3: Score trend + Progress bar */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            {/* Score trend */}
-            <div style={{ ...S.card, marginBottom: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Score Trend</div>
-              <TrendChart />
+        </div>
+      </AppShell>
+    );
+  }
+
+  // ─── FULL PLAN ─────────────────────────────────────────────────────
+  if (screen === "app" && page === "full-plan") {
+    if (!plan) {
+      return (
+        <AppShell>
+          <PageHeader title="Full plan" sub="No plan generated yet." />
+          <div style={tCard({ textAlign: 'center', padding: '40px 16px', color: T.muted, fontFamily: T.font })}>
+            <Icon name="calendar-off" size={28} color={T.pale} />
+            <div style={{ marginTop: 10, fontSize: 13 }}>Generate a plan to see your full schedule.</div>
+          </div>
+        </AppShell>
+      );
+    }
+
+    const allDays = plan.weeks.flatMap(w => w.days).sort((a, b) => a.calendarDay - b.calendarDay);
+    const planViewStart = latestPlanMeta?.createdAt ? (() => { const d = new Date(latestPlanMeta.createdAt); d.setHours(0, 0, 0, 0); return d; })() : null;
+    const getPlanDayDate = (n) => { if (!planViewStart) return null; const d = new Date(planViewStart); d.setDate(d.getDate() + n - 1); return d; };
+    const fmtPlanDate = (d) => d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
+    const isToday = (d) => d && d.getTime() === todayFlat.getTime();
+    const isPast = (d) => d && d.getTime() < todayFlat.getTime();
+
+    // Sun–Sat calendar weeks (display grouping)
+    const calendarWeeks = (() => {
+      if (!planViewStart) return plan.weeks.map((w, i) => ({ weekNum: i + 1, dateRange: null, startDate: null, days: w.days }));
+      const weekMap = new Map();
+      for (const day of allDays) {
+        const d = getPlanDayDate(day.calendarDay);
+        if (!d) continue;
+        const sunday = new Date(d); sunday.setDate(d.getDate() - d.getDay()); sunday.setHours(0, 0, 0, 0);
+        const key = sunday.toISOString().slice(0, 10);
+        if (!weekMap.has(key)) {
+          const saturday = new Date(sunday); saturday.setDate(sunday.getDate() + 6);
+          weekMap.set(key, {
+            weekNum: weekMap.size + 1, startDate: new Date(sunday), endDate: saturday,
+            dateRange: `${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${saturday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+            days: [],
+          });
+        }
+        weekMap.get(key).days.push(day);
+      }
+      return Array.from(weekMap.values());
+    })();
+
+    const totalDays = allDays.length;
+    const completedDays = allDays.filter(d => isPast(getPlanDayDate(d.calendarDay))).length;
+    const remainingDays = totalDays - completedDays;
+    const curWeekIdx = Math.max(0, calendarWeeks.findIndex(w => w.days.some(d => isToday(getPlanDayDate(d.calendarDay)))));
+    const todayCalendarDay = allDays.find(d => isToday(getPlanDayDate(d.calendarDay)))?.calendarDay ?? null;
+
+    const TYPE_SHORT = { anki: 'Anki', content: 'Content', 'content-reactive': 'Content', 'questions-focus': 'Focused Qs', 'questions-random': 'Random Qs', questions: 'Questions', 'end-review': 'Review', review: 'Review', catchup: 'Catch-up', nbme: 'NBME', 'nbme-review': 'NBME review' };
+    const dayPills = (day) => {
+      if (day.dayType === 'rest' || day.dayType === 'student-rest') return [{ label: 'Rest day', bs: blockStyleFor('rest') }];
+      if (day.dayType === 'locked') return [{ label: 'Locked', bs: blockStyleFor('rest') }];
+      const seen = new Set(); const pills = [];
+      for (const b of (day.blocks || [])) {
+        if (b.type === 'break' || b.type === 'lunch') continue;
+        if (seen.has(b.type)) continue; seen.add(b.type);
+        pills.push({ label: TYPE_SHORT[b.type] || b.label || b.type, bs: blockStyleFor(b.type) });
+      }
+      if (day.dayType === 'nbme' && pills.length === 0) pills.push({ label: 'NBME', bs: blockStyleFor('nbme') });
+      return pills;
+    };
+    const dayBlocks = (day) => {
+      const tStart = day.startTime || profile.studyStartTime || '07:00';
+      const tHours = day.dayHours ?? profile.hoursPerDay ?? 8;
+      return assignBlockTimes(day.blocks || [], tStart, calcEndTime(tStart, tHours));
+    };
+    const BlockMini = ({ block }) => {
+      const bs = blockStyleFor(block.type);
+      const resText = block.tasks?.length ? [...new Set(block.tasks.map(t => t.resource).filter(Boolean))].join(' · ') : null;
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: '58px 26px 1fr', gap: 9, alignItems: 'center', padding: '7px 10px', background: bs.bg, borderRadius: 8 }}>
+          <span style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, fontVariantNumeric: 'tabular-nums' }}>{block.startTime}</span>
+          <span style={{ width: 24, height: 24, borderRadius: 6, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={bs.icon} size={13} color={bs.iconColor} /></span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: bs.title, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
+            {resText && <div style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+          </div>
+        </div>
+      );
+    };
+
+    const dispWeekIdx = Math.min(calendarWeeks.length - 1, fullPlanWeek ?? curWeekIdx);
+    const week = calendarWeeks[dispWeekIdx] || calendarWeeks[0];
+    const byWeekday = {};
+    for (const d of (week?.days || [])) { const dt = getPlanDayDate(d.calendarDay); if (dt) byWeekday[dt.getDay()] = d; }
+    const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dispOpenDay = fullPlanOpenDay ?? todayCalendarDay;
+
+    const toggle = (k, set, cur) => set(cur === k ? -1 : k);
+
+    return (
+      <AppShell>
+        <VerifyBanner />
+        <PageHeader
+          title="Full plan"
+          sub={`Week ${curWeekIdx + 1} of ${calendarWeeks.length} · ${completedDays} days complete · ${remainingDays} remaining`}
+          right={(
+            <div style={{ display: 'inline-flex', background: T.soft, borderRadius: 9, padding: 3, gap: 3 }}>
+              {['calendar', 'list'].map(v => (
+                <button key={v} onClick={() => setFullPlanView(v)}
+                  style={{ border: 'none', cursor: 'pointer', borderRadius: 7, padding: '5px 13px', fontSize: 12, fontWeight: 600, fontFamily: T.font, textTransform: 'capitalize', background: fullPlanView === v ? '#fff' : 'transparent', color: fullPlanView === v ? T.dark : T.muted, boxShadow: fullPlanView === v ? '0 1px 2px rgba(0,0,0,0.08)' : 'none' }}>
+                  <Icon name={v === 'calendar' ? 'calendar-week' : 'list'} size={13} style={{ marginRight: 5, verticalAlign: '-1px' }} />{v}
+                </button>
+              ))}
             </div>
-            {/* Plan progress */}
-            <div style={{ ...S.card, marginBottom: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Plan Progress</div>
-              {progress ? (
-                <>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: BRAND.green, fontFamily: S.f, lineHeight: 1 }}>{progress.percent}%</div>
-                  <div style={{ ...S.muted, marginTop: 4, marginBottom: 12, fontSize: 12 }}>{progress.completedDays} of {progress.totalDays} days complete</div>
-                  <ProgressBar value={progress.completedDays} max={Math.max(1, progress.totalDays)} color={BRAND.green} height={10} />
-                </>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '16px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>Generate a plan to track progress.</div>
-              )}
+          )}
+        />
+
+        {fullPlanView === 'calendar' ? (
+          <div style={tCard({ padding: 18 })}>
+            {/* Week nav */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <button onClick={() => setFullPlanWeek(Math.max(0, dispWeekIdx - 1))} disabled={dispWeekIdx <= 0}
+                style={{ width: 30, height: 30, borderRadius: 8, border: `0.5px solid ${T.mid}`, background: '#fff', cursor: dispWeekIdx <= 0 ? 'default' : 'pointer', opacity: dispWeekIdx <= 0 ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="chevron-left" size={16} color={T.dark} />
+              </button>
+              <div style={{ textAlign: 'center', fontFamily: T.font }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: T.deeper }}>Week {dispWeekIdx + 1}</div>
+                <div style={{ fontSize: 11.5, color: T.muted }}>{week?.dateRange}</div>
+              </div>
+              <button onClick={() => setFullPlanWeek(Math.min(calendarWeeks.length - 1, dispWeekIdx + 1))} disabled={dispWeekIdx >= calendarWeeks.length - 1}
+                style={{ width: 30, height: 30, borderRadius: 8, border: `0.5px solid ${T.mid}`, background: '#fff', cursor: dispWeekIdx >= calendarWeeks.length - 1 ? 'default' : 'pointer', opacity: dispWeekIdx >= calendarWeeks.length - 1 ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="chevron-right" size={16} color={T.dark} />
+              </button>
+            </div>
+            {/* 7-col grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+              {WD.map((wd, i) => (
+                <div key={wd} style={{ textAlign: 'center', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: T.faint, fontFamily: T.font, paddingBottom: 4 }}>{wd}</div>
+              ))}
+              {WD.map((wd, i) => {
+                const day = byWeekday[i];
+                const dt = day ? getPlanDayDate(day.calendarDay) : (week?.startDate ? (() => { const d = new Date(week.startDate); d.setDate(d.getDate() + i); return d; })() : null);
+                const tday = isToday(dt), past = isPast(dt);
+                return (
+                  <div key={i} style={{ minHeight: 96, borderRadius: 10, border: tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, background: tday ? T.soft : '#fff', padding: 7, opacity: past ? 0.5 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: tday ? T.dark : T.muted, fontFamily: T.font, textAlign: 'center' }}>{dt ? dt.getDate() : ''}</div>
+                    {day ? dayPills(day).map((p, pi) => (
+                      <button key={pi} onClick={() => setPlanPopover({ day })}
+                        style={{ border: 'none', cursor: 'pointer', textAlign: 'left', background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 6px', fontSize: 10, fontWeight: 600, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Icon name={p.bs.icon} size={10} color={p.bs.iconColor} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
+                      </button>
+                    )) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
-
-          {/* Row 4: Category heatmap */}
-          {heatmapCats.length > 0 && latestAssessmentForHeatmap && (
-            <div style={{ ...S.card, marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Category Performance</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
-                {heatmapCats.map(cat => {
-                  const s = latestAssessmentForHeatmap.scores[cat] ?? null;
-                  if (s === null) return null;
-                  return (
-                    <div key={cat} style={{ padding: '10px 10px 10px 12px', borderRadius: 8, background: heatBg(s), borderLeft: `3px solid ${heatColor(s)}` }}>
-                      <div style={{ fontSize: 11, fontFamily: S.f, color: '#6b6560', lineHeight: 1.3, marginBottom: 4 }}>{cat}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: heatColor(s), fontFamily: S.f, lineHeight: 1 }}>{s}%</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {allDays.map(day => {
+              const dt = getPlanDayDate(day.calendarDay);
+              const tday = isToday(dt), past = isPast(dt);
+              const open = dispOpenDay === day.calendarDay;
+              const pills = dayPills(day);
+              const rest = day.dayType === 'rest' || day.dayType === 'student-rest';
+              return (
+                <div key={day.calendarDay} style={tCard({ padding: 0, opacity: past && !open ? 0.6 : 1, border: tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, overflow: 'hidden' })}>
+                  <button onClick={() => setFullPlanOpenDay(open ? -1 : day.calendarDay)}
+                    style={{ width: '100%', border: 'none', background: tday ? T.soft : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', textAlign: 'left' }}>
+                    <div style={{ minWidth: 110 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${day.calendarDay}`}</div>
+                      {tday && <div style={{ fontSize: 10.5, fontWeight: 700, color: T.accent, fontFamily: T.font }}>TODAY</div>}
                     </div>
-                  );
-                })}
+                    <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {pills.map((p, pi) => (
+                        <span key={pi} style={{ background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, fontFamily: T.font, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <Icon name={p.bs.icon} size={11} color={p.bs.iconColor} />{p.label}
+                        </span>
+                      ))}
+                      {day.focusTopic && !rest && <span style={{ fontSize: 11, color: T.muted, fontFamily: T.font, alignSelf: 'center' }}>· {day.focusTopic}</span>}
+                    </div>
+                    <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={T.faint} />
+                  </button>
+                  {open && !rest && (
+                    <div style={{ padding: '4px 14px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+                    </div>
+                  )}
+                  {open && rest && (
+                    <div style={{ padding: '4px 14px 16px', fontSize: 12.5, color: T.muted, fontFamily: T.font }}>Rest day — recover and recharge.</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Day detail popover */}
+        {planPopover && (() => {
+          const day = planPopover.day;
+          const dt = getPlanDayDate(day.calendarDay);
+          const rest = day.dayType === 'rest' || day.dayType === 'student-rest';
+          return (
+            <div onClick={() => setPlanPopover(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(26,61,43,0.28)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(440px, 100%)', maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 12px 48px rgba(0,0,0,0.2)', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${day.calendarDay}`}</div>
+                    {day.focusTopic && !rest && <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 1 }}>Focus: {day.focusTopic}</div>}
+                  </div>
+                  <button onClick={() => setPlanPopover(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.faint, fontSize: 20, lineHeight: 1 }}>×</button>
+                </div>
+                {rest ? (
+                  <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, padding: '8px 0' }}>Rest day — recover and recharge.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </AppShell>
+    );
+  }
+
+  // ─── EDIT PLAN ─────────────────────────────────────────────────────
+  if (screen === "app" && page === "edit-plan") {
+    if (!editProfileDraft) {
+      return (
+        <AppShell>
+          <PageHeader title="Edit plan" sub="Loading your settings…" />
+        </AppShell>
+      );
+    }
+
+    const parseDbDateLocal = (s) => s ? new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z') : new Date(NaN);
+    const ws = editProfileDraft.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE;
+    const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+    const onDays = ALL_DAYS.filter(d => (Number(ws[d]?.studyHours) || 0) > 0);
+    const repHours = onDays.length ? (Number(ws[onDays[0]].studyHours) || 8) : (editProfileDraft.hoursPerDay || 8);
+    const repStart = (onDays.length ? ws[onDays[0]].startTime : (editProfileDraft.studyStartTime || '07:00')) || '07:00';
+    const DAY_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+    const updateDay = (d, field, val) => { setEditProfileDraft(p => ({ ...p, weeklySchedule: { ...(p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE), [d]: { ...(p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE)[d], [field]: val } } })); setEditPlanSaved(false); };
+    const toggleDay = (d) => {
+      const isOn = onDays.includes(d);
+      setEditProfileDraft(p => {
+        const cur = p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE;
+        return { ...p, weeklySchedule: { ...cur, [d]: { dayName: DAY_FULL[d], studyHours: isOn ? 0 : repHours, startTime: isOn ? (cur[d]?.startTime || repStart) : repStart } } };
+      });
+      setEditPlanSaved(false);
+    };
+    const setAllOnDays = (patch) => {
+      setEditProfileDraft(p => {
+        const cur = p.weeklySchedule || DEFAULT_WEEKLY_SCHEDULE;
+        const next = { ...cur };
+        for (const d of ALL_DAYS) if ((Number(cur[d]?.studyHours) || 0) > 0) next[d] = { ...cur[d], dayName: DAY_FULL[d], ...patch };
+        const merged = { ...p, weeklySchedule: next };
+        if (patch.studyHours != null) { merged.hoursPerDay = patch.studyHours; merged.studyEndTime = calcEndTime(p.studyStartTime || repStart, patch.studyHours); }
+        if (patch.startTime != null) { merged.studyStartTime = patch.startTime; merged.studyEndTime = calcEndTime(patch.startTime, p.hoursPerDay || repHours); }
+        return merged;
+      });
+      setEditPlanSaved(false);
+    };
+    const totalWeeklyHrs = ALL_DAYS.reduce((s, d) => s + (Number(ws[d]?.studyHours) || 0), 0);
+
+    const handleEditSave = async () => {
+      setEditPlanSaving(true);
+      try {
+        const changes = [];
+        if (editProfileDraft.examDate !== profile.examDate) changes.push(`Exam date → ${editProfileDraft.examDate || 'not set'}`);
+        if ([...(profile.resources || [])].sort().join(',') !== [...(editProfileDraft.resources || [])].sort().join(',')) changes.push('Study resources updated');
+        if (JSON.stringify(editProfileDraft.weeklySchedule) !== JSON.stringify(profile.weeklySchedule)) changes.push('Weekly schedule updated');
+        if (editProfileDraft.anki_experience_level !== profile.anki_experience_level) changes.push('Anki experience level updated');
+        if (editProfileDraft.ankiDeck !== profile.ankiDeck) changes.push('Anki deck updated');
+
+        const newProfile = { ...editProfileDraft };
+        await api.profile.save(newProfile);
+        setProfile(newProfile);
+
+        const sorted = [...assessments].sort((a, b) => new Date(a.takenAt || a.createdAt) - new Date(b.takenAt || b.createdAt));
+        const last = sorted[sorted.length - 1];
+        const catScores = (() => {
+          if (!last) return {};
+          const s = last.scores || {};
+          const cats = Object.keys(s).filter(k => k !== '__total__');
+          return cats.length > 0 ? Object.fromEntries(cats.map(k => [k, s[k]])) : {};
+        })();
+        const regenScores = Object.keys(catScores).length > 0 ? catScores : scores;
+        const derivedTaken = assessments.map(a => {
+          const match = matchPracticeTest(a.form_name || a.formName);
+          return match ? { id: match.id, takenDate: a.taken_at || a.takenAt || a.createdAt } : null;
+        }).filter(Boolean);
+        const profileForPlan = { ...newProfile, takenAssessments: derivedTaken };
+        const planStartDate = latestPlanMeta?.createdAt ? (() => { const d = parseDbDateLocal(latestPlanMeta.createdAt); d.setHours(0, 0, 0, 0); return d; })() : new Date();
+        const newPlan = assessments.length === 0
+          ? generateFirstTimerPlan(newProfile, latestPlanMeta?.firstTimerWeakSystems || [], null)
+          : generatePlan(profileForPlan, regenScores, stickingPoints, { planStartDate, weakSystemsFallback: latestPlanMeta?.firstTimerWeakSystems || [], subTopicCursors: plan?.subTopicCursors || {} });
+        await api.plans.update(latestPlanMeta.id, { planData: newPlan, profileSnapshot: newProfile, engineVersion: PLAN_ENGINE_VERSION });
+        setPlan(newPlan);
+        setEditPlanChanges(changes.length > 0 ? changes : ['Plan regenerated with current settings']);
+        setEditPlanSaved(true);
+      } catch (err) {
+        console.error('[edit-plan] Save failed:', err);
+        alert('Failed to save changes: ' + (err.message || 'Please try again.'));
+      } finally {
+        setEditPlanSaving(false);
+      }
+    };
+
+    const examDays = editProfileDraft.examDate ? Math.max(1, Math.round((new Date(editProfileDraft.examDate) - new Date()) / 86400000)) : null;
+    const cardLabel = (icon, text) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <span style={{ width: 28, height: 28, borderRadius: 8, background: T.soft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={15} color={T.dark} /></span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>{text}</span>
+      </div>
+    );
+
+    return (
+      <AppShell>
+        <VerifyBanner />
+        <PageHeader title="Edit plan" sub="Changes take effect when you regenerate your plan" />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {editPlanSaved && (
+            <div style={{ background: '#e0f7ee', border: `1px solid ${T.pale}`, borderRadius: 12, padding: '14px 18px' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#085041', fontFamily: T.font, marginBottom: 6 }}>✓ Plan updated successfully</div>
+              {editPlanChanges.map((c, i) => <div key={i} style={{ fontSize: 13, color: '#0f6e56', fontFamily: T.font, lineHeight: 1.6 }}>· {c}</div>)}
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button style={{ ...S.btn, background: T.accent, color: '#fff', padding: '7px 16px', fontSize: 13, fontFamily: T.font }} onClick={() => navigate('dashboard')}>Go to dashboard</button>
+                <button style={{ ...S.btn, background: '#fff', border: `1px solid ${T.mid}`, color: T.dark, padding: '7px 16px', fontSize: 13, fontFamily: T.font }} onClick={() => navigate('plan')}>View full plan</button>
               </div>
             </div>
           )}
 
-          {/* Row 5: Score history */}
-          <div style={S.card}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f }}>Score History</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={{ ...S.btn, ...S.sec, padding: '5px 12px', fontSize: 12 }} onClick={() => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); }}>+ Past Exam</button>
-                <button style={{ ...S.btn, ...S.pri, padding: '5px 12px', fontSize: 12 }} onClick={() => navigate("scores")}>+ New Score</button>
+          {/* Exam date */}
+          <div style={tCard()}>
+            {cardLabel('calendar-event', 'Exam date')}
+            <input type="date" value={editProfileDraft.examDate || ''} onChange={e => { setEditProfileDraft(p => ({ ...p, examDate: e.target.value })); setEditPlanSaved(false); }}
+              style={{ padding: '9px 12px', borderRadius: 9, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: T.font, color: T.deeper, outline: 'none', background: '#fff' }} />
+            {examDays !== null && <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, marginTop: 8 }}><strong style={{ color: T.deeper }}>{examDays} days</strong> from today</div>}
+            {editProfileDraft.examDate !== profile.examDate && (
+              <div style={{ fontSize: 12, color: '#854f0b', fontFamily: T.font, marginTop: 8, background: '#faeeda', padding: '7px 11px', borderRadius: 8 }}>Changing the exam date reschedules all practice NBMEs.</div>
+            )}
+          </div>
+
+          {/* Weekly schedule */}
+          <div style={tCard()}>
+            {cardLabel('clock', 'Weekly schedule')}
+            <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginBottom: 12 }}>Tap a day to toggle it on or off. Off days are rest days.</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+              {ALL_DAYS.map(d => {
+                const on = onDays.includes(d);
+                return (
+                  <button key={d} onClick={() => toggleDay(d)} title={DAY_FULL[d]}
+                    style={{ flex: 1, height: 42, borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600, fontFamily: T.font, border: on ? `1.5px solid ${T.accent}` : `1px solid ${T.mid}`, background: on ? T.accent : '#fff', color: on ? '#fff' : T.faint }}>
+                    {DAY_SHORT[d]}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 11, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.font, marginBottom: 6 }}>Hours per study day</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `1px solid ${T.mid}`, borderRadius: 9, overflow: 'hidden', width: 'fit-content' }}>
+                  <button onClick={() => setAllOnDays({ studyHours: Math.max(1, repHours - 1) })} style={{ width: 36, height: 36, border: 'none', background: '#fff', cursor: 'pointer', color: T.dark, fontSize: 18 }}>−</button>
+                  <span style={{ width: 48, textAlign: 'center', fontSize: 15, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>{repHours}h</span>
+                  <button onClick={() => setAllOnDays({ studyHours: Math.min(16, repHours + 1) })} style={{ width: 36, height: 36, border: 'none', background: '#fff', cursor: 'pointer', color: T.dark, fontSize: 18 }}>+</button>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.faint, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.font, marginBottom: 6 }}>Start time</div>
+                <input type="time" value={repStart} onChange={e => setAllOnDays({ startTime: e.target.value })}
+                  style={{ padding: '8px 11px', borderRadius: 9, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: T.font, color: T.deeper, outline: 'none', background: '#fff', height: 38 }} />
+                <div style={{ fontSize: 11.5, color: T.muted, fontFamily: T.font, marginTop: 4 }}>ends ~{fmt12hDisplay(calcEndTime(repStart, repHours))}</div>
               </div>
             </div>
-            {assessments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '12px 0', color: '#8a857e', fontSize: 13, fontFamily: S.f }}>No assessments yet.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6 }}>
-                {[...assessments].reverse().slice(0, 8).map((a, i) => {
-                  const breakdownCats = STEP1_CATEGORIES.filter(c => a.scores?.[c] !== undefined && a.scores[c] !== '');
-                  const vals = breakdownCats.map(c => Number(a.scores[c])).filter(v => v > 0);
-                  const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : (a.scores?.__total__ ? Number(a.scores.__total__) : 0);
-                  const dateStr = (a.takenAt || a.taken_at)
-                    ? new Date(a.takenAt || a.taken_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                    : a.created_at ? new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-                  const hasBreakdown = breakdownCats.length > 0;
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, border: '1px solid #f0ece6' }}>
-                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: heatColor(avg), flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontFamily: S.f, color: '#1a1816', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.formName || 'Assessment'}</div>
-                        <div style={{ fontSize: 11, color: '#8a857e', fontFamily: S.f, marginTop: 1 }}>{dateStr}{hasBreakdown ? ` · ${breakdownCats.length} systems` : ' · total only'}</div>
-                      </div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: heatColor(avg), fontFamily: S.f, minWidth: 38, textAlign: 'right', flexShrink: 0 }}>{avg ? `${avg}%` : '—'}</div>
-                      <button onClick={() => startEditAssessment(a)} title="View / Edit" style={{ padding: '6px 10px', fontSize: 12, background: '#fff', border: '1px solid #e0dbd4', borderRadius: 8, cursor: 'pointer', color: '#6b6560', lineHeight: 1, flexShrink: 0, whiteSpace: 'nowrap' }}>✏️ Edit</button>
-                      <button onClick={() => setDeleteConfirmId(a.id)} title="Delete" style={{ padding: '6px 8px', fontSize: 12, background: '#fff', border: '1px solid #f8e8e8', borderRadius: 8, cursor: 'pointer', color: '#c0392b', lineHeight: 1, flexShrink: 0 }}>🗑️</button>
-                    </div>
-                  );
-                })}
+            <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 14 }}>{onDays.length} study days · <strong style={{ color: T.deeper }}>{totalWeeklyHrs}h</strong> per week</div>
+          </div>
+
+          {/* Study resources */}
+          <div style={tCard()}>
+            {cardLabel('books', 'Study resources')}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              {RESOURCES.map(r => {
+                const on = editProfileDraft.resources.includes(r.id);
+                return (
+                  <button key={r.id} onClick={() => {
+                    setEditPlanSaved(false);
+                    setEditProfileDraft(p => ({
+                      ...p,
+                      resources: on ? p.resources.filter(x => x !== r.id) : [...p.resources, r.id],
+                      ...(r.id === 'anking' && on ? { anki_experience_level: 'none', ankiDeck: 'anking' } : {}),
+                    }));
+                  }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', border: on ? `1.5px solid ${T.accent}` : `1px solid ${T.mid}`, background: on ? T.soft : '#fff' }}>
+                    <span style={{ fontSize: 18 }}>{r.icon}</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: T.deeper, fontFamily: T.font }}>{r.name}</span>
+                    <span style={{ width: 36, height: 20, borderRadius: 12, background: on ? T.accent : '#d3d1c7', position: 'relative', transition: 'background 0.15s', flexShrink: 0 }}>
+                      <span style={{ position: 'absolute', top: 2, left: on ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {editProfileDraft.resources.includes('anking') && (
+              <div style={{ marginTop: 14, padding: '14px 16px', background: '#e0f7ee', borderRadius: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#085041', fontFamily: T.font, marginBottom: 10 }}>How long have you used Anki?</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {[['none', 'Never'], ['beginner', '< 1 month'], ['intermediate', '1–6 months'], ['veteran', '6+ months']].map(([v, l]) => {
+                    const sel = (editProfileDraft.anki_experience_level || 'none') === v;
+                    return (
+                      <button key={v} onClick={() => { setEditProfileDraft(p => ({ ...p, anki_experience_level: v })); setEditPlanSaved(false); }}
+                        style={{ padding: '7px 14px', borderRadius: 20, cursor: 'pointer', fontSize: 12.5, fontFamily: T.font, fontWeight: sel ? 600 : 400, border: `1.5px solid ${sel ? T.accent : T.mid}`, background: sel ? '#fff' : 'transparent', color: sel ? T.dark : T.muted }}>{l}</button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
-          {/* Row 6: Quick actions */}
-          <div style={{ ...S.card, marginBottom: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#8a857e', fontFamily: S.f, marginBottom: 12 }}>Quick Actions</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {[
-                { icon: '➕', label: 'Add Assessment', action: () => navigate("scores") },
-                { icon: '📋', label: 'New Plan', action: () => startNewPlanFromScores() },
-                { icon: '🕰️', label: 'Past Exam', action: () => { setHistDraft(defaultHistDraft()); setHistError(''); navigate("past-exam"); } },
-                { icon: '📅', label: 'Full Plan', action: () => plan ? navigate("plan") : null, disabled: !plan },
-              ].map((item, i) => (
-                <button key={i} disabled={item.disabled} style={{ ...S.btn, ...S.sec, flexDirection: 'column', padding: '14px 10px', gap: 6, fontSize: 12, textAlign: 'center', justifyContent: 'center', opacity: item.disabled ? 0.4 : 1, cursor: item.disabled ? 'not-allowed' : 'pointer' }} onClick={item.action}>
-                  <span style={{ fontSize: 20 }}>{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
-            </div>
+
+          {/* Regenerate */}
+          <div style={{ background: T.dark, borderRadius: 12, padding: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', fontFamily: T.font, marginBottom: 4 }}>Ready to apply your changes?</div>
+            <div style={{ fontSize: 12.5, color: '#bfe6d3', fontFamily: T.font, lineHeight: 1.5, marginBottom: 14 }}>Regenerating rebuilds your schedule from your original start date. Past days stay locked — only upcoming days change.</div>
+            <button disabled={editPlanSaving} onClick={() => setRegenConfirm(true)}
+              style={{ border: 'none', borderRadius: 9, padding: '10px 20px', fontSize: 13.5, fontWeight: 600, fontFamily: T.font, cursor: editPlanSaving ? 'not-allowed' : 'pointer', background: T.accent, color: '#fff', opacity: editPlanSaving ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+              <Icon name="refresh" size={15} color="#fff" />{editPlanSaving ? 'Regenerating…' : 'Regenerate plan'}
+            </button>
           </div>
         </div>
 
-        {/* ── Assessment action toast ── */}
-        {assessmentActionMsg && (
-          <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#1a1816', color: '#fff', padding: '12px 22px', borderRadius: 12, fontSize: 13, fontFamily: S.f, zIndex: 2000, boxShadow: '0 4px 20px #0000002a', maxWidth: 460, textAlign: 'center', lineHeight: 1.5, whiteSpace: 'pre-line' }}>
-            {assessmentActionMsg}
-          </div>
-        )}
-
-        {/* ── Delete confirmation dialog ── */}
-        {deleteConfirmId !== null && (
-          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
-              <div style={{ fontSize: 22, marginBottom: 10 }}>🗑️</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 8 }}>Delete this assessment?</div>
-              <div style={{ fontSize: 13, color: '#6b6560', lineHeight: 1.5, marginBottom: 22 }}>This will permanently remove the assessment and immediately recalculate your study plan. This action cannot be undone.</div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setDeleteConfirmId(null)} disabled={assessmentActionLoading} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
-                <button onClick={() => handleDeleteAssessment(deleteConfirmId)} disabled={assessmentActionLoading}
-                  style={{ ...S.btn, flex: 1, background: '#c0392b', color: '#fff', border: 'none', opacity: assessmentActionLoading ? 0.6 : 1 }}>
-                  {assessmentActionLoading ? 'Deleting…' : 'Delete'}
-                </button>
+        {/* Regenerate confirmation dialog */}
+        {regenConfirm && (
+          <div onClick={() => setRegenConfirm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(26,61,43,0.28)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(400px, 100%)', boxShadow: '0 12px 48px rgba(0,0,0,0.2)', padding: 22 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.deeper, fontFamily: T.font, marginBottom: 8 }}>Regenerate your plan?</div>
+              <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, lineHeight: 1.5, marginBottom: 18 }}>This rebuilds upcoming study days with your new settings. Past days and logged assessments are preserved.</div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setRegenConfirm(false)} style={{ border: `1px solid ${T.mid}`, background: '#fff', borderRadius: 9, padding: '9px 18px', fontSize: 13, fontWeight: 600, fontFamily: T.font, color: T.dark, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => { setRegenConfirm(false); handleEditSave(); }} style={{ border: 'none', background: T.accent, color: '#fff', borderRadius: 9, padding: '9px 18px', fontSize: 13, fontWeight: 600, fontFamily: T.font, cursor: 'pointer' }}>Confirm & regenerate</button>
               </div>
             </div>
           </div>
         )}
+      </AppShell>
+    );
+  }
 
-        {/* ── Edit assessment modal ── */}
-        {editingAssessment && (
-          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 20 }}>✏️ Edit Assessment</div>
-              <div style={{ display: 'grid', gap: 16 }}>
-                {/* Form name */}
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Form Name</label>
-                  <input value={editFormName} onChange={e => setEditFormName(e.target.value)} placeholder="e.g. NBME 26"
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
-                </div>
-                {/* Date taken */}
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>Date Taken</label>
-                  <input type="date" value={editTakenAt} onChange={e => setEditTakenAt(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
-                </div>
-                {/* Scores */}
-                {Object.keys(editScores).length > 0 && (
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 8 }}>Scores (%)</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {Object.keys(editScores).map(cat => (
-                        <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#faf8f5', borderRadius: 8 }}>
-                          <span style={{ fontSize: 11, color: '#6b6560', flex: 1, lineHeight: 1.3 }}>{cat}</span>
-                          <input type="number" min="0" max="100" value={editScores[cat] ?? ''}
-                            onChange={e => setEditScores(prev => ({ ...prev, [cat]: Number(e.target.value) }))}
-                            style={{ width: 54, padding: '4px 6px', borderRadius: 6, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, textAlign: 'right', outline: 'none' }} />
-                        </div>
-                      ))}
+  // ─── APP PAGES (not yet rebuilt) ───────────────────────────────────
+  // Placeholder so sidebar navigation to in-progress pages doesn't render blank yet.
+  // ─── MY STATS ──────────────────────────────────────────────────────
+  if (screen === "app" && page === "my-stats") {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const examDate = profile.examDate ? new Date(profile.examDate) : null;
+    if (examDate) examDate.setHours(0, 0, 0, 0);
+    const daysUntilExam = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
+
+    const overallOf = (scoresObj) => {
+      if (!scoresObj) return null;
+      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
+      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    };
+    const examDateOf = (a) => {
+      const raw = a.takenAt || a.taken_at || a.createdAt || a.created_at || '';
+      return raw ? new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z') : null;
+    };
+
+    const sorted = [...assessments].sort((a, b) => (examDateOf(a)?.getTime() || 0) - (examDateOf(b)?.getTime() || 0));
+    const trend = sorted.map(a => ({
+      label: (a.formName || a.form_name || 'Exam').replace('NBME ', '#'),
+      overall: overallOf(a.scores),
+      dateMs: examDateOf(a)?.getTime() || 0,
+      dateLabel: examDateOf(a)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) || '',
+    })).filter(p => p.overall != null);
+
+    const deltas = trend.slice(1).map((p, i) => p.overall - trend[i].overall);
+    const avgGain = deltas.length ? Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length) : null;
+    const latestOverall = trend.length ? trend[trend.length - 1].overall : null;
+
+    const progress = plan && latestPlanMeta ? calcPlanProgress(plan, latestPlanMeta.createdAt, profile.examDate) : null;
+    const ws = profile.weeklySchedule || {};
+    const weekDays = Object.values(ws);
+    const studyDayCount = weekDays.filter(d => (d.studyHours ?? 0) > 0).length;
+    const weeklyHours = weekDays.reduce((s, d) => s + (d.studyHours ?? 0), 0);
+
+    const trackingFrom = sorted.length ? examDateOf(sorted[0])?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+
+    const momentum = [
+      { icon: 'target-arrow', label: 'Latest score', value: latestOverall != null ? `${latestOverall}%` : '—', sub: trend.length ? `${trend[trend.length - 1].label}` : 'no exams yet' },
+      { icon: 'trending-up', label: 'Avg gain / exam', value: avgGain != null ? `${avgGain > 0 ? '+' : ''}${avgGain}` : '—', sub: deltas.length ? `across ${trend.length} exams` : 'need 2+ exams' },
+      { icon: 'calendar-stats', label: 'Plan progress', value: progress ? `${progress.percent}%` : '—', sub: progress ? `Day ${progress.completedDays} of ${progress.totalDays}` : 'no plan yet' },
+      { icon: 'clock-hour-4', label: 'Weekly target', value: `${weeklyHours}h`, sub: `${studyDayCount} study day${studyDayCount === 1 ? '' : 's'}/week` },
+    ];
+
+    // ── SVG trend chart with projection ──
+    const renderChart = () => {
+      if (trend.length === 0) {
+        return <div style={{ textAlign: 'center', padding: '28px 0', color: T.faint, fontSize: 13, fontFamily: T.font }}>No assessments logged yet.</div>;
+      }
+      if (trend.length === 1) {
+        return <div style={{ textAlign: 'center', padding: '28px 0', color: T.muted, fontSize: 13, fontFamily: T.font }}>
+          {trend[0].overall}% on {trend[0].label} — log another exam to see your trajectory.
+        </div>;
+      }
+      // Projected node from last slope to exam date
+      let projNode = null;
+      if (trend.length >= 2 && daysUntilExam) {
+        const last = trend[trend.length - 1], prev = trend[trend.length - 2];
+        const span = Math.max(1, (last.dateMs - prev.dateMs) / 86400000);
+        const slope = (last.overall - prev.overall) / span;
+        const proj = Math.max(0, Math.min(100, Math.round(last.overall + slope * daysUntilExam)));
+        projNode = { overall: proj, label: 'Projected', dateLabel: 'Exam', projected: true };
+      }
+      const nodes = projNode ? [...trend, projNode] : trend;
+      const W = 600, H = 210, padL = 30, padR = 16, padT = 16, padB = 30;
+      const innerW = W - padL - padR, innerH = H - padT - padB;
+      const scores = nodes.map(n => n.overall);
+      const lo = Math.max(0, Math.min(...scores) - 8);
+      const hi = Math.min(100, Math.max(...scores) + 8);
+      const range = Math.max(1, hi - lo);
+      const xOf = (i) => padL + (nodes.length === 1 ? innerW / 2 : (i / (nodes.length - 1)) * innerW);
+      const yOf = (v) => padT + innerH - ((v - lo) / range) * innerH;
+      const pts = nodes.map((n, i) => ({ ...n, x: xOf(i), y: yOf(n.overall) }));
+      const realPts = projNode ? pts.slice(0, -1) : pts;
+      const gridLevels = 4;
+      return (
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: 'visible' }}>
+          {/* gridlines + y labels */}
+          {Array.from({ length: gridLevels + 1 }).map((_, i) => {
+            const v = lo + (range * i) / gridLevels;
+            const y = yOf(v);
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={T.mid} strokeWidth={0.5} />
+                <text x={padL - 6} y={y + 3} textAnchor="end" fontSize={9} fill={T.faint} fontFamily={T.font}>{Math.round(v)}</text>
+              </g>
+            );
+          })}
+          {/* solid line through real assessments */}
+          <polyline points={realPts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke={T.accent} strokeWidth={2} strokeLinejoin="round" />
+          {/* dashed projected segment */}
+          {projNode && (
+            <line x1={realPts[realPts.length - 1].x} y1={realPts[realPts.length - 1].y} x2={pts[pts.length - 1].x} y2={pts[pts.length - 1].y}
+              stroke={T.faint} strokeWidth={2} strokeDasharray="4 4" />
+          )}
+          {/* points + labels */}
+          {pts.map((p, i) => (
+            <g key={i}>
+              <circle cx={p.x} cy={p.y} r={p.projected ? 4 : 4.5} fill={p.projected ? '#fff' : T.accent} stroke={p.projected ? T.faint : T.accent} strokeWidth={p.projected ? 1.5 : 0} />
+              <text x={p.x} y={p.y - 9} textAnchor="middle" fontSize={10} fontWeight={600} fill={p.projected ? T.faint : T.dark} fontFamily={T.font}>{p.overall}</text>
+              <text x={p.x} y={H - 10} textAnchor="middle" fontSize={9} fill={T.muted} fontFamily={T.font}>{p.dateLabel}</text>
+            </g>
+          ))}
+        </svg>
+      );
+    };
+
+    // ── Category performance with per-category trend ──
+    // Iterate the categories actually recorded on the latest assessment (matches Past Exams),
+    // not the canonical list, so no real breakdown rows get dropped on naming mismatch.
+    const latestA = sorted.length ? sorted[sorted.length - 1] : null;
+    const latestCats = latestA ? Object.entries(latestA.scores || {}).filter(([k, v]) => k !== '__total__' && v != null && v !== '') : [];
+    const catRows = latestCats.map(([cat, cur]) => {
+      // find most recent prior assessment that recorded this category
+      let prior = null;
+      for (let i = sorted.length - 2; i >= 0; i--) {
+        const pv = sorted[i].scores?.[cat];
+        if (pv != null && pv !== '') { prior = Number(pv); break; }
+      }
+      const d = prior != null ? Number(cur) - prior : null;
+      const trendObj = d == null ? null : d > 0 ? { dir: 'up', value: d } : d < 0 ? { dir: 'down', value: d } : { dir: 'flat' };
+      return { cat, pct: Number(cur), trend: trendObj };
+    });
+
+    return (
+      <AppShell>
+        <PageHeader
+          title="My stats"
+          sub={trackingFrom ? `Tracking from ${trackingFrom} · ${assessments.length} assessment${assessments.length === 1 ? '' : 's'}` : 'Log assessments to start tracking your progress.'}
+        />
+
+        {/* Momentum strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          {momentum.map((m, i) => (
+            <div key={i} style={tCard({ padding: 14 })}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.muted }}>
+                <Icon name={m.icon} size={14} color={T.faint} />
+                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', fontFamily: T.font }}>{m.label}</span>
+              </div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: T.deeper, fontFamily: T.font, marginTop: 8 }}>{m.value}</div>
+              <div style={{ fontSize: 11, color: T.faint, fontFamily: T.font, marginTop: 2 }}>{m.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Score trend chart */}
+        <div style={tCard()}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font, marginBottom: 10 }}>Score trend</div>
+          {renderChart()}
+          {trend.length >= 2 && daysUntilExam ? (
+            <div style={{ fontSize: 11, color: T.faint, fontFamily: T.font, marginTop: 6, textAlign: 'right' }}>
+              <span style={{ borderTop: `2px dashed ${T.faint}`, padding: '0 6px', marginRight: 4 }} /> Dashed line projects your current pace to exam day.
+            </div>
+          ) : null}
+        </div>
+
+        {/* Category performance */}
+        <div style={tCard()}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font, marginBottom: 12 }}>Category performance</div>
+          {catRows.length === 0 ? (
+            <div style={{ fontSize: 12, color: T.faint, fontFamily: T.font }}>No category breakdown recorded yet — log an exam with system/discipline scores to see this.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 22px' }}>
+              {catRows.map(r => <CatBar key={r.cat} name={r.cat} pct={r.pct} trend={r.trend} />)}
+            </div>
+          )}
+        </div>
+      </AppShell>
+    );
+  }
+
+  // ─── PAST EXAMS ────────────────────────────────────────────────────
+  if (screen === "app" && page === "past-exams") {
+    const overallOf = (scoresObj) => {
+      if (!scoresObj) return null;
+      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
+      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    };
+    const examDateOf = (a) => {
+      const raw = a.takenAt || a.taken_at || a.createdAt || a.created_at || '';
+      return raw ? new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z') : null;
+    };
+    const fmtExamDate = (a) => {
+      const d = examDateOf(a);
+      return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    };
+    const breakdownOf = (scoresObj) => Object.entries(scoresObj || {}).filter(([k, v]) => k !== '__total__' && v != null && v !== '');
+
+    // Oldest → newest for delta computation
+    const sorted = [...assessments].sort((a, b) => (examDateOf(a)?.getTime() || 0) - (examDateOf(b)?.getTime() || 0));
+    const withMeta = sorted.map((a, i) => {
+      const overall = overallOf(a.scores);
+      const prev = i > 0 ? overallOf(sorted[i - 1].scores) : null;
+      return { a, overall, delta: (overall != null && prev != null) ? overall - prev : null, isBaseline: i === 0 };
+    });
+    const display = [...withMeta].reverse(); // newest first
+    const deltas = withMeta.filter(m => m.delta != null).map(m => m.delta);
+    const avgGain = deltas.length ? Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length) : null;
+    const newestId = display[0]?.a.id;
+
+    return (
+      <AppShell>
+        <PageHeader
+          title="Past exams"
+          sub={assessments.length === 0
+            ? 'No assessments logged yet.'
+            : `${assessments.length} assessment${assessments.length > 1 ? 's' : ''} uploaded${avgGain != null ? ` · avg gain ${avgGain > 0 ? '+' : ''}${avgGain} pts per exam` : ''}`}
+        />
+
+        {assessments.length === 0 ? (
+          <div style={tCard({ textAlign: 'center', padding: '40px 16px' })}>
+            <Icon name="clipboard-list" size={30} color={T.pale} />
+            <div style={{ marginTop: 12, fontSize: 14, fontWeight: 500, color: T.deeper, fontFamily: T.font }}>No assessments yet</div>
+            <div style={{ marginTop: 4, fontSize: 12, color: T.muted, fontFamily: T.font }}>Log a practice exam to start tracking your trajectory.</div>
+            <button onClick={() => navigate('add-assessment')} style={{ marginTop: 16, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: 'pointer', background: T.accent, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: T.font }}>
+              Add assessment
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {display.map(({ a, overall, delta, isBaseline }) => {
+              const isNewest = a.id === newestId;
+              const expanded = (expandedExam ?? newestId) === a.id;
+              const cats = breakdownOf(a.scores);
+              const name = a.formName || a.form_name || 'Assessment';
+              return (
+                <div key={a.id} style={tCard({ padding: 0, overflow: 'hidden' })}>
+                  {/* Header row */}
+                  <div
+                    onClick={() => setExpandedExam(expanded ? '__none__' : a.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, cursor: 'pointer' }}>
+                    <div style={{
+                      width: 46, height: 46, borderRadius: 10, flexShrink: 0, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      background: overall != null ? catColor(overall) + '22' : T.pageBg,
+                    }}>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: overall != null ? catTextColor(overall) : T.faint, fontFamily: T.font, lineHeight: 1 }}>
+                        {overall != null ? overall : '—'}
+                      </span>
+                      <span style={{ fontSize: 9, color: overall != null ? catTextColor(overall) : T.faint, fontFamily: T.font }}>%</span>
                     </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>
+                        {name}{isNewest && <span style={{ fontSize: 11, fontWeight: 400, color: T.accent }}> · Most recent</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 2 }}>{fmtExamDate(a)}</div>
+                    </div>
+                    {isBaseline ? (
+                      <span style={{ fontSize: 11, color: T.faint, fontFamily: T.font, fontStyle: 'italic' }}>Starting baseline</span>
+                    ) : delta != null ? (
+                      <span style={{ fontSize: 13, fontWeight: 600, fontFamily: T.font, color: delta > 0 ? '#0f6e56' : delta < 0 ? '#c05a1a' : T.muted }}>
+                        {delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '→ 0'}
+                      </span>
+                    ) : null}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                      <button title="Edit" onClick={() => startEditAssessment(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: T.faint }}>
+                        <Icon name="pencil" size={14} color={T.faint} />
+                      </button>
+                      <button title="Delete" onClick={() => setDeleteConfirmId(a.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: T.faint }}>
+                        <Icon name="trash" size={14} color={T.faint} />
+                      </button>
+                      <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={T.faint} />
+                    </div>
+                  </div>
+
+                  {/* Expanded body */}
+                  {expanded && (
+                    <div style={{ padding: '0 14px 14px', borderTop: `0.5px solid ${T.mid}` }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '12px 0' }}>
+                        <span style={{ fontSize: 22, fontWeight: 700, color: overall != null ? catTextColor(overall) : T.faint, fontFamily: T.font }}>
+                          {overall != null ? `${overall}%` : '—'}
+                        </span>
+                        <span style={{ fontSize: 12, color: T.muted, fontFamily: T.font }}>overall</span>
+                      </div>
+                      {cats.length > 0 ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px 18px' }}>
+                          {cats.map(([cat, v]) => <CatBar key={cat} name={cat} pct={Number(v)} />)}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: T.faint, fontFamily: T.font }}>Total score only — no category breakdown was recorded.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </AppShell>
+    );
+  }
+
+  // ─── ADD ASSESSMENT (3-step flow) ──────────────────────────────────
+  if (screen === "app" && page === "add-assessment") {
+    const STEP_LABELS = ['Upload', 'Review results', 'Confirm & update'];
+    const calcOverall = (scoresObj) => {
+      if (!scoresObj) return null;
+      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
+      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
+      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    };
+    const breakdownCats = Object.entries(histDraft.scores).filter(([, v]) => v !== undefined && v !== '');
+    const overallPct = breakdownCats.length > 0
+      ? Math.round(breakdownCats.reduce((s, [, v]) => s + Number(v), 0) / breakdownCats.length)
+      : (histDraft.totalScore !== '' ? Number(histDraft.totalScore) : null);
+    const prevA = assessments.length > 0 ? assessments[assessments.length - 1] : null;
+    const prevOverall = prevA ? calcOverall(prevA.scores) : null;
+    const overallDelta = (overallPct != null && prevOverall != null) ? overallPct - prevOverall : null;
+    const canConfirm = histDraft.formName.trim().length > 0 && histDraft.takenAt.trim().length > 0 && overallPct != null;
+
+    const resetFlow = () => { setHistDraft(defaultHistDraft()); setAssessStep(1); setAssessEditing(false); setHistError(''); };
+
+    const confirmAssessment = async () => {
+      if (!canConfirm) return;
+      setHistSaving(true); setHistError('');
+      try {
+        const examScores = breakdownCats.length > 0
+          ? Object.fromEntries(breakdownCats.map(([k, v]) => [k, Number(v)]))
+          : { '__total__': Number(histDraft.totalScore) };
+        const { assessment } = await api.assessments.save({ formName: histDraft.formName, scores: examScores, stickingPoints: [], takenAt: histDraft.takenAt });
+        const combined = [...assessments, assessment].sort((a, b) =>
+          new Date(a.takenAt || a.taken_at || a.createdAt || a.created_at) - new Date(b.takenAt || b.taken_at || b.createdAt || b.created_at));
+        setAssessments(combined);
+        setAssessStep(3);
+      } catch (err) {
+        setHistError(err.message || 'Failed to save. Please try again.');
+      } finally {
+        setHistSaving(false);
+      }
+    };
+
+    const stepDot = (i) => {
+      const n = i + 1;
+      const done = assessStep > n;
+      const active = assessStep === n;
+      return (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{
+            width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 600, fontFamily: T.font,
+            background: done ? T.accent : active ? T.dark : T.soft,
+            color: done || active ? '#fff' : T.faint,
+          }}>{done ? <Icon name="check" size={12} color="#fff" /> : n}</div>
+          <span style={{ fontSize: 12, fontFamily: T.font, fontWeight: active ? 600 : 400, color: active ? T.dark : T.muted }}>{STEP_LABELS[i]}</span>
+          {i < 2 && <div style={{ width: 28, height: 1, background: T.mid }} />}
+        </div>
+      );
+    };
+
+    return (
+      <AppShell>
+        <PageHeader title="Add assessment" sub="Upload a score report, review the parsed results, then log it to your history." />
+
+        {/* Step indicator */}
+        <div style={tCard({ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' })}>
+          {[0, 1, 2].map(stepDot)}
+        </div>
+
+        {/* Step 1 — Upload */}
+        {assessStep === 1 && (
+          <div style={tCard()}>
+            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
+              onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; await handleHistScreenshotUpload(f); setAssessStep(2); }} />
+            <div
+              onClick={() => !histUploadingScreenshot && fileInputRef.current?.click()}
+              style={{
+                border: `1.5px dashed ${T.border}`, borderRadius: 12, padding: '36px 20px', textAlign: 'center',
+                cursor: histUploadingScreenshot ? 'wait' : 'pointer', background: T.pageBg, transition: 'border-color 0.15s',
+              }}>
+              <Icon name={histUploadingScreenshot ? 'loader-2' : 'cloud-upload'} size={34} color={T.faint} />
+              <div style={{ fontSize: 14, fontWeight: 500, color: T.deeper, fontFamily: T.font, marginTop: 12 }}>
+                {histUploadingScreenshot ? 'Parsing your score report…' : 'Drop your score report here'}
+              </div>
+              <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 4 }}>
+                PNG, JPG or PDF — NBME, UWorld, Free 120, Amboss
+              </div>
+              {!histUploadingScreenshot && (
+                <button style={{
+                  marginTop: 14, padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: T.accent, color: '#fff', fontSize: 13, fontWeight: 500, fontFamily: T.font,
+                }}>Browse files</button>
+              )}
+            </div>
+            {histError && <div style={{ marginTop: 10, fontSize: 12, color: '#c05a1a', fontFamily: T.font }}>{histError}</div>}
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: T.faint, fontFamily: T.font }}>
+                <Icon name="lock" size={11} color={T.faint} /> Reports are processed securely and never sold or shared.
+              </span>
+              <button onClick={() => { setHistError(''); setAssessStep(2); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.text, fontFamily: T.font, textDecoration: 'underline' }}>
+                Enter manually instead →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2 — Review results */}
+        {assessStep === 2 && (
+          <>
+            <div style={tCard()}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: T.soft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="file-description" size={16} color={T.dark} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>Parsed results</div>
+                </div>
+                <button onClick={resetFlow} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: T.muted, fontFamily: T.font }}>
+                  <Icon name="x" size={12} color={T.muted} /> Start over
+                </button>
+              </div>
+
+              {/* Form + date */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Form</label>
+                  <select value={histDraft.formName} onChange={e => setHistDraft(d => ({ ...d, formName: e.target.value }))}
+                    style={{ width: '100%', marginTop: 5, padding: '9px 10px', borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: T.font, background: '#fff', color: T.deeper }}>
+                    <option value="">— Select —</option>
+                    <optgroup label="NBME CBSSA Forms">{PRACTICE_TESTS.filter(t => t.type === 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                    <optgroup label="UW Self-Assessments & Other">{PRACTICE_TESTS.filter(t => t.type !== 'nbme').map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date taken</label>
+                  <input type="date" value={histDraft.takenAt} max={formatLocalYMD()} onChange={e => setHistDraft(d => ({ ...d, takenAt: e.target.value }))}
+                    style={{ width: '100%', marginTop: 5, padding: '9px 10px', borderRadius: 8, border: `1px solid ${histDraft.takenAt ? T.border : '#e8a87c'}`, fontSize: 13, fontFamily: T.font, background: '#fff', color: T.deeper }} />
+                </div>
+              </div>
+
+              {/* Overall score */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 10, background: T.pageBg, marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 26, fontWeight: 700, color: overallPct != null ? catTextColor(overallPct) : T.faint, fontFamily: T.font, lineHeight: 1 }}>
+                    {overallPct != null ? `${overallPct}%` : '—'}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.muted, fontFamily: T.font, marginTop: 3 }}>Overall</div>
+                </div>
+                {overallDelta != null && (
+                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: T.font, color: overallDelta > 0 ? '#0f6e56' : overallDelta < 0 ? '#c05a1a' : T.muted }}>
+                    {overallDelta > 0 ? '↑ +' : overallDelta < 0 ? '↓ ' : '→ '}{overallDelta !== 0 ? Math.abs(overallDelta) : ''}{overallDelta !== 0 ? ' pts' : 'no change'}
+                    <span style={{ fontWeight: 400, color: T.faint }}> vs last exam</span>
+                  </div>
+                )}
+                {!breakdownCats.length && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <label style={{ fontSize: 11, color: T.muted, fontFamily: T.font }}>Total %</label>
+                    <input type="number" min={0} max={100} value={histDraft.totalScore} placeholder="—"
+                      onChange={e => setHistDraft(d => ({ ...d, totalScore: e.target.value }))}
+                      style={{ width: 64, padding: '7px 8px', borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 13, textAlign: 'center', fontFamily: T.font, color: T.deeper }} />
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                <button onClick={() => setEditingAssessment(null)} disabled={editSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
-                <button onClick={saveEditAssessment} disabled={editSaving}
-                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: editSaving ? 0.6 : 1 }}>
-                  {editSaving ? 'Saving…' : 'Save Changes'}
-                </button>
-              </div>
+
+              {/* Category breakdown */}
+              {breakdownCats.length > 0 ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category breakdown</div>
+                    <button onClick={() => setAssessEditing(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontSize: 11, color: T.text, fontFamily: T.font }}>
+                      {assessEditing ? 'Done editing' : 'Edit results'}
+                    </button>
+                  </div>
+                  {assessEditing ? (
+                    <div style={{ display: 'grid', gap: 7 }}>
+                      {breakdownCats.map(([cat, v]) => (
+                        <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ flex: 1, fontSize: 12, fontFamily: T.font, color: T.text }}>{cat}</span>
+                          <input type="number" min={0} max={100} value={v}
+                            onChange={e => { const nv = e.target.value; setHistDraft(d => ({ ...d, scores: { ...d.scores, [cat]: nv === '' ? undefined : Math.min(100, Math.max(0, Number(nv))) } })); }}
+                            style={{ width: 60, padding: '6px 8px', borderRadius: 7, border: `1px solid ${T.border}`, fontSize: 12, textAlign: 'center', fontFamily: T.font, color: T.deeper }} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 9 }}>
+                      {breakdownCats.map(([cat, v]) => <CatBar key={cat} name={cat} pct={Number(v)} />)}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: T.faint, fontFamily: T.font }}>
+                  No category breakdown {histUploadingScreenshot ? 'parsing…' : 'detected'} — a total score is enough to log this assessment.
+                </div>
+              )}
+
+              {histError && <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: '#fbeae0', fontSize: 12, color: '#c05a1a', fontFamily: T.font }}>{histError}</div>}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <button onClick={() => { setHistError(''); setAssessStep(1); }} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontSize: 13, color: T.text, fontFamily: T.font }}>
+                ← Back
+              </button>
+              <button disabled={!canConfirm || histSaving} onClick={confirmAssessment} style={{
+                border: 'none', borderRadius: 8, padding: '10px 20px', cursor: (!canConfirm || histSaving) ? 'not-allowed' : 'pointer',
+                background: T.accent, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: T.font, opacity: (!canConfirm || histSaving) ? 0.45 : 1,
+              }}>{histSaving ? 'Logging…' : 'Confirm & log assessment'}</button>
+            </div>
+          </>
+        )}
+
+        {/* Step 3 — Confirmed */}
+        {assessStep === 3 && (
+          <div style={tCard({ textAlign: 'center', padding: '32px 20px' })}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: T.soft, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="check" size={26} color={T.dark} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: T.deeper, fontFamily: T.font, marginTop: 14 }}>Assessment logged</div>
+            <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, marginTop: 4 }}>
+              {histDraft.formName || 'Your assessment'}{overallPct != null ? ` · ${overallPct}% overall` : ''} has been added to your history.
+            </div>
+            <div style={{ fontSize: 12, color: T.faint, fontFamily: T.font, marginTop: 12, padding: '10px 14px', background: T.pageBg, borderRadius: 8, display: 'inline-block', maxWidth: 420 }}>
+              <Icon name="info-circle" size={12} color={T.faint} /> Your plan wasn't auto-updated. Head to <strong style={{ color: T.text }}>Edit plan</strong> and regenerate when you're ready to fold this in.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 20 }}>
+              <button onClick={resetFlow} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 8, padding: '9px 18px', cursor: 'pointer', fontSize: 13, color: T.text, fontFamily: T.font }}>
+                Add another
+              </button>
+              <button onClick={() => { resetFlow(); navigate('past-exams'); }} style={{ border: 'none', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', background: T.accent, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: T.font }}>
+                View past exams
+              </button>
             </div>
           </div>
         )}
+      </AppShell>
+    );
+  }
 
-        <Footer />
-      </div>
+  if (screen === "app") {
+    return (
+      <AppShell>
+        <PageHeader title="Coming soon" sub="This page is being rebuilt in the new layout." />
+        <div style={tCard({ textAlign: 'center', padding: '40px 16px', color: T.muted })}>
+          <Icon name="tools" size={28} color={T.pale} />
+          <div style={{ marginTop: 10, fontSize: 13, fontFamily: T.font }}>Check back shortly.</div>
+        </div>
+      </AppShell>
     );
   }
 
@@ -2165,7 +3264,7 @@ export default function StudyPlanner({ onShowTerms }) {
               ); })}
             </div>
             {profile.resources.includes('anking') && (
-              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #2db88230' }}>
                 <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 How long have you been using Anki?</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {[
@@ -2177,7 +3276,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     const selected = (profile.anki_experience_level || 'none') === opt.value;
                     return (
                       <div key={opt.value} onClick={() => setProfile(p => ({ ...p, anki_experience_level: opt.value }))}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#2db88208' : '#fff', transition: 'all 0.15s' }}>
                         <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                         </div>
@@ -2189,7 +3288,7 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
             )}
             {profile.resources.includes('anking') && (
-              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #2db88230' }}>
                 <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 Which Anki deck do you use?</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {[
@@ -2200,7 +3299,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     const selected = (profile.ankiDeck || 'anking') === opt.value;
                     return (
                       <div key={opt.value} onClick={() => setProfile(p => ({ ...p, ankiDeck: opt.value }))}
-                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#2db88208' : '#fff', transition: 'all 0.15s' }}>
                         <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
                           {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                         </div>
@@ -2411,7 +3510,7 @@ export default function StudyPlanner({ onShowTerms }) {
           <p style={S.sub}>Have you already taken any NBME practice exams? Import your history so the plan uses real data from day one — not a blank slate.</p>
           <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
             <button
-              style={{ ...S.card, marginBottom: 0, border: '2px solid #1D9E7530', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
+              style={{ ...S.card, marginBottom: 0, border: '2px solid #2db88230', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
               onClick={() => { setHistList([]); setHistDraft(defaultHistDraft()); setHistError(''); navigate("history-import"); }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -2420,7 +3519,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>Yes — import my past NBMEs</div>
                   <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>You've taken exams before today. Add them so your plan knows your trajectory, sticky weaknesses, and current baseline.</div>
                 </div>
-                <span style={{ fontSize: 20, color: '#1D9E75', flexShrink: 0 }}>→</span>
+                <span style={{ fontSize: 20, color: '#2db882', flexShrink: 0 }}>→</span>
               </div>
             </button>
             <button
@@ -2544,7 +3643,7 @@ export default function StudyPlanner({ onShowTerms }) {
           {histHasScores === null && histList.length === 0 && (
             <div style={{ display: 'grid', gap: 12, marginBottom: 20 }}>
               <button
-                style={{ ...S.card, marginBottom: 0, border: '2px solid #1D9E7530', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
+                style={{ ...S.card, marginBottom: 0, border: '2px solid #2db88230', cursor: 'pointer', textAlign: 'left', background: '#f0f9f5', width: '100%' }}
                 onClick={() => setHistHasScores(true)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -2553,7 +3652,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 4 }}>Yes — I have past NBME scores</div>
                     <div style={{ fontSize: 13, color: '#6b6560', fontFamily: S.f, lineHeight: 1.5 }}>Add them so your plan knows your trajectory, sticky weaknesses, and current baseline.</div>
                   </div>
-                  <span style={{ fontSize: 20, color: '#1D9E75', flexShrink: 0 }}>→</span>
+                  <span style={{ fontSize: 20, color: '#2db882', flexShrink: 0 }}>→</span>
                 </div>
               </button>
               <button
@@ -2575,7 +3674,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
           {histList.length > 0 && (
             <div style={S.card}>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1D9E75', fontFamily: S.f, marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#2db882', fontFamily: S.f, marginBottom: 10 }}>
                 {histList.length} exam{histList.length > 1 ? 's' : ''} added
               </div>
               {histList.map((exam, idx) => {
@@ -2584,11 +3683,11 @@ export default function StudyPlanner({ onShowTerms }) {
                   ? Math.round(validScores.reduce((s, v) => s + v, 0) / validScores.length)
                   : exam.totalScore ? Number(exam.totalScore) : null;
                 return (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, marginBottom: 6, borderLeft: '3px solid #1D9E75' }}>
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, marginBottom: 6, borderLeft: '3px solid #2db882' }}>
                     <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{exam.formName}</span>
                     <span style={{ fontSize: 12, color: '#8a857e', fontFamily: S.f }}>{exam.takenAt}</span>
-                    {displayScore !== null && <span style={{ fontSize: 13, fontWeight: 700, color: '#1D9E75', fontFamily: S.f }}>{displayScore}%</span>}
-                    {exam.hasBreakdown && <span style={{ ...S.tag, background: '#1D9E7515', color: '#1D9E75' }}>Breakdown</span>}
+                    {displayScore !== null && <span style={{ fontSize: 13, fontWeight: 700, color: '#2db882', fontFamily: S.f }}>{displayScore}%</span>}
+                    {exam.hasBreakdown && <span style={{ ...S.tag, background: '#2db88215', color: '#2db882' }}>Breakdown</span>}
                     <button onClick={() => removeFromList(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 16, padding: '0 4px', lineHeight: 1 }}>✕</button>
                   </div>
                 );
@@ -2602,8 +3701,8 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
 
             {/* Screenshot upload */}
-            <div style={{ marginBottom: 16, padding: '12px 14px', background: '#f8fcfa', borderRadius: 10, border: '1.5px dashed #1D9E7540' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: '#f8fcfa', borderRadius: 10, border: '1.5px dashed #2db88240' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2db882', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} id="hist-screenshot-input"
                   onChange={e => { const file = e.target.files?.[0]; if (file) handleHistScreenshotUpload(file); e.target.value = ''; }} />
@@ -2639,7 +3738,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
             <div style={{ marginBottom: histDraft.hasBreakdown ? 14 : 4 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#1D9E75' }} />
+                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2db882' }} />
                 <span style={{ fontSize: 14, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>I have system/discipline breakdown scores</span>
               </label>
               <p style={{ ...S.muted, fontSize: 12, marginTop: 5, marginLeft: 26 }}>Breakdown gives the plan much more precision. If you have your score report, check this.</p>
@@ -2720,7 +3819,7 @@ export default function StudyPlanner({ onShowTerms }) {
           <p style={S.sub}>Import a historical NBME score. It'll show up in your score history so your plan has your full score trajectory.</p>
 
           <div style={{ ...S.card, marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#1D9E75', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#2db882', fontFamily: S.f, marginBottom: 8 }}>Auto-fill from screenshot</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} id="past-screenshot-input"
                 onChange={e => { const file = e.target.files?.[0]; if (file) handleHistScreenshotUpload(file); e.target.value = ''; }} />
@@ -2757,7 +3856,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
             <div style={{ marginBottom: histDraft.hasBreakdown ? 14 : 4 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#1D9E75' }} />
+                <input type="checkbox" checked={histDraft.hasBreakdown} onChange={e => setHistDraft(d => ({ ...d, hasBreakdown: e.target.checked }))} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2db882' }} />
                 <span style={{ fontSize: 14, fontFamily: S.f, color: '#1a1816', fontWeight: 500 }}>I have system/discipline breakdown scores</span>
               </label>
             </div>
@@ -3410,7 +4509,7 @@ export default function StudyPlanner({ onShowTerms }) {
                         <span style={{ color: '#6b6560', flex: 1, lineHeight: 1.4 }}>
                           {task.activity}
                           {task.setupLink && (
-                            <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                            <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#2db882', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
                           )}
                         </span>
                         <span style={{ color: '#8a857e', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatDuration(task.hours)}</span>
@@ -3433,7 +4532,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>
                       Day {day.calendarDay}{fmtPlanDate(getPlanDayDate(day.calendarDay)) ? ` · ${fmtPlanDate(getPlanDayDate(day.calendarDay))}` : ''}
                     </span>
-                    {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75', fontWeight: 700 }}>TODAY</span>}
+                    {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#2db88218', color: '#2db882', fontWeight: 700 }}>TODAY</span>}
                     <span style={{ ...S.tag, background: '#8a857e18', color: '#6b6560' }}>🔒 Locked</span>
                   </div>
                   <div style={{ padding: '16px 18px', background: '#f5f3ef', borderRadius: 10, border: '1px dashed #c5c0b8', textAlign: 'center' }}>
@@ -3493,7 +4592,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   <span style={{ ...S.tag, background: '#1a181610', color: '#1a1816' }}>
                     Day {day.calendarDay}{fmtPlanDate(getPlanDayDate(day.calendarDay)) ? ` · ${fmtPlanDate(getPlanDayDate(day.calendarDay))}` : ''}
                   </span>
-                  {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75', fontWeight: 700 }}>TODAY</span>}
+                  {isToday(getPlanDayDate(day.calendarDay)) && <span style={{ ...S.tag, background: '#2db88218', color: '#2db882', fontWeight: 700 }}>TODAY</span>}
                   {day.dayType === 'nbme' && <span style={{ ...S.tag, background: '#c0392b18', color: '#c0392b' }}>📋 NBME</span>}
                   {day.dayType === 'nbme' && (() => {
                     const item = (plan.assessmentSchedule || []).find(a => a.day === day.calendarDay);
@@ -3517,7 +4616,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   {day.dayType === 'rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>😴 Rest</span>}
                   {day.dayType === 'student-rest' && <span style={{ ...S.tag, background: '#27ae6018', color: '#27ae60' }}>🌿 Rest day</span>}
                   {day.dayType === 'light' && <span style={{ ...S.tag, background: '#2980b918', color: '#2980b9' }}>Light</span>}
-                  {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#1D9E7518', color: '#1D9E75' }}>🌙 Exam eve</span>}
+                  {day.dayType === 'exam-eve' && <span style={{ ...S.tag, background: '#2db88218', color: '#2db882' }}>🌙 Exam eve</span>}
                   {day.dayLabel && !['Rest', 'NBME'].includes(day.dayLabel) && day.dayType === 'study' && (
                     <span style={{ ...S.tag, background: '#8a857e18', color: '#6b6560' }}>{day.dayLabel}</span>
                   )}
@@ -3566,7 +4665,7 @@ export default function StudyPlanner({ onShowTerms }) {
                                       <span style={{ color: '#6b6560', flex: 1 }}>
                                         {task.activity}
                                         {task.setupLink && (
-                                          <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#1D9E75', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
+                                          <a href={task.setupLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#2db882', background: '#f0faf5', border: '1px solid #a8dfc7', borderRadius: 8, padding: '2px 8px', textDecoration: 'none', fontFamily: S.f }}>📖 Setup guide →</a>
                                         )}
                                       </span>
                                       <span style={{ color: '#8a857e', fontWeight: 600 }}>{formatDuration(task.hours)}</span>
@@ -3652,7 +4751,7 @@ export default function StudyPlanner({ onShowTerms }) {
                             onClick={() => { setPlanViewDay(day.calendarDay); setPlanViewMode('day'); }}
                             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: di > 0 ? '1px solid #f0ece6' : 'none', cursor: 'pointer', background: isTodayDay ? '#f0faf5' : '#fff' }}>
                             <div style={{ flexShrink: 0, textAlign: 'center', minWidth: 54 }}>
-                              <div style={{ ...S.tag, background: isTodayDay ? '#1D9E7520' : '#1a181608', color: isTodayDay ? '#1D9E75' : '#6b6560', fontWeight: isTodayDay ? 700 : 400 }}>Day {day.calendarDay}</div>
+                              <div style={{ ...S.tag, background: isTodayDay ? '#2db88220' : '#1a181608', color: isTodayDay ? '#2db882' : '#6b6560', fontWeight: isTodayDay ? 700 : 400 }}>Day {day.calendarDay}</div>
                               {dayDate && <div style={{ fontSize: 10, color: '#aaa', fontFamily: S.f, marginTop: 2 }}>{dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>}
                             </div>
                             <div style={{ flex: 1 }}>
@@ -3660,7 +4759,7 @@ export default function StudyPlanner({ onShowTerms }) {
                                 <div style={{ fontSize: 13, fontWeight: 600, fontFamily: S.f, color: rowColor }}>
                                   {day.dayType === 'nbme' ? '📋 Practice Exam' : day.dayType === 'rest' ? '😴 Rest day' : day.dayType === 'student-rest' ? '🌿 Rest day' : day.dayType === 'review' ? `🔍 Review: ${day.triageFor || 'post-exam'}` : day.dayType === 'exam-eve' ? '🌙 Exam eve' : day.dayType === 'locked' ? '🔒 Locked' : day.focusTopic || 'Study day'}
                                 </div>
-                                {isTodayDay && <span style={{ fontSize: 10, fontWeight: 700, color: '#1D9E75', background: '#1D9E7518', padding: '1px 6px', borderRadius: 6, fontFamily: S.f }}>TODAY</span>}
+                                {isTodayDay && <span style={{ fontSize: 10, fontWeight: 700, color: '#2db882', background: '#2db88218', padding: '1px 6px', borderRadius: 6, fontFamily: S.f }}>TODAY</span>}
                               </div>
                               {day.dayType === 'student-rest' && <div style={{ fontSize: 11, color: '#27ae60', fontFamily: S.f, marginTop: 1 }}>0 Qs — rest day · 30–45 min light activity</div>}
                               {day.dayType === 'review' && <div style={{ fontSize: 11, color: '#d97706', fontFamily: S.f, marginTop: 1 }}>{day.totalQuestions} Qs · deep review + reinforcement</div>}
@@ -4350,7 +5449,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
           {/* ── Saved confirmation ── */}
           {editPlanSaved && (
-            <div style={{ background: '#1D9E750d', border: '1px solid #1D9E7530', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+            <div style={{ background: '#2db8820d', border: '1px solid #2db88230', borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#1d6e56', fontFamily: S.f, marginBottom: 6 }}>✅ Plan updated successfully</div>
               {editPlanChanges.map((c, i) => (
                 <div key={i} style={{ fontSize: 13, color: '#1d6e56', fontFamily: S.f, lineHeight: 1.6 }}>· {c}</div>
@@ -4494,7 +5593,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
             {/* Anki experience */}
             {editProfileDraft.resources.includes('anking') && (
-              <div style={{ marginTop: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+              <div style={{ marginTop: 16, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #2db88230' }}>
                 <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 How long have you been using Anki?</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {[
@@ -4506,7 +5605,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     const selected = (editProfileDraft.anki_experience_level || 'none') === opt.value;
                     return (
                       <div key={opt.value} onClick={() => { setEditProfileDraft(p => ({ ...p, anki_experience_level: opt.value })); setEditPlanSaved(false); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#2db88208' : '#fff', transition: 'all 0.15s' }}>
                         <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                         </div>
@@ -4520,7 +5619,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
             {/* Anki deck */}
             {editProfileDraft.resources.includes('anking') && (
-              <div style={{ marginTop: 12, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #1D9E7530' }}>
+              <div style={{ marginTop: 12, padding: '14px 16px', background: '#f0f9f5', borderRadius: 10, border: '1px solid #2db88230' }}>
                 <label style={{ ...S.label, marginBottom: 10, color: '#1d6e56' }}>🃏 Which Anki deck do you use?</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {[
@@ -4531,7 +5630,7 @@ export default function StudyPlanner({ onShowTerms }) {
                     const selected = (editProfileDraft.ankiDeck || 'anking') === opt.value;
                     return (
                       <div key={opt.value} onClick={() => { setEditProfileDraft(p => ({ ...p, ankiDeck: opt.value })); setEditPlanSaved(false); }}
-                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#1D9E7508' : '#fff', transition: 'all 0.15s' }}>
+                        style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer', border: `1.5px solid ${selected ? BRAND.green : '#e0dcd6'}`, background: selected ? '#2db88208' : '#fff', transition: 'all 0.15s' }}>
                         <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${selected ? BRAND.green : '#d5d0c9'}`, background: selected ? BRAND.green : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
                           {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                         </div>
