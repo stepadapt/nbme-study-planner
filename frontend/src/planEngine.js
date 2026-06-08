@@ -1122,8 +1122,6 @@ export function generatePlan(profile, scores, stickingPoints, options = {}) {
       daySchedule.push({ calendarDay, type: "review", prevAssessItem: reviewDayMap.get(calendarDay), dayHours, dayStartTime });
     } else if (isStudentRest) {
       daySchedule.push({ calendarDay, type: "student-rest", dayHours: 0, dayStartTime: null });
-    } else if (d > 6 && (d + 1) % 7 === 0 && timelineMode !== "triage") {
-      daySchedule.push({ calendarDay, type: "light", dayHours, dayStartTime });
     } else {
       daySchedule.push({ calendarDay, type: "study", dayHours, dayStartTime });
     }
