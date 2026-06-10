@@ -308,6 +308,8 @@ export default function StudyPlanner({ onShowTerms }) {
   const [fullPlanView, setFullPlanView] = useState('calendar'); // Full Plan layout: 'calendar' | 'list'
   const [fullPlanWeek, setFullPlanWeek] = useState(null); // Full Plan calendar week index (null = auto to current week)
   const [fullPlanOpenDay, setFullPlanOpenDay] = useState(null); // Full Plan list expanded day (calendarDay) or null
+  const [fullPlanShowPrev, setFullPlanShowPrev] = useState(false); // Full Plan list: expand "Previous days" section
+  const [fullPlanShowFuture, setFullPlanShowFuture] = useState(false); // Full Plan list: expand "Future days" section
   const [expandedExam, setExpandedExam] = useState(null); // Past Exams expanded card id
   const [expandedWeek, setExpandedWeek] = useState(0);
   const [animIn, setAnimIn] = useState(true);
@@ -2238,9 +2240,68 @@ export default function StudyPlanner({ onShowTerms }) {
     const byWeekday = {};
     for (const d of (week?.days || [])) { const dt = getPlanDayDate(d.calendarDay); if (dt) byWeekday[dt.getDay()] = d; }
     const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dispOpenDay = fullPlanOpenDay ?? todayCalendarDay;
+    // List view: anchor = today's plan day, else nearest plan day by date (plan not started / finished).
+    const anchorDay = todayCalendarDay ?? (() => {
+      let best = null, bestDelta = Infinity;
+      for (const d of allDays) {
+        const dt = getPlanDayDate(d.calendarDay); if (!dt) continue;
+        const delta = Math.abs(dt.getTime() - todayFlat.getTime());
+        if (delta < bestDelta) { bestDelta = delta; best = d.calendarDay; }
+      }
+      return best ?? allDays[0]?.calendarDay ?? null;
+    })();
+    const prevDays = allDays.filter(d => d.calendarDay < anchorDay);
+    const currentDay = allDays.find(d => d.calendarDay === anchorDay);
+    const futureDays = allDays.filter(d => d.calendarDay > anchorDay);
+    const dispOpenDay = fullPlanOpenDay ?? anchorDay;
 
     const toggle = (k, set, cur) => set(cur === k ? -1 : k);
+
+    // Reusable day card (used for the current day + each day inside an expanded section).
+    const DayCard = (day) => {
+      const dt = getPlanDayDate(day.calendarDay);
+      const tday = isToday(dt), past = isPast(dt);
+      const open = dispOpenDay === day.calendarDay;
+      const pills = dayPills(day);
+      const rest = day.dayType === 'rest' || day.dayType === 'student-rest';
+      return (
+        <div key={day.calendarDay} style={tCard({ padding: 0, opacity: past && !open ? 0.6 : 1, border: tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, overflow: 'hidden' })}>
+          <button onClick={() => setFullPlanOpenDay(open ? -1 : day.calendarDay)}
+            style={{ width: '100%', border: 'none', background: tday ? T.soft : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', textAlign: 'left' }}>
+            <div style={{ minWidth: 110 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${day.calendarDay}`}</div>
+              {tday && <div style={{ fontSize: 10.5, fontWeight: 700, color: T.accent, fontFamily: T.font }}>TODAY</div>}
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {pills.map((p, pi) => (
+                <span key={pi} style={{ background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, fontFamily: T.font, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Icon name={p.bs.icon} size={11} color={p.bs.iconColor} />{p.label}
+                </span>
+              ))}
+              {day.focusTopic && !rest && <span style={{ fontSize: 11, color: T.muted, fontFamily: T.font, alignSelf: 'center' }}>· {day.focusTopic}</span>}
+            </div>
+            <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={T.faint} />
+          </button>
+          {open && !rest && (
+            <div style={{ padding: '4px 14px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+            </div>
+          )}
+          {open && rest && (
+            <div style={{ padding: '4px 14px 16px', fontSize: 12.5, color: T.muted, fontFamily: T.font }}>Rest day — recover and recharge.</div>
+          )}
+        </div>
+      );
+    };
+
+    // Collapsible "Previous days" / "Future days" section bar.
+    const SectionBar = ({ icon, label, count, open, onClick }) => (
+      <button onClick={onClick} style={{ width: '100%', border: `0.5px solid ${T.mid}`, borderRadius: 12, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', textAlign: 'left' }}>
+        <Icon name={icon} size={15} color={T.faint} />
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.muted, fontFamily: T.font }}>{label} · {count}</span>
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={T.faint} />
+      </button>
+    );
 
     return (
       <AppShell>
@@ -2302,41 +2363,19 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {allDays.map(day => {
-              const dt = getPlanDayDate(day.calendarDay);
-              const tday = isToday(dt), past = isPast(dt);
-              const open = dispOpenDay === day.calendarDay;
-              const pills = dayPills(day);
-              const rest = day.dayType === 'rest' || day.dayType === 'student-rest';
-              return (
-                <div key={day.calendarDay} style={tCard({ padding: 0, opacity: past && !open ? 0.6 : 1, border: tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, overflow: 'hidden' })}>
-                  <button onClick={() => setFullPlanOpenDay(open ? -1 : day.calendarDay)}
-                    style={{ width: '100%', border: 'none', background: tday ? T.soft : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', textAlign: 'left' }}>
-                    <div style={{ minWidth: 110 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${day.calendarDay}`}</div>
-                      {tday && <div style={{ fontSize: 10.5, fontWeight: 700, color: T.accent, fontFamily: T.font }}>TODAY</div>}
-                    </div>
-                    <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {pills.map((p, pi) => (
-                        <span key={pi} style={{ background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, fontFamily: T.font, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <Icon name={p.bs.icon} size={11} color={p.bs.iconColor} />{p.label}
-                        </span>
-                      ))}
-                      {day.focusTopic && !rest && <span style={{ fontSize: 11, color: T.muted, fontFamily: T.font, alignSelf: 'center' }}>· {day.focusTopic}</span>}
-                    </div>
-                    <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={T.faint} />
-                  </button>
-                  {open && !rest && (
-                    <div style={{ padding: '4px 14px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
-                    </div>
-                  )}
-                  {open && rest && (
-                    <div style={{ padding: '4px 14px 16px', fontSize: 12.5, color: T.muted, fontFamily: T.font }}>Rest day — recover and recharge.</div>
-                  )}
-                </div>
-              );
-            })}
+            {prevDays.length > 0 && (
+              <SectionBar icon="history" label="Previous days" count={prevDays.length}
+                open={fullPlanShowPrev} onClick={() => setFullPlanShowPrev(v => !v)} />
+            )}
+            {fullPlanShowPrev && prevDays.map(DayCard)}
+
+            {currentDay && DayCard(currentDay)}
+
+            {futureDays.length > 0 && (
+              <SectionBar icon="calendar-plus" label="Future days" count={futureDays.length}
+                open={fullPlanShowFuture} onClick={() => setFullPlanShowFuture(v => !v)} />
+            )}
+            {fullPlanShowFuture && futureDays.map(DayCard)}
           </div>
         )}
 
