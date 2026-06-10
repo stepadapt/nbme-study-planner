@@ -299,7 +299,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [uworldPct, setUworldPct] = useState('');       // first-timer self-assessment
   const [stickingPoints, setStickingPoints] = useState([]);
   const [plan, setPlan] = useState(null);
-  const [page, setPage] = useState('dashboard'); // sidebar page within the app shell: dashboard | full-plan | edit-plan | add-assessment | past-exams | my-stats
+  const [page, setPage] = useState('dashboard'); // sidebar page within the app shell: dashboard | full-plan | edit-plan | add-assessment | past-exams | future-assessments | my-stats
   const [checkedBlocks, setCheckedBlocks] = useState(new Set()); // dashboard today's-schedule check-off (visual only)
   const [regenConfirm, setRegenConfirm] = useState(false); // Edit Plan regenerate confirmation dialog
   const [assessStep, setAssessStep] = useState(1); // Add Assessment 3-step flow: 1 upload | 2 review | 3 confirmed
@@ -724,7 +724,7 @@ export default function StudyPlanner({ onShowTerms }) {
   // ── Navigation ────────────────────────────────────────────────────
   // Sidebar targets render inside the two-column app shell (screen === "app");
   // everything else (onboarding/flow screens) renders full-screen via `screen`.
-  const PAGE_MAP = { dashboard: 'dashboard', plan: 'full-plan', 'edit-plan': 'edit-plan', 'add-assessment': 'add-assessment', 'past-exams': 'past-exams', 'my-stats': 'my-stats' };
+  const PAGE_MAP = { dashboard: 'dashboard', plan: 'full-plan', 'edit-plan': 'edit-plan', 'add-assessment': 'add-assessment', 'past-exams': 'past-exams', 'future-assessments': 'future-assessments', 'my-stats': 'my-stats' };
   const navigate = (s) => {
     setAnimIn(false);
     setTimeout(() => {
@@ -1405,6 +1405,7 @@ export default function StudyPlanner({ onShowTerms }) {
         {navLabel('Assessments')}
         {navItem('Add assessment', 'add-assessment', 'upload')}
         {navItem('Past exams', 'past-exams', 'history')}
+        {navItem('Future assessments', 'future-assessments', 'calendar-week')}
         {divider}
         {navLabel('Stats')}
         {navItem('My stats', 'my-stats', 'chart-line')}
@@ -1506,6 +1507,119 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
         </div>
       )}
+
+      {/* ── Reschedule upcoming exam modal ── */}
+      {reschedulingExam && (() => {
+        // Date bounds: must be strictly future, must leave ≥3-day buffer before exam day.
+        const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
+        const minD = new Date(todayFlat); minD.setDate(minD.getDate() + 1);
+        const examD = profile.examDate ? new Date(profile.examDate) : null;
+        if (examD) examD.setHours(0, 0, 0, 0);
+        const maxD = examD ? (() => { const d = new Date(examD); d.setDate(d.getDate() - 3); return d; })() : null;
+        const fmtYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const selectedD = rescheduleDate ? (() => { const d = new Date(rescheduleDate); d.setHours(0, 0, 0, 0); return d; })() : null;
+        const isPast = selectedD && selectedD.getTime() < minD.getTime();
+        const isTooLate = selectedD && maxD && selectedD.getTime() > maxD.getTime();
+        // Collision: another scheduled (or taken) assessment on the same day
+        const collisions = (plan?.assessmentSchedule || [])
+          .filter(a => a.test?.id !== reschedulingExam.test.id)
+          .map(a => {
+            const startDate = latestPlanMeta?.createdAt ? (() => {
+              const s = latestPlanMeta.createdAt;
+              const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+              d.setHours(0, 0, 0, 0);
+              return d;
+            })() : null;
+            if (!startDate) return null;
+            const aDate = new Date(startDate); aDate.setDate(aDate.getDate() + a.day - 1);
+            return { test: a.test, date: fmtYmd(aDate) };
+          })
+          .filter(Boolean);
+        const hasCollision = collisions.some(c => c.date === rescheduleDate);
+        const hardBlocked = isPast || isTooLate || hasCollision;
+        // Soft warnings
+        const dow = selectedD ? selectedD.getDay() : null;
+        const dayHrs = (dow !== null && profile.weeklySchedule) ? (profile.weeklySchedule[dow]?.studyHours ?? null) : null;
+        const isRestDay = (profile.rest_days || []).includes(rescheduleDate);
+        const lowHours = dayHrs !== null && dayHrs < 6;
+        const tooCloseToOther = collisions.some(c => {
+          const cd = new Date(c.date); cd.setHours(0, 0, 0, 0);
+          if (!selectedD) return false;
+          return Math.abs(cd.getTime() - selectedD.getTime()) <= 3 * 86400000 && cd.getTime() !== selectedD.getTime();
+        });
+        const hasOverride = !!(profile.scheduledAssessmentOverrides || {})[reschedulingExam.test.id];
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>📅 Reschedule {reschedulingExam.test.name}</div>
+              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 20 }}>{reschedulingExam.label || 'Upcoming practice exam'}</div>
+              <div style={{ display: 'grid', gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>New Date</label>
+                  <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
+                    min={fmtYmd(minD)} max={maxD ? fmtYmd(maxD) : undefined}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
+                  <div style={{ fontSize: 11, color: '#8a857e', marginTop: 6 }}>Currently scheduled: {reschedulingExam.currentDate}</div>
+                </div>
+                {/* Hard-block messages */}
+                {isPast && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Date must be after today.</div>}
+                {isTooLate && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Must be at least 3 days before your Step 1 exam date.</div>}
+                {hasCollision && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Another assessment is already scheduled on this day.</div>}
+                {/* Soft warnings */}
+                {!hardBlocked && (lowHours || isRestDay || tooCloseToOther) && (
+                  <div style={{ fontSize: 12, color: '#b45309', background: '#fef3c7', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
+                    {lowHours && <div>⚠ Only {dayHrs} study hours scheduled this day.</div>}
+                    {isRestDay && <div>⚠ This is currently a rest day.</div>}
+                    {tooCloseToOther && <div>⚠ Within 3 days of another upcoming exam.</div>}
+                    <div style={{ marginTop: 4, color: '#8a857e' }}>You can still save — these are just heads-ups.</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+                <button onClick={() => setReschedulingExam(null)} disabled={rescheduleSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={saveRescheduleExam} disabled={rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate}
+                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: (rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate) ? 0.5 : 1 }}>
+                  {rescheduleSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+              {hasOverride && (
+                <div style={{ textAlign: 'center', marginTop: 14 }}>
+                  <button onClick={resetRescheduleExam} disabled={rescheduleSaving}
+                    style={{ background: 'none', border: 'none', color: '#8a857e', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: S.f }}>
+                    Reset to engine-chosen date
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Skip upcoming exam modal ── */}
+      {skippingExam && (() => {
+        const isNbme = skippingExam.test?.type === 'nbme';
+        const name = skippingExam.test?.name || 'this exam';
+        const copy = isNbme
+          ? `Remove ${name} from your schedule? NBMEs are the most predictive practice exam for Step 1 — most students should keep all eight. Are you sure?`
+          : `Remove ${name} from your schedule? Your study plan will use those days to keep working on weak points. You can add it back any time.`;
+        const confirmLabel = isNbme ? 'Skip NBME anyway' : 'Skip exam';
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>❌ Skip {name}</div>
+              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 16 }}>{skippingExam.label || 'Upcoming practice exam'}</div>
+              <div style={{ fontSize: 13, color: '#4a4540', lineHeight: 1.55, marginBottom: 22 }}>{copy}</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setSkippingExam(null)} disabled={skipSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
+                <button onClick={confirmSkipExam} disabled={skipSaving}
+                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: skipSaving ? 0.5 : 1 }}>
+                  {skipSaving ? 'Saving…' : confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 
@@ -1518,6 +1632,7 @@ export default function StudyPlanner({ onShowTerms }) {
       ['Edit', 'edit-plan', 'pencil'],
       ['Add', 'add-assessment', 'upload'],
       ['Exams', 'past-exams', 'history'],
+      ['Future', 'future-assessments', 'calendar-week'],
       ['Stats', 'my-stats', 'chart-line'],
     ];
     return (
@@ -2656,6 +2771,119 @@ export default function StudyPlanner({ onShowTerms }) {
   }
 
   // ─── PAST EXAMS ────────────────────────────────────────────────────
+  if (screen === "app" && page === "future-assessments") {
+    const skippedIds = Array.isArray(profile?.skippedAssessmentIds) ? profile.skippedAssessmentIds : [];
+    const schedule = plan?.assessmentSchedule || [];
+    const psDate = latestPlanMeta?.createdAt
+      ? (() => { const d = new Date(latestPlanMeta.createdAt); d.setHours(0, 0, 0, 0); return d; })()
+      : null;
+    const overrides = profile?.scheduledAssessmentOverrides || {};
+
+    const actionBtn = {
+      padding: '6px 12px', fontSize: 12, background: '#fff', border: `0.5px solid ${T.border}`,
+      borderRadius: 8, cursor: 'pointer', color: T.text, fontFamily: T.font, lineHeight: 1,
+    };
+
+    return (
+      <AppShell>
+        <PageHeader
+          title="Future assessments"
+          sub={schedule.length === 0
+            ? 'No upcoming assessments scheduled.'
+            : `${schedule.length} scheduled${skippedIds.length ? ` · ${skippedIds.length} skipped` : ''}`}
+        />
+
+        {skippedIds.length > 0 && (
+          <div style={tCard({ padding: 14 })}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.faint, marginBottom: 8, fontFamily: T.font }}>
+              Skipped exams
+            </div>
+            {skippedIds.map(id => {
+              const test = PRACTICE_TESTS.find(t => t.id === id);
+              if (!test) return null;
+              return (
+                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+                  <span style={{ fontSize: 13, color: T.text, fontFamily: T.font, flex: 1 }}>{test.name} — skipped</span>
+                  <button
+                    onClick={() => addBackSkippedExam(id)}
+                    disabled={skipSaving}
+                    title="Add back to schedule"
+                    style={{ ...actionBtn, opacity: skipSaving ? 0.6 : 1, cursor: skipSaving ? 'default' : 'pointer' }}>
+                    ↩ Add back
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {schedule.length === 0 ? (
+          <div style={tCard({ textAlign: 'center', padding: '40px 16px' })}>
+            <Icon name="calendar-week" size={30} color={T.pale} />
+            <div style={{ marginTop: 12, fontSize: 14, fontWeight: 500, color: T.deeper, fontFamily: T.font }}>No scheduled assessments</div>
+            <div style={{ marginTop: 4, fontSize: 12, color: T.muted, fontFamily: T.font }}>
+              {plan ? 'Your plan has no future NBMEs scheduled.' : 'Save a plan first to see upcoming assessments.'}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {schedule.map((a, i) => {
+              const dayDate = psDate ? new Date(psDate.getTime() + (a.day - 1) * 86400000) : null;
+              const dateStr = dayDate
+                ? dayDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                : `Day ${a.day}`;
+              const isLocked = a.test?.id === 'free120new' || a.test?.id === 'free120old';
+              const isOverridden = a.test?.id && Object.prototype.hasOwnProperty.call(overrides, a.test.id);
+              return (
+                <div key={i} style={tCard({ padding: 14 })}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: T.deeper, fontFamily: T.font }}>
+                          {a.test?.name || 'Practice Assessment'}
+                        </div>
+                        {isOverridden && (
+                          <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: T.accent, background: T.soft, padding: '2px 6px', borderRadius: 6, fontFamily: T.font }}>
+                            Rescheduled
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 2 }}>
+                        {dateStr} · Day {a.day}{a.label ? ` · ${a.label}` : ''}
+                      </div>
+                    </div>
+                    {isLocked ? (
+                      <span style={{ fontSize: 11, fontWeight: 600, color: T.faint, background: '#f3f0eb', padding: '4px 8px', borderRadius: 6, fontFamily: T.font }}>
+                        🔒 Locked
+                      </span>
+                    ) : (
+                      <>
+                        <button onClick={() => openRescheduleExam(a)} title="Reschedule" style={actionBtn}>
+                          📅 Reschedule
+                        </button>
+                        <button onClick={() => openSkipExam(a)} title="Remove from schedule" style={actionBtn}>
+                          ❌ Skip
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => navigate('plan')} title="Open Full plan" style={actionBtn}>
+                      ↗ View in plan
+                    </button>
+                  </div>
+                  {a.reason && (
+                    <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 8, lineHeight: 1.5 }}>
+                      {a.reason}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </AppShell>
+    );
+  }
+
   if (screen === "app" && page === "past-exams") {
     const overallOf = (scoresObj) => {
       if (!scoresObj) return null;
@@ -5219,119 +5447,6 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
         </div>
       )}
-
-      {/* ── Reschedule upcoming exam modal ── */}
-      {reschedulingExam && (() => {
-        // Date bounds: must be strictly future, must leave ≥3-day buffer before exam day.
-        const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
-        const minD = new Date(todayFlat); minD.setDate(minD.getDate() + 1);
-        const examD = profile.examDate ? new Date(profile.examDate) : null;
-        if (examD) examD.setHours(0, 0, 0, 0);
-        const maxD = examD ? (() => { const d = new Date(examD); d.setDate(d.getDate() - 3); return d; })() : null;
-        const fmtYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const selectedD = rescheduleDate ? (() => { const d = new Date(rescheduleDate); d.setHours(0, 0, 0, 0); return d; })() : null;
-        const isPast = selectedD && selectedD.getTime() < minD.getTime();
-        const isTooLate = selectedD && maxD && selectedD.getTime() > maxD.getTime();
-        // Collision: another scheduled (or taken) assessment on the same day
-        const collisions = (plan?.assessmentSchedule || [])
-          .filter(a => a.test?.id !== reschedulingExam.test.id)
-          .map(a => {
-            const startDate = latestPlanMeta?.createdAt ? (() => {
-              const s = latestPlanMeta.createdAt;
-              const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
-              d.setHours(0, 0, 0, 0);
-              return d;
-            })() : null;
-            if (!startDate) return null;
-            const aDate = new Date(startDate); aDate.setDate(aDate.getDate() + a.day - 1);
-            return { test: a.test, date: fmtYmd(aDate) };
-          })
-          .filter(Boolean);
-        const hasCollision = collisions.some(c => c.date === rescheduleDate);
-        const hardBlocked = isPast || isTooLate || hasCollision;
-        // Soft warnings
-        const dow = selectedD ? selectedD.getDay() : null;
-        const dayHrs = (dow !== null && profile.weeklySchedule) ? (profile.weeklySchedule[dow]?.studyHours ?? null) : null;
-        const isRestDay = (profile.rest_days || []).includes(rescheduleDate);
-        const lowHours = dayHrs !== null && dayHrs < 6;
-        const tooCloseToOther = collisions.some(c => {
-          const cd = new Date(c.date); cd.setHours(0, 0, 0, 0);
-          if (!selectedD) return false;
-          return Math.abs(cd.getTime() - selectedD.getTime()) <= 3 * 86400000 && cd.getTime() !== selectedD.getTime();
-        });
-        const hasOverride = !!(profile.scheduledAssessmentOverrides || {})[reschedulingExam.test.id];
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f, maxHeight: '90vh', overflowY: 'auto' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>📅 Reschedule {reschedulingExam.test.name}</div>
-              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 20 }}>{reschedulingExam.label || 'Upcoming practice exam'}</div>
-              <div style={{ display: 'grid', gap: 16 }}>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#8a857e', display: 'block', marginBottom: 6 }}>New Date</label>
-                  <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
-                    min={fmtYmd(minD)} max={maxD ? fmtYmd(maxD) : undefined}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #e0dbd4', fontSize: 13, fontFamily: S.f, boxSizing: 'border-box', outline: 'none' }} />
-                  <div style={{ fontSize: 11, color: '#8a857e', marginTop: 6 }}>Currently scheduled: {reschedulingExam.currentDate}</div>
-                </div>
-                {/* Hard-block messages */}
-                {isPast && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Date must be after today.</div>}
-                {isTooLate && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Must be at least 3 days before your Step 1 exam date.</div>}
-                {hasCollision && <div style={{ fontSize: 12, color: '#c0392b', background: '#c0392b10', padding: '8px 12px', borderRadius: 8 }}>Another assessment is already scheduled on this day.</div>}
-                {/* Soft warnings */}
-                {!hardBlocked && (lowHours || isRestDay || tooCloseToOther) && (
-                  <div style={{ fontSize: 12, color: '#b45309', background: '#fef3c7', padding: '8px 12px', borderRadius: 8, lineHeight: 1.5 }}>
-                    {lowHours && <div>⚠ Only {dayHrs} study hours scheduled this day.</div>}
-                    {isRestDay && <div>⚠ This is currently a rest day.</div>}
-                    {tooCloseToOther && <div>⚠ Within 3 days of another upcoming exam.</div>}
-                    <div style={{ marginTop: 4, color: '#8a857e' }}>You can still save — these are just heads-ups.</div>
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-                <button onClick={() => setReschedulingExam(null)} disabled={rescheduleSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
-                <button onClick={saveRescheduleExam} disabled={rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate}
-                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: (rescheduleSaving || hardBlocked || !rescheduleDate || rescheduleDate === reschedulingExam.currentDate) ? 0.5 : 1 }}>
-                  {rescheduleSaving ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-              {hasOverride && (
-                <div style={{ textAlign: 'center', marginTop: 14 }}>
-                  <button onClick={resetRescheduleExam} disabled={rescheduleSaving}
-                    style={{ background: 'none', border: 'none', color: '#8a857e', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: S.f }}>
-                    Reset to engine-chosen date
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Skip upcoming exam modal ── */}
-      {skippingExam && (() => {
-        const isNbme = skippingExam.test?.type === 'nbme';
-        const name = skippingExam.test?.name || 'this exam';
-        const copy = isNbme
-          ? `Remove ${name} from your schedule? NBMEs are the most predictive practice exam for Step 1 — most students should keep all eight. Are you sure?`
-          : `Remove ${name} from your schedule? Your study plan will use those days to keep working on weak points. You can add it back any time.`;
-        const confirmLabel = isNbme ? 'Skip NBME anyway' : 'Skip exam';
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: '#00000055', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, overflowY: 'auto' }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 460, width: '100%', boxShadow: '0 8px 40px #00000020', fontFamily: S.f }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1816', marginBottom: 6 }}>❌ Skip {name}</div>
-              <div style={{ fontSize: 12, color: '#8a857e', marginBottom: 16 }}>{skippingExam.label || 'Upcoming practice exam'}</div>
-              <div style={{ fontSize: 13, color: '#4a4540', lineHeight: 1.55, marginBottom: 22 }}>{copy}</div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setSkippingExam(null)} disabled={skipSaving} style={{ ...S.btn, ...S.ghost, flex: 1 }}>Cancel</button>
-                <button onClick={confirmSkipExam} disabled={skipSaving}
-                  style={{ ...S.btn, ...S.pri, flex: 1, opacity: skipSaving ? 0.5 : 1 }}>
-                  {skipSaving ? 'Saving…' : confirmLabel}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       <Footer />
     </div>
