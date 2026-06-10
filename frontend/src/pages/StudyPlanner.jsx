@@ -304,7 +304,7 @@ export default function StudyPlanner({ onShowTerms }) {
   const [regenConfirm, setRegenConfirm] = useState(false); // Edit Plan regenerate confirmation dialog
   const [assessStep, setAssessStep] = useState(1); // Add Assessment 3-step flow: 1 upload | 2 review | 3 confirmed
   const [assessEditing, setAssessEditing] = useState(false); // Add Assessment step-2 editable-inputs toggle
-  const [planPopover, setPlanPopover] = useState(null); // Full Plan calendar pill popover: { day } or null
+  const [selectedPlanDay, setSelectedPlanDay] = useState(null); // Full Plan calendar: { day } shown in inline viewer, or null
   const [fullPlanView, setFullPlanView] = useState('calendar'); // Full Plan layout: 'calendar' | 'list'
   const [fullPlanWeek, setFullPlanWeek] = useState(null); // Full Plan calendar week index (null = auto to current week)
   const [fullPlanOpenDay, setFullPlanOpenDay] = useState(null); // Full Plan list expanded day (calendarDay) or null
@@ -2322,6 +2322,7 @@ export default function StudyPlanner({ onShowTerms }) {
         />
 
         {fullPlanView === 'calendar' ? (
+          <>
           <div style={tCard({ padding: 18 })}>
             {/* Week nav */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -2347,20 +2348,55 @@ export default function StudyPlanner({ onShowTerms }) {
                 const day = byWeekday[i];
                 const dt = day ? getPlanDayDate(day.calendarDay) : (week?.startDate ? (() => { const d = new Date(week.startDate); d.setDate(d.getDate() + i); return d; })() : null);
                 const tday = isToday(dt), past = isPast(dt);
+                const selected = day && selectedPlanDay?.day?.calendarDay === day.calendarDay;
                 return (
-                  <div key={i} style={{ minHeight: 96, borderRadius: 10, border: tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, background: tday ? T.soft : '#fff', padding: 7, opacity: past ? 0.5 : 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div key={i} onClick={day ? () => setSelectedPlanDay({ day }) : undefined}
+                    style={{ minHeight: 96, borderRadius: 10, border: selected ? `2px solid ${T.dark}` : tday ? `1.5px solid ${T.accent}` : `0.5px solid ${T.mid}`, boxShadow: selected ? `0 0 0 3px ${T.soft}` : 'none', background: selected || tday ? T.soft : '#fff', padding: 7, opacity: past ? 0.5 : 1, cursor: day ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: tday ? T.dark : T.muted, fontFamily: T.font, textAlign: 'center' }}>{dt ? dt.getDate() : ''}</div>
                     {day ? dayPills(day).map((p, pi) => (
-                      <button key={pi} onClick={() => setPlanPopover({ day })}
-                        style={{ border: 'none', cursor: 'pointer', textAlign: 'left', background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 6px', fontSize: 10, fontWeight: 600, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span key={pi}
+                        style={{ textAlign: 'left', background: p.bs.bg, color: p.bs.title, borderRadius: 6, padding: '3px 6px', fontSize: 10, fontWeight: 600, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Icon name={p.bs.icon} size={10} color={p.bs.iconColor} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.label}</span>
-                      </button>
+                      </span>
                     )) : null}
                   </div>
                 );
               })}
             </div>
           </div>
+          {/* Inline day viewer — replaces the old modal popover */}
+          {(() => {
+            const sel = selectedPlanDay?.day;
+            if (!sel) {
+              return (
+                <div style={{ marginTop: 12, padding: 28, borderRadius: 12, border: `0.5px dashed ${T.mid}`, background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+                  <Icon name="calendar-event" size={22} color={T.faint} />
+                  <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font }}>Select a day above to view its plan.</div>
+                </div>
+              );
+            }
+            const dt = getPlanDayDate(sel.calendarDay);
+            const rest = sel.dayType === 'rest' || sel.dayType === 'student-rest';
+            return (
+              <div style={tCard({ padding: 18, marginTop: 12 })}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${sel.calendarDay}`}</div>
+                    {sel.focusTopic && !rest && <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 1 }}>Focus: {sel.focusTopic}</div>}
+                  </div>
+                  <button onClick={() => setSelectedPlanDay(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.faint, fontSize: 20, lineHeight: 1 }}>×</button>
+                </div>
+                {rest ? (
+                  <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, padding: '8px 0' }}>Rest day — recover and recharge.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {dayBlocks(sel).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          </>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {prevDays.length > 0 && (
@@ -2378,33 +2414,6 @@ export default function StudyPlanner({ onShowTerms }) {
             {fullPlanShowFuture && futureDays.map(DayCard)}
           </div>
         )}
-
-        {/* Day detail popover */}
-        {planPopover && (() => {
-          const day = planPopover.day;
-          const dt = getPlanDayDate(day.calendarDay);
-          const rest = day.dayType === 'rest' || day.dayType === 'student-rest';
-          return (
-            <div onClick={() => setPlanPopover(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(26,61,43,0.28)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 'min(440px, 100%)', maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 12px 48px rgba(0,0,0,0.2)', padding: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: T.deeper, fontFamily: T.font }}>{fmtPlanDate(dt) || `Day ${day.calendarDay}`}</div>
-                    {day.focusTopic && !rest && <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 1 }}>Focus: {day.focusTopic}</div>}
-                  </div>
-                  <button onClick={() => setPlanPopover(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.faint, fontSize: 20, lineHeight: 1 }}>×</button>
-                </div>
-                {rest ? (
-                  <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, padding: '8px 0' }}>Rest day — recover and recharge.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
       </AppShell>
     );
   }
