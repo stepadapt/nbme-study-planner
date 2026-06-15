@@ -303,7 +303,6 @@ export default function StudyPlanner({ onShowTerms }) {
   const [checkedBlocks, setCheckedBlocks] = useState(new Set()); // dashboard today's-schedule check-off (visual only)
   const [regenConfirm, setRegenConfirm] = useState(false); // Edit Plan regenerate confirmation dialog
   const [assessStep, setAssessStep] = useState(1); // Add Assessment 3-step flow: 1 upload | 2 review | 3 confirmed
-  const [assessEditing, setAssessEditing] = useState(false); // Add Assessment step-2 editable-inputs toggle
   const [selectedPlanDay, setSelectedPlanDay] = useState(null); // Full Plan calendar: { day } shown in inline viewer, or null
   const [fullPlanView, setFullPlanView] = useState('calendar'); // Full Plan layout: 'calendar' | 'list'
   const [fullPlanWeek, setFullPlanWeek] = useState(null); // Full Plan calendar week index (null = auto to current week)
@@ -1161,35 +1160,43 @@ export default function StudyPlanner({ onShowTerms }) {
   };
 
   // ── Screenshot upload ─────────────────────────────────────────────
-  const handleScreenshotUpload = async (file) => {
-    if (!file) return;
+  const handleScreenshotUpload = async (filesOrFile) => {
+    const files = Array.isArray(filesOrFile) ? filesOrFile : [filesOrFile];
+    if (!files.length) return;
     setUploadingScreenshot(true);
     setScreenshotError('');
     try {
-      const result = await api.ai.parseScreenshot(file, 'step1');
-      if (result.formName) {
-        // Normalize AI-returned form name to exactly match PRACTICE_TESTS names
-        // (AI may return "NBME Form 26" or "CBSSA Form 26" instead of "NBME 26")
-        const pt = matchPracticeTest(result.formName);
-        setNbmeForm(pt ? pt.name : result.formName);
-      }
-      if (result.scores && typeof result.scores === 'object') {
-        const cats = selectedExam?.categories || [];
-        const matched = {};
-        // Try to match parsed category names to our categories
-        for (const [parsedCat, parsedScore] of Object.entries(result.scores)) {
-          const exact = cats.find(c => c.toLowerCase() === parsedCat.toLowerCase());
-          if (exact) { matched[exact] = Math.round(parsedScore); continue; }
-          // Partial match
-          const partial = cats.find(c =>
-            c.toLowerCase().includes(parsedCat.toLowerCase()) ||
-            parsedCat.toLowerCase().includes(c.toLowerCase().split(' ')[0])
-          );
-          if (partial) matched[partial] = Math.round(parsedScore);
+      let anyMatched = false;
+      for (const file of files) {
+        if (!file) continue;
+        const result = await api.ai.parseScreenshot(file, 'step1');
+        if (result.formName) {
+          // Normalize AI-returned form name to exactly match PRACTICE_TESTS names
+          // (AI may return "NBME Form 26" or "CBSSA Form 26" instead of "NBME 26")
+          const pt = matchPracticeTest(result.formName);
+          setNbmeForm(pt ? pt.name : result.formName);
         }
-        if (Object.keys(matched).length > 0) setScores(prev => ({ ...prev, ...matched }));
-        else setScreenshotError('Scores parsed but categories did not match. Please verify manually.');
+        if (result.scores && typeof result.scores === 'object') {
+          const cats = selectedExam?.categories || [];
+          const matched = {};
+          // Try to match parsed category names to our categories
+          for (const [parsedCat, parsedScore] of Object.entries(result.scores)) {
+            const exact = cats.find(c => c.toLowerCase() === parsedCat.toLowerCase());
+            if (exact) { matched[exact] = Math.round(parsedScore); continue; }
+            // Partial match
+            const partial = cats.find(c =>
+              c.toLowerCase().includes(parsedCat.toLowerCase()) ||
+              parsedCat.toLowerCase().includes(c.toLowerCase().split(' ')[0])
+            );
+            if (partial) matched[partial] = Math.round(parsedScore);
+          }
+          if (Object.keys(matched).length > 0) {
+            setScores(prev => ({ ...prev, ...matched }));
+            anyMatched = true;
+          }
+        }
       }
+      if (!anyMatched) setScreenshotError('Scores parsed but categories did not match. Please verify manually.');
     } catch (err) {
       setScreenshotError(err.message || 'Could not parse screenshot. Enter scores manually.');
     } finally {
@@ -1198,37 +1205,41 @@ export default function StudyPlanner({ onShowTerms }) {
   };
 
   // ── Historical import screenshot handler ──────────────────────────
-  const handleHistScreenshotUpload = async (file) => {
-    if (!file) return;
+  const handleHistScreenshotUpload = async (filesOrFile) => {
+    const files = Array.isArray(filesOrFile) ? filesOrFile : [filesOrFile];
+    if (!files.length) return;
     setHistUploadingScreenshot(true);
     setHistError('');
     try {
-      const result = await api.ai.parseScreenshot(file, 'step1');
-      setHistDraft(prev => {
-        const updated = { ...prev };
-        if (result.formName) updated.formName = result.formName;
-        if (result.scores && typeof result.scores === 'object' && Object.keys(result.scores).length > 0) {
-          const allCats = [...STEP1_SYSTEM_CATEGORIES, ...STEP1_DISCIPLINE_CATEGORIES];
-          const matched = {};
-          for (const [parsedCat, parsedScore] of Object.entries(result.scores)) {
-            const exact = allCats.find(c => c.toLowerCase() === parsedCat.toLowerCase());
-            if (exact) { matched[exact] = Math.round(parsedScore); continue; }
-            const partial = allCats.find(c =>
-              c.toLowerCase().includes(parsedCat.toLowerCase()) ||
-              parsedCat.toLowerCase().includes(c.toLowerCase().split(' ')[0])
-            );
-            if (partial) matched[partial] = Math.round(parsedScore);
+      for (const file of files) {
+        if (!file) continue;
+        const result = await api.ai.parseScreenshot(file, 'step1');
+        setHistDraft(prev => {
+          const updated = { ...prev };
+          if (result.formName) updated.formName = result.formName;
+          if (result.scores && typeof result.scores === 'object' && Object.keys(result.scores).length > 0) {
+            const allCats = [...STEP1_SYSTEM_CATEGORIES, ...STEP1_DISCIPLINE_CATEGORIES];
+            const matched = {};
+            for (const [parsedCat, parsedScore] of Object.entries(result.scores)) {
+              const exact = allCats.find(c => c.toLowerCase() === parsedCat.toLowerCase());
+              if (exact) { matched[exact] = Math.round(parsedScore); continue; }
+              const partial = allCats.find(c =>
+                c.toLowerCase().includes(parsedCat.toLowerCase()) ||
+                parsedCat.toLowerCase().includes(c.toLowerCase().split(' ')[0])
+              );
+              if (partial) matched[partial] = Math.round(parsedScore);
+            }
+            if (Object.keys(matched).length > 0) {
+              updated.scores = { ...prev.scores, ...matched };
+              updated.hasBreakdown = true;
+            }
           }
-          if (Object.keys(matched).length > 0) {
-            updated.scores = { ...prev.scores, ...matched };
-            updated.hasBreakdown = true;
+          if (result.totalScore !== null && result.totalScore !== undefined) {
+            updated.totalScore = String(result.totalScore);
           }
-        }
-        if (result.totalScore !== null && result.totalScore !== undefined) {
-          updated.totalScore = String(result.totalScore);
-        }
-        return updated;
-      });
+          return updated;
+        });
+      }
     } catch (err) {
       setHistError(err.message || 'Could not parse screenshot. Enter scores manually.');
     } finally {
@@ -3071,7 +3082,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const overallDelta = (overallPct != null && prevOverall != null) ? overallPct - prevOverall : null;
     const canConfirm = histDraft.formName.trim().length > 0 && histDraft.takenAt.trim().length > 0 && overallPct != null;
 
-    const resetFlow = () => { setHistDraft(defaultHistDraft()); setAssessStep(1); setAssessEditing(false); setHistError(''); };
+    const resetFlow = () => { setHistDraft(defaultHistDraft()); setAssessStep(1); setHistError(''); };
 
     const confirmAssessment = async () => {
       if (!canConfirm) return;
@@ -3122,8 +3133,14 @@ export default function StudyPlanner({ onShowTerms }) {
         {/* Step 1 — Upload */}
         {assessStep === 1 && (
           <div style={tCard()}>
-            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
-              onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; await handleHistScreenshotUpload(f); setAssessStep(2); }} />
+            <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf" style={{ display: 'none' }}
+              onChange={async (e) => {
+                const files = Array.from(e.target.files || []);
+                e.target.value = '';
+                if (!files.length) return;
+                await handleHistScreenshotUpload(files);
+                setAssessStep(2);
+              }} />
             <div
               onClick={() => !histUploadingScreenshot && fileInputRef.current?.click()}
               style={{
@@ -3132,10 +3149,10 @@ export default function StudyPlanner({ onShowTerms }) {
               }}>
               <Icon name={histUploadingScreenshot ? 'loader-2' : 'cloud-upload'} size={34} color={T.faint} />
               <div style={{ fontSize: 14, fontWeight: 500, color: T.deeper, fontFamily: T.font, marginTop: 12 }}>
-                {histUploadingScreenshot ? 'Parsing your score report…' : 'Drop your score report here'}
+                {histUploadingScreenshot ? 'Parsing your score report…' : 'Drop one or more screenshots here'}
               </div>
               <div style={{ fontSize: 12, color: T.muted, fontFamily: T.font, marginTop: 4 }}>
-                PNG, JPG or PDF — NBME, UWorld, Free 120, Amboss
+                PNG, JPG or PDF — NBME, UWorld, Free 120, Amboss · select multiple if your report spans several images
               </div>
               {!histUploadingScreenshot && (
                 <button style={{
@@ -3216,36 +3233,48 @@ export default function StudyPlanner({ onShowTerms }) {
               </div>
 
               {/* Category breakdown */}
-              {breakdownCats.length > 0 ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category breakdown</div>
-                    <button onClick={() => setAssessEditing(v => !v)} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontSize: 11, color: T.text, fontFamily: T.font }}>
-                      {assessEditing ? 'Done editing' : 'Edit results'}
-                    </button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category breakdown</div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={histUploadingScreenshot}
+                  style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, padding: '4px 10px', cursor: histUploadingScreenshot ? 'wait' : 'pointer', fontSize: 11, color: T.text, fontFamily: T.font, opacity: histUploadingScreenshot ? 0.6 : 1 }}>
+                  {histUploadingScreenshot ? 'Parsing…' : '+ Upload another screenshot'}
+                </button>
+              </div>
+              {[
+                { label: 'Performance by System', cats: STEP1_SYSTEM_CATEGORIES },
+                { label: 'Performance by Discipline', cats: STEP1_DISCIPLINE_CATEGORIES },
+              ].map(group => (
+                <div key={group.label} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: T.muted, fontFamily: T.font, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    {group.label}
                   </div>
-                  {assessEditing ? (
-                    <div style={{ display: 'grid', gap: 7 }}>
-                      {breakdownCats.map(([cat, v]) => (
+                  <div style={{ display: 'grid', gap: 7 }}>
+                    {group.cats.map(cat => {
+                      const v = histDraft.scores[cat];
+                      return (
                         <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <span style={{ flex: 1, fontSize: 12, fontFamily: T.font, color: T.text }}>{cat}</span>
-                          <input type="number" min={0} max={100} value={v}
-                            onChange={e => { const nv = e.target.value; setHistDraft(d => ({ ...d, scores: { ...d.scores, [cat]: nv === '' ? undefined : Math.min(100, Math.max(0, Number(nv))) } })); }}
+                          <input type="number" min={0} max={100} placeholder="—"
+                            value={v ?? ''}
+                            onChange={e => {
+                              const nv = e.target.value;
+                              setHistDraft(d => ({
+                                ...d,
+                                scores: {
+                                  ...d.scores,
+                                  [cat]: nv === '' ? undefined : Math.min(100, Math.max(0, Number(nv))),
+                                },
+                              }));
+                            }}
                             style={{ width: 60, padding: '6px 8px', borderRadius: 7, border: `1px solid ${T.border}`, fontSize: 12, textAlign: 'center', fontFamily: T.font, color: T.deeper }} />
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'grid', gap: 9 }}>
-                      {breakdownCats.map(([cat, v]) => <CatBar key={cat} name={cat} pct={Number(v)} />)}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={{ fontSize: 12, color: T.faint, fontFamily: T.font }}>
-                  No category breakdown {histUploadingScreenshot ? 'parsing…' : 'detected'} — a total score is enough to log this assessment.
+                      );
+                    })}
+                  </div>
                 </div>
-              )}
+              ))}
 
               {histError && <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, background: '#fbeae0', fontSize: 12, color: '#c05a1a', fontFamily: T.font }}>{histError}</div>}
             </div>
@@ -4325,8 +4354,12 @@ export default function StudyPlanner({ onShowTerms }) {
                 >
                   {uploadingScreenshot ? 'Analyzing…' : 'Upload screenshot / PDF'}
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files[0]; if (f) handleScreenshotUpload(f); e.target.value = ''; }}
+                <input ref={fileInputRef} type="file" multiple accept="image/*,application/pdf" style={{ display: "none" }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    e.target.value = '';
+                    if (files.length) handleScreenshotUpload(files);
+                  }}
                 />
               </div>
             </div>
