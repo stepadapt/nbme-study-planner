@@ -319,7 +319,8 @@ export default function StudyPlanner({ onShowTerms }) {
   // ── Plan view state ────────────────────────────────────────────────
   const [planViewMode, setPlanViewMode] = useState('day'); // 'day' | 'week' | 'full'
   const [planViewDay, setPlanViewDay] = useState(1);
-  const [expandedBlocks, setExpandedBlocks] = useState(new Set());
+  const [expandedBlocks, setExpandedBlocks] = useState(new Set()); // expanded block detail; keys: `dash-${idx}` | `fpcal-${calendarDay}-${blockIdx}` | `fplist-${calendarDay}-${blockIdx}`
+  const toggleExpanded = (key) => setExpandedBlocks(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const [showCalExport, setShowCalExport] = useState(false);
   const [showAssessmentSched, setShowAssessmentSched] = useState(false);
   const [showPriorityRanking, setShowPriorityRanking] = useState(false);
@@ -850,6 +851,7 @@ export default function StudyPlanner({ onShowTerms }) {
     // the student has already passed don't silently change when a new score regens.
     const mergedPlan = freezePastDays(generatedPlan, plan, existingStartDate);
     setPlan(mergedPlan);
+    setExpandedBlocks(new Set()); // block indices may shift after regen — clear stale expand keys
     if (Object.keys(catScores).length > 0) setScores(catScores);
     // Persist pruned override map / skip list back to profile so next session starts clean
     if (profileNeedsPersist) {
@@ -1282,6 +1284,61 @@ export default function StudyPlanner({ onShowTerms }) {
     rest:               { bg: '#f4f3ef', title: '#444441', res: '#888780', iconBg: '#d3d1c7', iconColor: '#5f5e5a', icon: 'bed' },
   };
   const blockStyleFor = (type) => BLOCK_STYLE[type] || BLOCK_STYLE.content;
+
+  // Expanded per-block detail panel. Renders highYield chips, qbankFilterTip,
+  // the ContentSequencePanel (videos/readings), and the per-task grid. Shared
+  // by the Full Plan calendar inline viewer, Full Plan list DayCard, and
+  // Dashboard ScheduleRow — all three call sites slot it under their row when
+  // the block's expand key is in `expandedBlocks`.
+  const blockHasDetail = (block) => (block.tasks?.length > 0) || !!block.contentSequence || (block.highYield?.length > 0);
+  const fmtHours = (h) => {
+    if (!h || h <= 0) return '';
+    const totalMins = Math.round(h * 60);
+    const hh = Math.floor(totalMins / 60), mm = totalMins % 60;
+    return hh ? `${hh}h${mm ? ` ${mm}m` : ''}` : `${mm}m`;
+  };
+  const BlockDetail = ({ block }) => {
+    const bs = blockStyleFor(block.type);
+    const hy = block.highYield || [];
+    const tasks = block.tasks || [];
+    const hasSeq = !!block.contentSequence;
+    const hasTopGroup = hy.length > 0 || !!block.qbankFilterTip || hasSeq;
+    return (
+      <div style={{ background: bs.bg, borderLeft: `2px solid ${bs.iconBg}`, borderRadius: '0 0 8px 8px', padding: '10px 12px 12px', marginTop: -2 }}>
+        {hy.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: '#6b6560', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>High-yield focus</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {hy.map((s, i) => (
+                <span key={i} style={{ fontSize: 11, background: '#fff', border: '0.5px solid #e6e0d3', borderRadius: 6, padding: '3px 8px', color: '#1a1816' }}>{s.topic}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {block.qbankFilterTip && (
+          <div style={{ fontSize: 11.5, color: '#6b6560', marginBottom: 10, fontStyle: 'italic' }}>{block.qbankFilterTip}</div>
+        )}
+        {hasSeq && (
+          <ContentSequencePanel contentSequence={block.contentSequence} compact={true} />
+        )}
+        {tasks.length > 0 && (
+          <div style={{ marginTop: hasTopGroup ? 10 : 0, paddingTop: hasTopGroup ? 8 : 0, borderTop: hasTopGroup ? '1px solid #f0ebe3' : 'none' }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: '#6b6560', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Tasks</div>
+            <div style={{ display: 'grid', gap: 4 }}>
+              {tasks.map((t, ti) => (
+                <div key={ti} style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto', gap: 10, alignItems: 'baseline', fontSize: 11.5 }}>
+                  <span style={{ fontWeight: 600, color: '#1a1816' }}>{t.resource}</span>
+                  <span style={{ color: '#6b6560', lineHeight: 1.4 }}>{t.activity}</span>
+                  <span style={{ color: '#8a857e', whiteSpace: 'nowrap' }}>{fmtHours(t.hours)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Category performance color (reference): good ≥65, mid 50–64, warn <50
   const catColor = (pct) => pct >= 65 ? '#2db882' : pct >= 50 ? '#efca27' : '#d85a30';
   const catTextColor = (pct) => pct >= 65 ? '#0f6e56' : pct >= 50 ? '#854f0b' : '#c05a1a';
@@ -1854,25 +1911,37 @@ export default function StudyPlanner({ onShowTerms }) {
         ? ([...new Set(block.tasks.map(t => t.resource).filter(Boolean))].join(' · ') || block.tasks[0].activity)
         : null;
       const toggle = () => setCheckedBlocks(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
+      const canExpand = blockHasDetail(block);
+      const expandKey = `dash-${idx}`;
+      const open = canExpand && expandedBlocks.has(expandKey);
       return (
-        <div style={{ display: 'grid', gridTemplateColumns: '50px 30px 1fr auto', alignItems: 'center', gap: 10, padding: '10px 12px', background: bs.bg, borderRadius: 10, outline: active ? `1.5px solid ${T.accent}` : 'none', opacity: done ? 0.5 : 1, transition: 'opacity 0.15s' }}>
-          <span style={{ fontSize: 11, color: bs.res, fontVariantNumeric: 'tabular-nums', fontFamily: T.font }}>{block.startTime}</span>
-          <span style={{ width: 28, height: 28, borderRadius: 8, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name={bs.icon} size={15} color={bs.iconColor} />
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: bs.title, fontFamily: T.font, textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
-            {resText && <div style={{ fontSize: 11, color: bs.res, fontFamily: T.font, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: '50px 30px 1fr auto auto', alignItems: 'center', gap: 10, padding: '10px 12px', background: bs.bg, borderRadius: open ? '10px 10px 0 0' : 10, outline: active ? `1.5px solid ${T.accent}` : 'none', opacity: done ? 0.5 : 1, transition: 'opacity 0.15s' }}>
+            <span style={{ fontSize: 11, color: bs.res, fontVariantNumeric: 'tabular-nums', fontFamily: T.font }}>{block.startTime}</span>
+            <span style={{ width: 28, height: 28, borderRadius: 8, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name={bs.icon} size={15} color={bs.iconColor} />
+            </span>
+            <div onClick={canExpand ? () => toggleExpanded(expandKey) : undefined}
+                 style={{ minWidth: 0, cursor: canExpand ? 'pointer' : 'default' }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: bs.title, fontFamily: T.font, textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
+              {resText && <div style={{ fontSize: 11, color: bs.res, fontFamily: T.font, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, color: bs.res, fontFamily: T.font, whiteSpace: 'nowrap' }}>{fmtDur(block.durationMinutes)}</span>
+              {checkable && (
+                <button onClick={toggle} title={done ? 'Mark not done' : 'Mark done'} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${done ? T.accent : bs.iconBg}`, background: done ? T.accent : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
+                  {done && <Icon name="check" size={12} color="#fff" />}
+                </button>
+              )}
+            </div>
+            {canExpand
+              ? <button onClick={() => toggleExpanded(expandKey)} title={open ? 'Collapse' : 'Expand'}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} color={bs.res} />
+                </button>
+              : <span style={{ width: 22 }} />}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 11, color: bs.res, fontFamily: T.font, whiteSpace: 'nowrap' }}>{fmtDur(block.durationMinutes)}</span>
-            {checkable && (
-              <button onClick={toggle} title={done ? 'Mark not done' : 'Mark done'} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${done ? T.accent : bs.iconBg}`, background: done ? T.accent : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
-                {done && <Icon name="check" size={12} color="#fff" />}
-              </button>
-            )}
-          </div>
-          {block.contentSequence && <div style={{ gridColumn: '3 / -1' }}><ContentSequencePanel contentSequence={block.contentSequence} compact={true} /></div>}
+          {open && <BlockDetail block={block} />}
         </div>
       );
     };
@@ -2231,17 +2300,24 @@ export default function StudyPlanner({ onShowTerms }) {
       const tHours = day.dayHours ?? profile.hoursPerDay ?? 8;
       return assignBlockTimes(day.blocks || [], tStart, calcEndTime(tStart, tHours));
     };
-    const BlockMini = ({ block }) => {
+    const BlockMini = ({ block, expandKey }) => {
       const bs = blockStyleFor(block.type);
       const resText = block.tasks?.length ? [...new Set(block.tasks.map(t => t.resource).filter(Boolean))].join(' · ') : null;
+      const canExpand = blockHasDetail(block);
+      const open = canExpand && expandedBlocks.has(expandKey);
       return (
-        <div style={{ display: 'grid', gridTemplateColumns: '58px 26px 1fr', gap: 9, alignItems: 'center', padding: '7px 10px', background: bs.bg, borderRadius: 8 }}>
-          <span style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, fontVariantNumeric: 'tabular-nums' }}>{block.startTime}</span>
-          <span style={{ width: 24, height: 24, borderRadius: 6, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={bs.icon} size={13} color={bs.iconColor} /></span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: bs.title, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
-            {resText && <div style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+        <div>
+          <div onClick={canExpand ? () => toggleExpanded(expandKey) : undefined}
+            style={{ display: 'grid', gridTemplateColumns: '58px 26px 1fr auto', gap: 9, alignItems: 'center', padding: '7px 10px', background: bs.bg, borderRadius: open ? '8px 8px 0 0' : 8, cursor: canExpand ? 'pointer' : 'default' }}>
+            <span style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, fontVariantNumeric: 'tabular-nums' }}>{block.startTime}</span>
+            <span style={{ width: 24, height: 24, borderRadius: 6, background: bs.iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={bs.icon} size={13} color={bs.iconColor} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: bs.title, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.label}</div>
+              {resText && <div style={{ fontSize: 10.5, color: bs.res, fontFamily: T.font, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resText}</div>}
+            </div>
+            {canExpand ? <Icon name={open ? 'chevron-up' : 'chevron-down'} size={13} color={bs.res} /> : <span />}
           </div>
+          {open && <BlockDetail block={block} />}
         </div>
       );
     };
@@ -2295,7 +2371,7 @@ export default function StudyPlanner({ onShowTerms }) {
           </button>
           {open && !rest && (
             <div style={{ padding: '4px 14px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+              {dayBlocks(day).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} expandKey={`fplist-${day.calendarDay}-${bi}`} />)}
             </div>
           )}
           {open && rest && (
@@ -2401,7 +2477,7 @@ export default function StudyPlanner({ onShowTerms }) {
                   <div style={{ fontSize: 13, color: T.muted, fontFamily: T.font, padding: '8px 0' }}>Rest day — recover and recharge.</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {dayBlocks(sel).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} />)}
+                    {dayBlocks(sel).filter(b => b.type !== 'break').map((b, bi) => <BlockMini key={bi} block={b} expandKey={`fpcal-${sel.calendarDay}-${bi}`} />)}
                   </div>
                 )}
               </div>
