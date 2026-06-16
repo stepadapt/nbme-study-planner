@@ -1727,7 +1727,15 @@ export default function StudyPlanner({ onShowTerms }) {
     );
   };
 
-  const AppShell = ({ children }) => (
+  // Note: declared as a plain helper (not a React component) and called via
+  // {appShell(<>…</>)} below. As a component, every StudyPlanner re-render
+  // would recreate AppShell's function identity, causing React to unmount
+  // and remount the scrollable <div> inside it — resetting scrollTop to 0
+  // and snapping the page to the top on every state update (e.g. expanding
+  // a block dropdown). Calling it as a function keeps the underlying <div>
+  // tree in StudyPlanner's direct output, so the reconciler preserves the
+  // scroll container's DOM node and its scroll position.
+  const appShell = (children) => (
     <div style={{ display: 'flex', minHeight: '100vh', background: T.pageBg, color: T.deeper, fontFamily: T.font }}>
       {!isMobile && <Sidebar />}
       <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh' }}>
@@ -1947,7 +1955,7 @@ export default function StudyPlanner({ onShowTerms }) {
     };
 
     return (
-      <AppShell>
+      appShell(<>
         <VerifyBanner />
         <PageHeader title={greeting} sub={headerSub} />
 
@@ -2228,7 +2236,7 @@ export default function StudyPlanner({ onShowTerms }) {
           </div>
 
         </div>
-      </AppShell>
+      </>)
     );
   }
 
@@ -2236,13 +2244,13 @@ export default function StudyPlanner({ onShowTerms }) {
   if (screen === "app" && page === "full-plan") {
     if (!plan) {
       return (
-        <AppShell>
+        appShell(<>
           <PageHeader title="Full plan" sub="No plan generated yet." />
           <div style={tCard({ textAlign: 'center', padding: '40px 16px', color: T.muted, fontFamily: T.font })}>
             <Icon name="calendar-off" size={28} color={T.pale} />
             <div style={{ marginTop: 10, fontSize: 13 }}>Generate a plan to see your full schedule.</div>
           </div>
-        </AppShell>
+        </>)
       );
     }
 
@@ -2391,7 +2399,7 @@ export default function StudyPlanner({ onShowTerms }) {
     );
 
     return (
-      <AppShell>
+      appShell(<>
         <VerifyBanner />
         <PageHeader
           title="Full plan"
@@ -2501,7 +2509,7 @@ export default function StudyPlanner({ onShowTerms }) {
             {fullPlanShowFuture && futureDays.map(DayCard)}
           </div>
         )}
-      </AppShell>
+      </>)
     );
   }
 
@@ -2509,9 +2517,9 @@ export default function StudyPlanner({ onShowTerms }) {
   if (screen === "app" && page === "edit-plan") {
     if (!editProfileDraft) {
       return (
-        <AppShell>
+        appShell(<>
           <PageHeader title="Edit plan" sub="Loading your settings…" />
-        </AppShell>
+        </>)
       );
     }
 
@@ -2599,7 +2607,7 @@ export default function StudyPlanner({ onShowTerms }) {
     );
 
     return (
-      <AppShell>
+      appShell(<>
         <VerifyBanner />
         <PageHeader title="Edit plan" sub="Changes take effect when you regenerate your plan" />
 
@@ -2727,7 +2735,7 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           </div>
         )}
-      </AppShell>
+      </>)
     );
   }
 
@@ -2859,7 +2867,7 @@ export default function StudyPlanner({ onShowTerms }) {
     });
 
     return (
-      <AppShell>
+      appShell(<>
         <PageHeader
           title="My stats"
           sub={trackingFrom ? `Tracking from ${trackingFrom} · ${assessments.length} assessment${assessments.length === 1 ? '' : 's'}` : 'Log assessments to start tracking your progress.'}
@@ -2901,7 +2909,7 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           )}
         </div>
-      </AppShell>
+      </>)
     );
   }
 
@@ -2920,7 +2928,7 @@ export default function StudyPlanner({ onShowTerms }) {
     };
 
     return (
-      <AppShell>
+      appShell(<>
         <PageHeader
           title="Future assessments"
           sub={schedule.length === 0
@@ -3015,7 +3023,7 @@ export default function StudyPlanner({ onShowTerms }) {
             })}
           </div>
         )}
-      </AppShell>
+      </>)
     );
   }
 
@@ -3049,7 +3057,7 @@ export default function StudyPlanner({ onShowTerms }) {
     const newestId = display[0]?.a.id;
 
     return (
-      <AppShell>
+      appShell(<>
         <PageHeader
           title="Past exams"
           sub={assessments.length === 0
@@ -3136,7 +3144,7 @@ export default function StudyPlanner({ onShowTerms }) {
             })}
           </div>
         )}
-      </AppShell>
+      </>)
     );
   }
 
@@ -3198,7 +3206,7 @@ export default function StudyPlanner({ onShowTerms }) {
     };
 
     return (
-      <AppShell>
+      appShell(<>
         <PageHeader title="Add assessment" sub="Upload a score report, review the parsed results, then log it to your history." />
 
         {/* Step indicator */}
@@ -3390,19 +3398,19 @@ export default function StudyPlanner({ onShowTerms }) {
             </div>
           </div>
         )}
-      </AppShell>
+      </>)
     );
   }
 
   if (screen === "app") {
     return (
-      <AppShell>
+      appShell(<>
         <PageHeader title="Coming soon" sub="This page is being rebuilt in the new layout." />
         <div style={tCard({ textAlign: 'center', padding: '40px 16px', color: T.muted })}>
           <Icon name="tools" size={28} color={T.pale} />
           <div style={{ marginTop: 10, fontSize: 13, fontFamily: T.font }}>Check back shortly.</div>
         </div>
-      </AppShell>
+      </>)
     );
   }
 
