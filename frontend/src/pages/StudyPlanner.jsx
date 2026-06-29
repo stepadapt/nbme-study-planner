@@ -147,6 +147,17 @@ function formatLocalYMD(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+// Parse a "YYYY-MM-DD" string as a LOCAL midnight Date (not UTC midnight).
+// `new Date("2026-06-29")` parses as UTC midnight, which is the prior local
+// day in negative-UTC offsets — breaking date-input comparisons. Use this
+// helper whenever you turn a date-input string back into a Date.
+function parseLocalYMD(s) {
+  if (!s) return null;
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
 // Calculates study window end time from start time + study hours.
 // Students with ≥5 study hours get a 1-hour lunch break added automatically.
 // Returns "HH:MM" string (24-hour, for the time input).
@@ -1583,11 +1594,10 @@ export default function StudyPlanner({ onShowTerms }) {
         // Date bounds: must be strictly future, must leave ≥3-day buffer before exam day.
         const todayFlat = new Date(); todayFlat.setHours(0, 0, 0, 0);
         const minD = new Date(todayFlat); minD.setDate(minD.getDate() + 1);
-        const examD = profile.examDate ? new Date(profile.examDate) : null;
-        if (examD) examD.setHours(0, 0, 0, 0);
+        const examD = parseLocalYMD(profile.examDate);
         const maxD = examD ? (() => { const d = new Date(examD); d.setDate(d.getDate() - 3); return d; })() : null;
         const fmtYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const selectedD = rescheduleDate ? (() => { const d = new Date(rescheduleDate); d.setHours(0, 0, 0, 0); return d; })() : null;
+        const selectedD = parseLocalYMD(rescheduleDate);
         const isPast = selectedD && selectedD.getTime() < minD.getTime();
         const isTooLate = selectedD && maxD && selectedD.getTime() > maxD.getTime();
         // Collision: another scheduled (or taken) assessment on the same day
@@ -1613,7 +1623,7 @@ export default function StudyPlanner({ onShowTerms }) {
         const isRestDay = (profile.rest_days || []).includes(rescheduleDate);
         const lowHours = dayHrs !== null && dayHrs < 6;
         const tooCloseToOther = collisions.some(c => {
-          const cd = new Date(c.date); cd.setHours(0, 0, 0, 0);
+          const cd = parseLocalYMD(c.date);
           if (!selectedD) return false;
           return Math.abs(cd.getTime() - selectedD.getTime()) <= 3 * 86400000 && cd.getTime() !== selectedD.getTime();
         });
