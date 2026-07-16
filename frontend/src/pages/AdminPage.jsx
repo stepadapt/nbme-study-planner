@@ -133,7 +133,12 @@ function UserDetailModal({ userId, adminKey, onClose }) {
 
   const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   const avgScore = (scores) => {
-    const vals = Object.values(scores || {}).filter(v => typeof v === 'number');
+    if (!scores) return null;
+    // Prefer the student's typed/parsed overall (__total__).
+    if (typeof scores.__total__ === 'number') return Math.round(scores.__total__);
+    const vals = Object.entries(scores)
+      .filter(([k, v]) => k !== '__total__' && typeof v === 'number')
+      .map(([, v]) => v);
     return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
   };
 

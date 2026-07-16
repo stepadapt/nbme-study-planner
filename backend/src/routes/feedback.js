@@ -39,9 +39,16 @@ router.post('/', requireAuth, (req, res) => {
     if (latestAssessment) {
       try {
         const s = JSON.parse(latestAssessment.scores);
-        const vals = Object.values(s).filter(v => typeof v === 'number' && v > 0);
-        if (vals.length > 0) {
-          latestScore = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+        // Prefer the student's typed/parsed overall (__total__) over a mean of the breakdown.
+        if (typeof s.__total__ === 'number') {
+          latestScore = Math.round(s.__total__);
+        } else {
+          const vals = Object.entries(s)
+            .filter(([k, v]) => k !== '__total__' && typeof v === 'number' && v > 0)
+            .map(([, v]) => v);
+          if (vals.length > 0) {
+            latestScore = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+          }
         }
       } catch { /* ignore */ }
     }

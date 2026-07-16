@@ -307,8 +307,12 @@ router.get('/feedback', (req, res) => {
 
         const avgScores = userScores.map(a => {
           try {
-            const s    = JSON.parse(a.scores);
-            const vals = Object.values(s).filter(v => typeof v === 'number' && v > 0);
+            const s = JSON.parse(a.scores);
+            // Prefer the student's typed/parsed overall (__total__).
+            if (typeof s.__total__ === 'number') return s.__total__;
+            const vals = Object.entries(s)
+              .filter(([k, v]) => k !== '__total__' && typeof v === 'number' && v > 0)
+              .map(([, v]) => v);
             return vals.length > 0 ? vals.reduce((x, y) => x + y, 0) / vals.length : null;
           } catch { return null; }
         }).filter(v => v !== null);

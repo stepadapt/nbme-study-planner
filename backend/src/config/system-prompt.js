@@ -305,12 +305,19 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
   // DB returns rows ordered by COALESCE(taken_at, created_at) ASC
   const parsed = assessments.map(a => {
     const scores = JSON.parse(a.scores || '{}');
-    // __total__ sentinel: student only has total score, no system breakdown
+    // __total__ sentinel: student's typed/parsed overall. When present, use it
+    // verbatim as the assessment's overall — never recompute a (usually lower)
+    // mean from the breakdown. Only fall back to the mean when no __total__
+    // was recorded (legacy rows).
     const isTotalOnly = '__total__' in scores && Object.keys(scores).length === 1;
-    const avg = isTotalOnly
-      ? scores.__total__
+    const hasTotal = typeof scores.__total__ === 'number';
+    const breakdownOnly = Object.fromEntries(
+      Object.entries(scores).filter(([k]) => k !== '__total__')
+    );
+    const avg = hasTotal
+      ? Math.round(scores.__total__)
       : (() => {
-          const vals = Object.values(scores).filter(v => typeof v === 'number' && v > 0);
+          const vals = Object.values(breakdownOnly).filter(v => typeof v === 'number' && v > 0);
           return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
         })();
     const effectiveDate = a.taken_at || a.created_at;
@@ -318,7 +325,7 @@ function buildCoachContextFromDB({ user, profile, assessments, latestPlan }) {
       formName: a.form_name || 'Unknown form',
       dateLabel: new Date(effectiveDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       createdAt: effectiveDate,
-      scores: isTotalOnly ? {} : scores,
+      scores: isTotalOnly ? {} : breakdownOnly,
       stickingPoints: JSON.parse(a.sticking_points || '[]'),
       avg,
       isTotalOnly,

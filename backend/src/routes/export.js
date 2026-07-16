@@ -89,7 +89,10 @@ function assignBlockTimes(blocks, studyStartTime, studyEndTime) {
 }
 
 function avgScore(scores) {
-  const cats = Object.keys(scores || {});
+  if (!scores) return 0;
+  // Prefer the student's typed/parsed overall (__total__) over a mean of the breakdown.
+  if (typeof scores.__total__ === 'number') return Math.round(scores.__total__);
+  const cats = Object.keys(scores).filter(k => k !== '__total__');
   return cats.length
     ? Math.round(cats.reduce((s, c) => s + (scores[c] || 0), 0) / cats.length)
     : 0;

@@ -158,6 +158,22 @@ function parseLocalYMD(s) {
   return new Date(y, m - 1, d);
 }
 
+// Overall % for an assessment: prefer the student's typed/parsed total
+// (stored as the `__total__` sentinel key), fall back to the breakdown
+// mean only when no __total__ was recorded. The mean is a lossy proxy
+// for NBME's scaled overall — if the student entered their real overall
+// we must display it verbatim rather than recomputing.
+function overallOfScores(scoresObj) {
+  if (!scoresObj) return null;
+  if (scoresObj.__total__ != null && scoresObj.__total__ !== '') {
+    return Math.round(Number(scoresObj.__total__));
+  }
+  const vals = Object.entries(scoresObj)
+    .filter(([k, v]) => k !== '__total__' && v != null && v !== '')
+    .map(([, v]) => Number(v));
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+}
+
 // Calculates study window end time from start time + study hours.
 // Students with ≥5 study hours get a 1-hour lunch break added automatically.
 // Returns "HH:MM" string (24-hour, for the time input).
@@ -1815,11 +1831,8 @@ export default function StudyPlanner({ onShowTerms }) {
     const fmtDayDate = (d) => d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
 
     // Score trend from assessments
-    const selectedExamLocal = { categories: STEP1_CATEGORIES };
     const scoreTrend = assessments.map(a => {
-      const cats = selectedExamLocal?.categories || Object.keys(a.scores || {});
-      const vals = cats.map(c => Number(a.scores[c] || 0)).filter(v => v > 0);
-      const avg = vals.length > 0 ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
+      const avg = overallOfScores(a.scores) ?? 0;
       const dateStr = a.created_at || a.date || '';
       return { label: a.formName || 'Assessment', avg, date: dateStr };
     });
@@ -2758,12 +2771,7 @@ export default function StudyPlanner({ onShowTerms }) {
     if (examDate) examDate.setHours(0, 0, 0, 0);
     const daysUntilExam = examDate ? Math.max(0, Math.ceil((examDate - today) / 86400000)) : null;
 
-    const overallOf = (scoresObj) => {
-      if (!scoresObj) return null;
-      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
-      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
-      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-    };
+    const overallOf = overallOfScores;
     const examDateOf = (a) => {
       const raw = a.takenAt || a.taken_at || a.createdAt || a.created_at || '';
       return raw ? new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z') : null;
@@ -3038,12 +3046,7 @@ export default function StudyPlanner({ onShowTerms }) {
   }
 
   if (screen === "app" && page === "past-exams") {
-    const overallOf = (scoresObj) => {
-      if (!scoresObj) return null;
-      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
-      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
-      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-    };
+    const overallOf = overallOfScores;
     const examDateOf = (a) => {
       const raw = a.takenAt || a.taken_at || a.createdAt || a.created_at || '';
       return raw ? new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z') : null;
@@ -3161,18 +3164,18 @@ export default function StudyPlanner({ onShowTerms }) {
   // ─── ADD ASSESSMENT (3-step flow) ──────────────────────────────────
   if (screen === "app" && page === "add-assessment") {
     const STEP_LABELS = ['Upload', 'Review results', 'Confirm & update'];
-    const calcOverall = (scoresObj) => {
-      if (!scoresObj) return null;
-      if (scoresObj.__total__ != null) return Math.round(Number(scoresObj.__total__));
-      const vals = Object.entries(scoresObj).filter(([k, v]) => k !== '__total__' && v != null && v !== '').map(([, v]) => Number(v));
-      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-    };
     const breakdownCats = Object.entries(histDraft.scores).filter(([, v]) => v !== undefined && v !== '');
-    const overallPct = breakdownCats.length > 0
-      ? Math.round(breakdownCats.reduce((s, [, v]) => s + Number(v), 0) / breakdownCats.length)
-      : (histDraft.totalScore !== '' ? Number(histDraft.totalScore) : null);
+    const typedTotal = histDraft.totalScore !== '' && !Number.isNaN(Number(histDraft.totalScore))
+      ? Math.round(Number(histDraft.totalScore))
+      : null;
+    // Student's typed/parsed overall wins; breakdown mean is fallback only.
+    const overallPct = typedTotal != null
+      ? typedTotal
+      : (breakdownCats.length > 0
+        ? Math.round(breakdownCats.reduce((s, [, v]) => s + Number(v), 0) / breakdownCats.length)
+        : null);
     const prevA = assessments.length > 0 ? assessments[assessments.length - 1] : null;
-    const prevOverall = prevA ? calcOverall(prevA.scores) : null;
+    const prevOverall = prevA ? overallOfScores(prevA.scores) : null;
     const overallDelta = (overallPct != null && prevOverall != null) ? overallPct - prevOverall : null;
     const canConfirm = histDraft.formName.trim().length > 0 && histDraft.takenAt.trim().length > 0 && overallPct != null;
 
@@ -3182,9 +3185,15 @@ export default function StudyPlanner({ onShowTerms }) {
       if (!canConfirm) return;
       setHistSaving(true); setHistError('');
       try {
+        // Always persist the student's typed/parsed overall as __total__ when
+        // present, so display sites can show it verbatim without recomputing
+        // a (usually deflated) mean from the breakdown.
         const examScores = breakdownCats.length > 0
-          ? Object.fromEntries(breakdownCats.map(([k, v]) => [k, Number(v)]))
-          : { '__total__': Number(histDraft.totalScore) };
+          ? {
+              ...(typedTotal != null ? { '__total__': typedTotal } : {}),
+              ...Object.fromEntries(breakdownCats.map(([k, v]) => [k, Number(v)])),
+            }
+          : { '__total__': typedTotal != null ? typedTotal : Number(histDraft.totalScore) };
         const { assessment } = await api.assessments.save({ formName: histDraft.formName, scores: examScores, stickingPoints: [], takenAt: histDraft.takenAt });
         const combined = [...assessments, assessment].sort((a, b) =>
           new Date(a.takenAt || a.taken_at || a.createdAt || a.created_at) - new Date(b.takenAt || b.taken_at || b.createdAt || b.created_at));
@@ -3316,14 +3325,12 @@ export default function StudyPlanner({ onShowTerms }) {
                     <span style={{ fontWeight: 400, color: T.faint }}> vs last exam</span>
                   </div>
                 )}
-                {!breakdownCats.length && (
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <label style={{ fontSize: 11, color: T.muted, fontFamily: T.font }}>Total %</label>
-                    <input type="number" min={0} max={100} value={histDraft.totalScore} placeholder="—"
-                      onChange={e => setHistDraft(d => ({ ...d, totalScore: e.target.value }))}
-                      style={{ width: 64, padding: '7px 8px', borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 13, textAlign: 'center', fontFamily: T.font, color: T.deeper }} />
-                  </div>
-                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: 11, color: T.muted, fontFamily: T.font }}>Total %</label>
+                  <input type="number" min={0} max={100} value={histDraft.totalScore} placeholder="—"
+                    onChange={e => setHistDraft(d => ({ ...d, totalScore: e.target.value }))}
+                    style={{ width: 64, padding: '7px 8px', borderRadius: 8, border: `1px solid ${T.border}`, fontSize: 13, textAlign: 'center', fontFamily: T.font, color: T.deeper }} />
+                </div>
               </div>
 
               {/* Category breakdown */}
@@ -3961,9 +3968,17 @@ export default function StudyPlanner({ onShowTerms }) {
       try {
         const saved = [];
         for (const exam of histList) {
-          const examScores = exam.hasBreakdown && Object.keys(exam.scores).filter(k => exam.scores[k] !== undefined).length > 0
-            ? Object.fromEntries(Object.entries(exam.scores).filter(([, v]) => v !== undefined))
-            : exam.totalScore ? { '__total__': Number(exam.totalScore) } : {};
+          const breakdownEntries = Object.entries(exam.scores).filter(([, v]) => v !== undefined);
+          const typedTotal = exam.totalScore !== '' && !Number.isNaN(Number(exam.totalScore))
+            ? Number(exam.totalScore)
+            : null;
+          const hasBreakdown = exam.hasBreakdown && breakdownEntries.length > 0;
+          const examScores = hasBreakdown
+            ? {
+                ...(typedTotal != null ? { '__total__': typedTotal } : {}),
+                ...Object.fromEntries(breakdownEntries),
+              }
+            : (typedTotal != null ? { '__total__': typedTotal } : {});
           if (Object.keys(examScores).length === 0) continue;
           const { assessment } = await api.assessments.save({ formName: exam.formName, scores: examScores, stickingPoints: [], takenAt: exam.takenAt });
           saved.push(assessment);
@@ -4077,10 +4092,13 @@ export default function StudyPlanner({ onShowTerms }) {
                 {histList.length} exam{histList.length > 1 ? 's' : ''} added
               </div>
               {histList.map((exam, idx) => {
+                // Student's typed total wins; breakdown mean is fallback only.
                 const validScores = exam.hasBreakdown ? Object.values(exam.scores).filter(v => v !== undefined) : [];
-                const displayScore = validScores.length > 0
-                  ? Math.round(validScores.reduce((s, v) => s + v, 0) / validScores.length)
-                  : exam.totalScore ? Number(exam.totalScore) : null;
+                const displayScore = exam.totalScore !== '' && !Number.isNaN(Number(exam.totalScore))
+                  ? Math.round(Number(exam.totalScore))
+                  : (validScores.length > 0
+                    ? Math.round(validScores.reduce((s, v) => s + v, 0) / validScores.length)
+                    : null);
                 return (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#faf8f5', borderRadius: 10, marginBottom: 6, borderLeft: '3px solid #2db882' }}>
                     <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#1a1816', fontFamily: S.f }}>{exam.formName}</span>
@@ -4186,9 +4204,17 @@ export default function StudyPlanner({ onShowTerms }) {
       setHistSaving(true);
       setHistError('');
       try {
-        const examScores = histDraft.hasBreakdown && Object.keys(histDraft.scores).filter(k => histDraft.scores[k] !== undefined).length > 0
-          ? Object.fromEntries(Object.entries(histDraft.scores).filter(([, v]) => v !== undefined))
-          : histDraft.totalScore ? { '__total__': Number(histDraft.totalScore) } : null;
+        const breakdownEntries = Object.entries(histDraft.scores).filter(([, v]) => v !== undefined);
+        const typedTotal = histDraft.totalScore !== '' && !Number.isNaN(Number(histDraft.totalScore))
+          ? Number(histDraft.totalScore)
+          : null;
+        const hasBreakdown = histDraft.hasBreakdown && breakdownEntries.length > 0;
+        const examScores = hasBreakdown
+          ? {
+              ...(typedTotal != null ? { '__total__': typedTotal } : {}),
+              ...Object.fromEntries(breakdownEntries),
+            }
+          : (typedTotal != null ? { '__total__': typedTotal } : null);
 
         if (!examScores || Object.keys(examScores).length === 0) {
           setHistError('Please enter at least a total score or at least one breakdown score.');
@@ -4698,8 +4724,9 @@ export default function StudyPlanner({ onShowTerms }) {
     const declined = cats.filter(c => { const d = getScoreDelta(c); return d !== null && d < -3; }).sort((a, b) => getScoreDelta(a) - getScoreDelta(b));
     const stagnant = getStubbornTopics();
     const unchanged = cats.filter(c => { const d = getScoreDelta(c); return d !== null && d >= -3 && d <= 5; });
-    const avgPrev = cats.reduce((s, c) => s + (previousAssessment.scores[c] || 0), 0) / cats.length;
-    const avgCurr = cats.reduce((s, c) => s + (scores[c] || 0), 0) / cats.length;
+    // Prefer __total__ over a flat mean of categories so students see their real overall.
+    const avgPrev = overallOfScores(previousAssessment.scores) ?? 0;
+    const avgCurr = overallOfScores(scores) ?? 0;
     const avgDelta = Math.round(avgCurr - avgPrev);
     return (
       <div style={S.app}>
@@ -5468,7 +5495,7 @@ export default function StudyPlanner({ onShowTerms }) {
               <div style={{ marginTop: 12 }}>
                 {assessments.map((a, i) => {
                   const cats = selectedExam?.categories || [];
-                  const avg = Math.round(cats.reduce((s, c) => s + (a.scores[c] || 0), 0) / cats.length);
+                  const avg = overallOfScores(a.scores) ?? 0;
                   return (
                     <div key={a.id} style={{ padding: "10px 14px", background: "#faf8f5", borderRadius: 8, marginBottom: 6 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
