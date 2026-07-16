@@ -1841,7 +1841,7 @@ export default function StudyPlanner({ onShowTerms }) {
 
     // Category heatmap from latest assessment
     const latestAssessmentForHeatmap = assessments.length > 0 ? assessments[assessments.length - 1] : null;
-    const heatmapCats = selectedExamLocal?.categories || [];
+    const heatmapCats = STEP1_CATEGORIES;
     const heatColor = (s) => s <= 40 ? '#c0392b' : s <= 60 ? '#D85A30' : s <= 80 ? '#2980b9' : '#2db882';
     const heatBg = (s) => s <= 40 ? '#c0392b0d' : s <= 60 ? '#D85A300d' : s <= 80 ? '#2980b90d' : '#2db8820d';
 
